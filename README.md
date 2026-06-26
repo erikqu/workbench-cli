@@ -20,7 +20,7 @@ rich read-only viewers for the files you are working on — all in one full-scre
 TUI.
 
 ```bash
-curl -fsSL https://erikq.co/install | bash
+curl -fsSL https://ehq.so/install | bash
 ```
 
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
@@ -69,7 +69,7 @@ Optional, for the corresponding viewers (each degrades gracefully if missing):
 ### Quick install
 
 ```bash
-curl -fsSL https://erikq.co/install | bash
+curl -fsSL https://ehq.so/install | bash
 ```
 
 This installs Bun if it is missing, checks out the source into
