@@ -242,7 +242,16 @@ export class TerminalPanel implements TerminalReadable {
       command = `stty cols ${cols} rows ${rows}; ${inner}`;
     }
 
-    const child = Bun.spawn(["script", "-qefc", command, "/dev/null"], {
+    // `script` allocates a PTY so the child believes it's on a terminal. Its
+    // flags differ by platform: util-linux (Linux) takes `-c <cmd>` then the
+    // typescript file, while BSD `script` (macOS) takes the typescript file as a
+    // positional and execs the trailing argv directly (no `-c`, capital `-F` to
+    // flush), so we wrap the command in `/bin/sh -c`.
+    const scriptArgv =
+      process.platform === "darwin"
+        ? ["script", "-qeF", "/dev/null", "/bin/sh", "-c", command]
+        : ["script", "-qefc", command, "/dev/null"];
+    const child = Bun.spawn(scriptArgv, {
       cwd: this.cwd,
       env,
       stdin: "pipe",
