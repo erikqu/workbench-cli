@@ -2,3 +2,7 @@ node_modules/
 artifacts/
 .DS_Store
 *.log
+
+# Personal site repo is sometimes checked out here to update /install; it is a
+# separate repo and must never be committed into this one.
+erikqu.github.io/

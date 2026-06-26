@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Workbench CLI installer.
 #
-#   curl -fsSL https://ehq.so/install | bash
+#   curl -fsSL https://erikq.co/install | bash
 #
 # Installs from source (Workbench CLI runs on Bun). Bun is installed
 # automatically if it is missing. Override any of these with env vars:
