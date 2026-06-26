@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve this script through any symlinks (e.g. ~/.local/bin/workbench-cli).
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  TARGET="$(readlink "$SOURCE")"
+  if [[ "$TARGET" == /* ]]; then
+    SOURCE="$TARGET"
+  else
+    SOURCE="$DIR/$TARGET"
+  fi
+done
+
+BIN_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+# Package root holds the workbench-ui workbench.
+PKG_DIR="$(cd -P "$BIN_DIR/.." && pwd)"
+UI_DIR="$PKG_DIR/workbench-ui"
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "workbench-cli requires bun on PATH." >&2
+  exit 1
+fi
+
+if [[ ! -d "$UI_DIR" ]]; then
+  echo "Missing workbench-ui directory: $UI_DIR" >&2
+  exit 1
+fi
+
+# Hot reload (opt-in): restart the workbench whenever its TypeScript source
+# changes, so edits or updates to workbench-cli take effect without a manual
+# relaunch. Enable with WORKBENCH_CLI_HOT=1 or by passing --hot (aliases: --dev,
+# --watch).
+#
+# We use `bun --watch` (a clean full restart) rather than in-process `bun --hot`:
+# the workbench owns raw-mode stdin and a single render loop, so re-evaluating
+# the entry in place would stack a second instance. A restart is near-seamless
+# here anyway -- the agent and terminal panels live on a persistent private tmux
+# server and the UI layout is saved to disk, so on the SIGTERM that `--watch`
+# sends, the workbench detaches (never kills) those sessions and reattaches them,
+# with tabs restored, on the next launch.
+hot="${WORKBENCH_CLI_HOT:-0}"
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    --hot | --dev | --watch) hot=1 ;;
+    *) args+=("$arg") ;;
+  esac
+done
+
+bun_flags=()
+if [[ "$hot" == "1" ]]; then
+  bun_flags+=(--watch)
+fi
+
+exec env WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
+  bun ${bun_flags[@]+"${bun_flags[@]}"} "$UI_DIR/src/index.ts" ${args[@]+"${args[@]}"}

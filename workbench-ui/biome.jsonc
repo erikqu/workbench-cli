@@ -1,0 +1,89 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": ["ultracite/biome/core", "ultracite/biome/react"],
+  "files": {
+    "includes": [
+      "!artifacts",
+      "!assets",
+      "!**/*.txt",
+      // The editor screenshot's fixture is intentionally hand-formatted so the
+      // golden-master stays pixel-deterministic; never reformat it.
+      "!test-harness/sample.ts"
+    ]
+  },
+  "javascript": {
+    // This is a Bun project; `Bun` is a runtime global.
+    "globals": ["Bun"]
+  },
+  "linter": {
+    "rules": {
+      "style": {
+        // React components are PascalCase files; the rest of the tree mixes
+        // camelCase and kebab-case module names. Allow all three rather than
+        // mass-renaming files.
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": {
+            "filenameCases": ["camelCase", "PascalCase", "kebab-case"],
+            "requireAscii": true
+          }
+        },
+        // Nested ternaries are the natural way to express the multi-way
+        // conditional rendering this TUI does inside JSX.
+        "noNestedTernary": "off",
+        // The class controller and a few helpers take constructor parameter
+        // properties / use non-null assertions where invariants are local.
+        "noParameterProperties": "off",
+        "noNonNullAssertion": "off",
+        // Mutable class fields that happen to be assigned only once are not
+        // worth churning to readonly.
+        "useReadonlyClassProperties": "off",
+        // `arr[i]` indexing is intentional and clearer than `.at()` here.
+        "useAtIndex": "off",
+        "useTemplate": "off"
+      },
+      "suspicious": {
+        // Image hashing / Kitty + sixel protocol encoding legitimately use
+        // bitwise operators.
+        "noBitwiseOperators": "off",
+        // Terminal/ANSI parsing matches control characters by design.
+        "noControlCharactersInRegex": "off",
+        // Index keys back static, non-reordered lists (syntax tokens, etc.).
+        "noArrayIndexKey": "off",
+        // The TUI uses raw stdout writes and low-level interop where `any` is
+        // the pragmatic type.
+        "noExplicitAny": "off",
+        // Empty catch blocks intentionally swallow best-effort failures.
+        "noEmptyBlockStatements": "off",
+        // `while ((m = regex.exec(s)))` is the idiomatic scan loop here.
+        "noAssignInExpressions": "off",
+        "noImplicitAnyLet": "off",
+        "noEvolvingTypes": "off",
+        "noReactForwardRef": "off",
+        // Several methods satisfy an interface shape without awaiting.
+        "useAwait": "off"
+      },
+      "complexity": {
+        // A TUI controller naturally has a few large dispatch functions.
+        "noExcessiveCognitiveComplexity": "off",
+        // `void promise` marks deliberate fire-and-forget background work.
+        "noVoid": "off",
+        "useOptionalChain": "off"
+      },
+      "performance": {
+        // Regexes are defined where they read most clearly; these are not hot
+        // inner loops.
+        "useTopLevelRegex": "off",
+        // `delete` is used to evict map-like caches.
+        "noDelete": "off",
+        // index.ts is the package entrypoint and re-exports by design.
+        "noBarrelFile": "off"
+      },
+      "correctness": {
+        // Effect dependency lists are curated intentionally; auto-completing
+        // them would change re-run behavior.
+        "useExhaustiveDependencies": "off"
+      }
+    }
+  }
+}

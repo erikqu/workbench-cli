@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Workbench Screenshot</title>
+    <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css">
+    <style>
+    html,
+    body,
+    #terminal {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #1e1e1e;
+    }
+    </style>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <script type="module">
+    import { Terminal } from "/node_modules/@xterm/xterm/lib/xterm.mjs";
+
+    const term = new Terminal({
+      cols: 180,
+      rows: 40,
+      convertEol: true,
+      cursorBlink: false,
+      fontFamily:
+        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontSize: 14,
+      theme: {
+        background: "#1e1e1e",
+        foreground: "#d4d4d4",
+      },
+    });
+
+    term.open(document.getElementById("terminal"));
+    const socket = new WebSocket(`ws://${location.host}/pty`);
+    socket.addEventListener("message", (event) => {
+      term.write(event.data);
+      window.__workbenchSawOutput = true;
+    });
+    socket.addEventListener("open", () => {
+      window.__workbenchSocketOpen = true;
+    });
+    socket.addEventListener("close", () => {
+      window.__workbenchSocketClosed = true;
+    });
+    term.onData((data) => socket.send(data));
+    // Test hooks: send raw bytes to the workbench PTY and read back the
+    // rendered terminal buffer so the screenshot script can assert on it.
+    window.__send = (data) => socket.send(data);
+    window.__bufferText = () => {
+      const buffer = term.buffer.active;
+      const lines = [];
+      for (let i = 0; i < term.rows; i++) {
+        lines.push(
+          buffer.getLine(buffer.viewportY + i)?.translateToString(true) ?? ""
+        );
+      }
+      return lines.join("\n");
+    };
+    window.__cellFg = (col, row) => {
+      const buffer = term.buffer.active;
+      const cell = buffer.getLine(buffer.viewportY + row)?.getCell(col);
+      if (!cell) {
+        return null;
+      }
+      return { rgb: cell.isFgRGB(), color: cell.getFgColor() };
+    };
+    window.__workbenchReady = true;
+    </script>
+  </body>
+</html>
