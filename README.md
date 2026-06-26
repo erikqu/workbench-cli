@@ -19,6 +19,10 @@ OpenCode, Cursor, ...), an integrated file Explorer, extra shell terminals, and
 rich read-only viewers for the files you are working on — all in one full-screen
 TUI.
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/erikqu/workbench-cli/main/install.sh | bash
+```
+
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
 
@@ -61,8 +65,23 @@ Optional, for the corresponding viewers (each degrades gracefully if missing):
 
 ## Install
 
+### Quick install
+
 ```bash
-git clone <your-fork-url> workbench-cli
+curl -fsSL https://raw.githubusercontent.com/erikqu/workbench-cli/main/install.sh | bash
+```
+
+This installs Bun if it is missing, checks out the source into
+`~/.local/share/workbench-cli`, runs `bun install`, and symlinks the launcher
+to `~/.local/bin/workbench-cli`. Pin a specific release with
+`WORKBENCH_CLI_REF=v0.1.0`, or change the locations with `WORKBENCH_CLI_HOME` /
+`WORKBENCH_CLI_BIN`. Tagged builds are published on the
+[Releases](https://github.com/erikqu/workbench-cli/releases) page.
+
+### Manual install
+
+```bash
+git clone https://github.com/erikqu/workbench-cli.git
 cd workbench-cli/workbench-ui
 bun install
 ```

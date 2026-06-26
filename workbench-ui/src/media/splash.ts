@@ -7,7 +7,7 @@ import { getCellAspect } from "./image";
 // with three luminance tiers. Falls back to a static wordmark when the area is
 // too small or the image can't be decoded.
 
-const ASSET_DIR = join(import.meta.dir, "..", "assets", "splash");
+const ASSET_DIR = join(import.meta.dir, "..", "..", "assets", "splash");
 const IMAGE_PATH = join(ASSET_DIR, "og-image.jpg");
 const LOGO_PATH = join(ASSET_DIR, "logo.txt");
 
@@ -40,7 +40,7 @@ export const SPLASH_VERSION: string = (() => {
   try {
     return (
       JSON.parse(
-        readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")
+        readFileSync(join(import.meta.dir, "..", "..", "package.json"), "utf8")
       ).version ?? "0.0.0"
     );
   } catch {
