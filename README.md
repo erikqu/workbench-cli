@@ -135,6 +135,7 @@ workbench-cli [path] [--harness <id>] [--hot]
 | `Option+1..9` | Jump to that tab in the active workspace |
 | `Option+Shift+1..9` | Jump to that workspace |
 | `Option+Space` | Cycle to the next workspace |
+| `Option++` | New workspace (opens the agent picker) |
 | `Option+Tab` | Cycle the UI theme (`Option+Shift+Tab` reverses) |
 | `PageUp` / `PageDown` | Scroll the focused agent / terminal scrollback |
 

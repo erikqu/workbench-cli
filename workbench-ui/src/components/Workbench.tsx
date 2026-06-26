@@ -208,6 +208,13 @@ function handleKey(
       actions.cycleTheme(key.shift ? -1 : 1);
       return;
     }
+    // Option++ opens the new-workspace/agent picker — a quick "new session"
+    // without reaching for the sidebar button or the + menu. Accept "=" too so
+    // it fires whether or not Shift is held for the +/= key.
+    if (input === "+" || input === "=") {
+      actions.openNewAgent();
+      return;
+    }
     const index = digitIndex(input);
     if (index !== undefined) {
       if (key.shift) {

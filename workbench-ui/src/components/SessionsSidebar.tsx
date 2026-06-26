@@ -68,6 +68,7 @@ function SessionsLegend() {
       <LegendRow keys="⌥1-9" label="tab" />
       <LegendRow keys="⌥⇧1-9" label="session" />
       <LegendRow keys="⌥Space" label="cycle" />
+      <LegendRow keys="⌥+" label="new" />
     </Box>
   );
 }
