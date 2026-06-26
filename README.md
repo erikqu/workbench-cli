@@ -20,7 +20,7 @@ TUI.
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
 
-![Workbench CLI](workbench-ui/assets/splash/og-image.jpg)
+![Workbench CLI](workbench-ui/assets/images/sample.png)
 
 ## Highlights
 
@@ -188,4 +188,4 @@ still passes.
 
 ---
 
-![Workbench CLI running Claude Code](workbench-ui/assets/images/sample.png)
+![Workbench CLI running Claude Code](workbench-ui/assets/splash/og-image.jpg)
