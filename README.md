@@ -1,5 +1,7 @@
 # Workbench CLI
 
+![Workbench CLI](workbench-ui/assets/images/sample.png)
+
 ```text
 888       888                  888      888                                 888
 888   o   888                  888      888                                 888
@@ -19,8 +21,6 @@ TUI.
 
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
-
-![Workbench CLI](workbench-ui/assets/images/sample.png)
 
 ## Highlights
 
