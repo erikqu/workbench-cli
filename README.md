@@ -47,7 +47,8 @@ Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 
 ## Requirements
 
-- [Bun](https://bun.sh) (the runtime and package manager)
+- [Bun](https://bun.sh) >= 1.3.5 (the runtime and package manager; the built-in
+  PTY support that backs the agent/terminal panes landed in 1.3.5)
 - `tmux` (persistent agent/terminal panes)
 - At least one coding-agent CLI on your `PATH` (e.g. `claude` for the default
   harness)

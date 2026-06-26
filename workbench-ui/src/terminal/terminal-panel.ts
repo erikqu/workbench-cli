@@ -29,6 +29,20 @@ function hasTmux(): boolean {
   return tmuxAvailable;
 }
 
+// `setsid -c` (util-linux) starts the shell in a new session AND makes the PTY
+// its controlling terminal, which Bun.Terminal alone does not do — without it
+// interactive shells print "cannot set terminal process group / no job control"
+// and lose Ctrl-Z/fg/bg. macOS has no `setsid`, so we fall back to a plain
+// shell there (Ctrl-C still works; the main harness panes get job control from
+// tmux regardless).
+let setsidAvailable: boolean | undefined;
+function hasSetsid(): boolean {
+  if (setsidAvailable === undefined) {
+    setsidAvailable = Bun.which("setsid") !== null;
+  }
+  return setsidAvailable;
+}
+
 // Minimal config for our private tmux server so embedded harness panes look
 // clean: no status bar, mouse on, and none of the user's keybindings/status
 // line or (possibly unsupported) options from ~/.tmux.conf leak in.
@@ -124,6 +138,7 @@ let revisionCounter = 0;
 export class TerminalPanel implements TerminalReadable {
   private terminal: Terminal;
   private child?: ReturnType<typeof Bun.spawn>;
+  private pty?: Bun.Terminal;
   private updateRevision = ++revisionCounter;
   private listeners = new Set<() => void>();
 
@@ -206,9 +221,9 @@ export class TerminalPanel implements TerminalReadable {
     const shell = Bun.env.SHELL ?? "/bin/bash";
     const inner = this.options.command ?? `${shell} -l`;
 
-    // Build the command sh runs inside the PTY. The leading stty fixes the
-    // PTY winsize (Bun's pipes aren't a TTY); exec replaces sh so signals and
-    // exit codes pass straight through to the child / tmux client.
+    // Build the command the shell runs inside the PTY. `exec` replaces the
+    // shell so signals and exit codes pass straight through to the child / tmux
+    // client. The PTY winsize is set by Bun.Terminal, so no stty is needed.
     let command: string;
     const env: Record<string, string> = {
       ...Bun.env,
@@ -237,40 +252,43 @@ export class TerminalPanel implements TerminalReadable {
       ]
         .filter(Boolean)
         .join(" ");
-      command = `stty cols ${cols} rows ${rows}; exec ${tmux}`;
+      command = `exec ${tmux}`;
     } else {
-      command = `stty cols ${cols} rows ${rows}; ${inner}`;
+      command = inner;
     }
 
-    // `script` allocates a PTY so the child believes it's on a terminal. Its
-    // flags differ by platform: util-linux (Linux) takes `-c <cmd>` then the
-    // typescript file, while BSD `script` (macOS) takes the typescript file as a
-    // positional and execs the trailing argv directly (no `-c`, capital `-F` to
-    // flush), so we wrap the command in `/bin/sh -c`.
-    const scriptArgv =
-      process.platform === "darwin"
-        ? ["script", "-qeF", "/dev/null", "/bin/sh", "-c", command]
-        : ["script", "-qefc", command, "/dev/null"];
-    const child = Bun.spawn(scriptArgv, {
+    // Attach a real pseudo-terminal so the child sees a TTY (colors, cursor
+    // control, raw input). Bun.Terminal wraps openpty() on Linux and macOS,
+    // replacing the old `script(1)` shim whose flags and stdin-must-be-a-tty
+    // requirement differed between util-linux and BSD (the latter failed with
+    // `tcgetattr/ioctl: Operation not supported on socket`).
+    const pty = new Bun.Terminal({
+      cols,
+      rows,
+      name: "xterm-256color",
+      data: (_pty, bytes) => {
+        this.terminal.write(bytes);
+      },
+    });
+    this.pty = pty;
+    const argv = hasSetsid()
+      ? ["setsid", "-c", "/bin/sh", "-c", command]
+      : ["/bin/sh", "-c", command];
+    this.child = Bun.spawn(argv, {
       cwd: this.cwd,
       env,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
+      terminal: pty,
     });
-    this.child = child;
-    void this.pipeToTerminal(child.stdout as ReadableStream<Uint8Array>);
-    void this.pipeToTerminal(child.stderr as ReadableStream<Uint8Array>);
   }
 
   resize(cols: number, rows: number) {
     if (cols === this.terminal.cols && rows === this.terminal.rows) {
       return;
     }
-    // The PTY's winsize is fixed at spawn (set via stty in start()), so this
-    // only reflows the emulator buffer. Panels resize before first start, so
-    // the spawn size matches the rendered box exactly.
     this.terminal.resize(cols, rows);
+    // Propagate to the child PTY so the program (or tmux client) gets SIGWINCH
+    // and reflows to match the newly rendered box.
+    this.pty?.resize(cols, rows);
     this.updateRevision = ++revisionCounter;
     this.emit();
   }
@@ -354,16 +372,7 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   private writeToChild(data: string) {
-    const stdin = this.child?.stdin as
-      | { write(data: string): unknown; flush?: () => unknown }
-      | undefined;
-    if (!stdin) {
-      return;
-    }
-    stdin.write(data);
-    // Bun's piped stdin is a FileSink that buffers internally; without an
-    // explicit flush, single keystrokes never reach the child process.
-    stdin.flush?.();
+    this.pty?.write(data);
   }
 
   getLines(): readonly (readonly TerminalCell[])[] {
@@ -423,7 +432,13 @@ export class TerminalPanel implements TerminalReadable {
     } catch {
       // Ignore shutdown races.
     }
+    try {
+      this.pty?.close();
+    } catch {
+      // Ignore shutdown races.
+    }
     this.child = undefined;
+    this.pty = undefined;
   }
 
   // Permanently tear down the panel, including its persistent tmux session.
@@ -450,20 +465,6 @@ export class TerminalPanel implements TerminalReadable {
       }
     }
     this.detach();
-  }
-
-  private async pipeToTerminal(stream: ReadableStream<Uint8Array>) {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-      await new Promise<void>((resolve) => {
-        this.terminal.write(decoder.decode(value, { stream: true }), resolve);
-      });
-    }
   }
 }
 
