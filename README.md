@@ -24,6 +24,16 @@ curl -fsSL https://ehq.so/install | bash
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
 
+## Terminal Support
+
+**Workbench CLI is supported for use in [Ghostty](https://ghostty.org/). Use
+Ghostty for the intended experience.**
+
+All other terminal emulators are experimental. Workbench CLI may launch in other
+terminals, including Kitty-compatible or Sixel-capable terminals, but rendering,
+mouse input, images, cursor behavior, and tmux passthrough may break or drift.
+Bug reports and fixes are welcome, but Ghostty is the only supported target.
+
 ## Install
 
 ```bash
@@ -35,6 +45,8 @@ The installer sets up Bun if needed, checks out the source into
 `workbench-cli` and `work` into `~/.local/bin`.
 
 ## Run
+
+Open Ghostty, then run:
 
 ```bash
 work

@@ -7,8 +7,9 @@ Developer notes for working on the Bun + React + Silvery TUI in `workbench-ui/`.
 - [Bun](https://bun.sh) >= 1.3.5
 - `tmux`
 - At least one coding-agent CLI on your `PATH` (`claude` is the default)
-- A terminal with Kitty graphics support for crisp images. Sixel terminals work
-  too, and everything else falls back to true-color half-block rendering.
+- [Ghostty](https://ghostty.org/) for the supported terminal experience. Other
+  terminals are experimental; they may launch, but rendering, images, cursor
+  behavior, mouse input, or tmux passthrough may differ.
 
 Optional viewer tools:
 

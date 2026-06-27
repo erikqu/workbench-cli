@@ -4,6 +4,13 @@ The Bun + React + Silvery package behind Workbench CLI. It renders the
 full-screen terminal workbench that runs coding-agent CLIs, shell terminals,
 workspace files, and live git changes side by side.
 
+## Terminal Support
+
+Develop and test the UI in [Ghostty](https://ghostty.org/). Ghostty is the
+supported terminal target for Workbench CLI; all other terminal emulators are
+experimental and may differ in rendering, images, cursor behavior, mouse input,
+or tmux passthrough.
+
 ## Run Locally
 
 From `workbench-ui/`:
