@@ -95,6 +95,7 @@ function SidebarControls({
       </Box>
       <LegendRow keys="⌥1-9" label="tab" />
       <LegendRow keys="⌥⇧1-9" label="session" />
+      <LegendRow keys="⌥Space" label="next session" />
       <LegendRow keys="⌥Tab" label="theme" />
       <LegendRow keys="Ctrl+Q" label="quit" />
     </Box>
