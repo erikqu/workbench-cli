@@ -74,6 +74,12 @@ const TMUX_SOCKET_PATH = join(
 // Minimum gap between full-app repaints (~60fps) used by the leading-edge render
 // throttle. Low enough to feel instant, high enough to coalesce bursts.
 const RENDER_INTERVAL_MS = 16;
+const HARNESS_COLOR_ENV = {
+  CLICOLOR: "1",
+  CLICOLOR_FORCE: "1",
+  COLORTERM: "truecolor",
+  FORCE_COLOR: "1",
+};
 
 export interface WorkbenchOptions {
   cwd: string;
@@ -449,6 +455,10 @@ export class ReactWorkbenchApp {
         this.estimateRows(),
         {
           ...command,
+          env: {
+            ...HARNESS_COLOR_ENV,
+            ...command.env,
+          },
           persist: this.persistFor(harness.tmux),
         }
       );
@@ -945,7 +955,10 @@ function WorkbenchRoot({ app }: { app: ReactWorkbenchApp }) {
   const [view, setView] = useState(() => app.buildView());
   useEffect(() => app.subscribe(() => setView(app.buildView())), [app]);
   return (
-    <ThemeProvider tokens={themeTokens(view.state.themeName)}>
+    <ThemeProvider
+      key={view.state.themeName}
+      tokens={themeTokens(view.state.themeName)}
+    >
       <Workbench actions={app.actions()} view={view} />
     </ThemeProvider>
   );

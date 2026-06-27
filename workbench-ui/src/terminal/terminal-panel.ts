@@ -232,6 +232,11 @@ export class TerminalPanel implements TerminalReadable {
       COLUMNS: String(cols),
       LINES: String(rows),
     };
+    if (this.options.env?.FORCE_COLOR) {
+      // Harnesses opt into color explicitly; a parent-shell NO_COLOR would
+      // otherwise win in many CLI color detectors.
+      delete env.NO_COLOR;
+    }
     const persist = this.persist;
     if (persist) {
       // Run inside (or re-attach to) a persistent tmux session on a dedicated

@@ -18,6 +18,10 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
+import {
+  resetHostCursorStyle,
+  writeHostCursorStyle,
+} from "../terminal/host-cursor";
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { colors } from "../ui/theme";
 import { ToastHost } from "../ui/toast";
@@ -193,6 +197,11 @@ function handleKey(
     return;
   }
 
+  if (isThemeCycleKey(input, key)) {
+    actions.cycleTheme(key.shift ? -1 : 1);
+    return;
+  }
+
   // Ergonomic quick-switch. Option/Alt is the prefix; the number you press is the
   // index badge shown in the UI:
   //   Option+1..9        -> jump to that tab in the active session (top strip)
@@ -201,13 +210,6 @@ function handleKey(
   // CLI panel is focused (agent CLIs never bind Alt+digit). Both encodings parse
   // identically in legacy (ESC-prefixed) and Kitty terminals.
   if (key.meta && !key.ctrl && !key.super) {
-    // Option+Tab cycles UI themes (Option+Shift+Tab reverses). Handled before
-    // the digit/space switches and before any focus branch so it works while a
-    // CLI panel is focused.
-    if (key.tab) {
-      actions.cycleTheme(key.shift ? -1 : 1);
-      return;
-    }
     // Option++ opens the new-workspace/agent picker — a quick "new session"
     // without reaching for the sidebar button or the + menu. Accept "=" too so
     // it fires whether or not Shift is held for the +/= key.
@@ -313,6 +315,10 @@ function handleKey(
       actions.closeSession(view.state.activeSessionId);
       return;
     }
+    if (input === "q") {
+      actions.shutdown(0);
+      return;
+    }
     if (key.return) {
       actions.focus(focusForMainTab(view.session.activeMainTab));
       return;
@@ -343,6 +349,18 @@ function digitIndex(input: string): number | undefined {
     return;
   }
   return input.charCodeAt(0) - 49;
+}
+
+export function isThemeCycleKey(input: string, key: Key): boolean {
+  if (key.ctrl || key.super) {
+    return false;
+  }
+  if (key.meta && key.tab) {
+    return true;
+  }
+  // Legacy Alt/Option+Tab can arrive as ESC + Tab. silvery strips ESC and gives
+  // us a literal tab input without setting key.meta/key.tab.
+  return input === "\t" && !key.tab && !key.escape;
 }
 
 function HarnessView({
@@ -547,6 +565,17 @@ function MeasuredTerminalGrid({
     }, 80);
     return () => clearTimeout(timer);
   }, [cols, rows, panel, resize]);
+
+  // silvery's terminal cursor path currently emits a steady caret. Re-apply a
+  // blinking style after focused terminal renders so agent harness prompts blink
+  // like a normal terminal cursor.
+  useEffect(() => {
+    if (!focused) {
+      return;
+    }
+    writeHostCursorStyle("bar", true);
+    return resetHostCursorStyle;
+  });
 
   const onMouse = (event: TerminalMouseEvent) => {
     if (event.type === "wheel") {

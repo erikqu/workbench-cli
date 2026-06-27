@@ -12,7 +12,7 @@ import {
 import { harnessSpec } from "../state/harnesses";
 import type { AgentSession } from "../state/types";
 import type { SessionDiff } from "../text/diff";
-import { colors } from "../ui/theme";
+import { colors, THEME_LABELS } from "../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
 const sidebarWidth = 26;
@@ -55,20 +55,56 @@ export function SessionsSidebar({
       </Box>
       <NewAgentRow actions={actions} />
       <SessionList actions={actions} view={view} />
-      <SessionsLegend />
+      <SidebarControls actions={actions} view={view} />
     </Box>
   );
 }
 
 // Reminds keyboard users how to jump around. The badges on the tabs and session
 // rows map 1:1 to these numbers; Shift selects the left (session) column.
-function SessionsLegend() {
+function SidebarControls({
+  view,
+  actions,
+}: {
+  view: WorkbenchViewModel;
+  actions: WorkbenchActions;
+}) {
+  const themeLabel =
+    THEME_LABELS[view.state.themeName as keyof typeof THEME_LABELS] ??
+    view.state.themeName;
+  const cycleTheme = (event?: { stopPropagation(): void }) => {
+    actions.cycleTheme();
+    event?.stopPropagation();
+  };
+  const quit = (event?: { stopPropagation(): void }) => {
+    actions.shutdown(0);
+    event?.stopPropagation();
+  };
   return (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
+      <Button
+        color={colors.accentAlt}
+        focusable={false}
+        label={`Theme: ${themeLabel}`}
+        onClick={cycleTheme}
+        onPress={() => actions.cycleTheme()}
+        width="100%"
+      />
+      <Button
+        color={colors.dim}
+        focusable={false}
+        label="Quit"
+        onClick={quit}
+        onPress={() => actions.shutdown(0)}
+        width="100%"
+      />
+      <Box height={1} />
       <LegendRow keys="⌥1-9" label="tab" />
       <LegendRow keys="⌥⇧1-9" label="session" />
       <LegendRow keys="⌥Space" label="cycle" />
       <LegendRow keys="⌥+" label="new" />
+      <LegendRow keys="⌥Tab" label="theme" />
+      <LegendRow keys="Ctrl+Q" label="quit" />
     </Box>
   );
 }
