@@ -322,6 +322,7 @@ export class TerminalPanel implements TerminalReadable {
     if (!this.child) {
       this.start();
     }
+    this.snapToBottomIfScrolled();
     this.writeToChild(data);
   }
 
@@ -338,7 +339,26 @@ export class TerminalPanel implements TerminalReadable {
     if (!this.child) {
       this.start();
     }
+    this.snapToBottomIfScrolled();
     this.writeToChild(this.formatPaste(text));
+  }
+
+  // Re-anchor the viewport to the bottom on user input. Without this, scrolling
+  // up (wheel/PageUp over a primary-buffer pane) parks `viewportY` above
+  // `baseY`, and since xterm only auto-scrolls when already at the bottom, the
+  // prompt — anchored to the bottom — drifts downward off the pane as the
+  // program keeps emitting output. Snapping on every keystroke/paste matches
+  // every real terminal: typing means you're done reading, so jump to the
+  // prompt. No-op (and free) when already at the bottom or on the alternate
+  // buffer, where `viewportY === baseY === 0`.
+  private snapToBottomIfScrolled() {
+    const buffer = this.terminal.buffer.active;
+    if (buffer.viewportY >= buffer.baseY) {
+      return;
+    }
+    this.terminal.scrollToBottom();
+    this.updateRevision = ++revisionCounter;
+    this.emit();
   }
 
   private formatPaste(text: string): string {

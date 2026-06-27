@@ -39,3 +39,66 @@ describe("TerminalPanel.getCursor", () => {
     expect(panel.getCursor()).toEqual({ x: 0, y: 23, visible: false });
   });
 });
+
+describe("TerminalPanel input re-anchors the viewport", () => {
+  // The scrollback buffer behind the public write/paste path.
+  function activeBuffer(panel: TerminalPanel) {
+    return (
+      panel as unknown as {
+        terminal: {
+          buffer: {
+            active: { baseY: number; viewportY: number };
+          };
+        };
+      }
+    ).terminal.buffer.active;
+  }
+
+  // Mark the panel as already started so the public write/paste path doesn't
+  // spawn a real PTY in the test; writeToChild is a no-op without a pty.
+  function markStarted(panel: TerminalPanel) {
+    (panel as unknown as { child: unknown }).child = {};
+  }
+
+  test("typing snaps a scrolled-up viewport back to the prompt", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    // Fill scrollback so baseY advances past the visible page.
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\ni\r\nj");
+    const buffer = activeBuffer(panel);
+    expect(buffer.baseY).toBeGreaterThan(0);
+
+    // Scroll up: the prompt is now below the visible viewport.
+    panel.scrollLines(-3);
+    expect(buffer.viewportY).toBeLessThan(buffer.baseY);
+
+    markStarted(panel);
+    panel.write("x");
+    // User input must re-anchor to the bottom so the prompt stops drifting.
+    expect(buffer.viewportY).toBe(buffer.baseY);
+  });
+
+  test("pasting snaps a scrolled-up viewport back to the prompt", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh");
+    const buffer = activeBuffer(panel);
+    expect(buffer.baseY).toBeGreaterThan(0);
+
+    panel.scrollLines(-2);
+    expect(buffer.viewportY).toBeLessThan(buffer.baseY);
+
+    markStarted(panel);
+    panel.paste("hi");
+    expect(buffer.viewportY).toBe(buffer.baseY);
+  });
+
+  test("is a no-op when already at the bottom", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh");
+    const buffer = activeBuffer(panel);
+    expect(buffer.viewportY).toBe(buffer.baseY);
+
+    markStarted(panel);
+    panel.write("x");
+    expect(buffer.viewportY).toBe(buffer.baseY);
+  });
+});
