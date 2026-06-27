@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Button, Text } from "silvery";
-import { harnessIdFromTab, isChangesTab } from "../state/types";
+import { harnessIdFromTab } from "../state/types";
 import { colors } from "../ui/theme";
 import type {
   TabSelectOption,
@@ -46,11 +46,7 @@ function Tab({
 }) {
   const [hovered, setHovered] = useState(false);
   const value = option.value;
-  const closable = isChangesTab(value)
-    ? false
-    : harnessIdFromTab(value)
-      ? canCloseHarness
-      : true;
+  const closable = harnessIdFromTab(value) ? canCloseHarness : true;
   const select = (event: { stopPropagation(): void }) => {
     actions.selectMainTab(option);
     event.stopPropagation();

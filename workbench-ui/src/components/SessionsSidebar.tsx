@@ -39,7 +39,10 @@ export function SessionsSidebar({
       borderStyle="single"
       flexDirection="column"
       flexShrink={0}
+      height="100%"
+      minHeight={1}
       onMouseDown={() => actions.focus("sessions")}
+      overflow="hidden"
       padding={1}
       width={sidebarWidth}
     >
@@ -82,27 +85,16 @@ function SidebarControls({
   };
   return (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <Button
-        color={colors.accentAlt}
-        focusable={false}
-        label={`Theme: ${themeLabel}`}
-        onClick={cycleTheme}
-        onPress={() => actions.cycleTheme()}
-        width="100%"
-      />
-      <Button
-        color={colors.dim}
-        focusable={false}
-        label="Quit"
-        onClick={quit}
-        onPress={() => actions.shutdown(0)}
-        width="100%"
-      />
-      <Box height={1} />
+      <Box flexDirection="row" height={1} justifyContent="space-between">
+        <Text color={colors.accentAlt} onClick={cycleTheme} wrap={false}>
+          {`Theme: ${themeLabel}`}
+        </Text>
+        <Text color={colors.dim} onClick={quit}>
+          Quit
+        </Text>
+      </Box>
       <LegendRow keys="⌥1-9" label="tab" />
       <LegendRow keys="⌥⇧1-9" label="session" />
-      <LegendRow keys="⌥Space" label="cycle" />
-      <LegendRow keys="⌥+" label="new" />
       <LegendRow keys="⌥Tab" label="theme" />
       <LegendRow keys="Ctrl+Q" label="quit" />
     </Box>
@@ -132,7 +124,9 @@ function SessionList({
   return (
     <Box
       flexGrow={1}
+      flexShrink={1}
       marginTop={1}
+      minHeight={1}
       minWidth={1}
       onWheel={(event) => {
         listRef.current?.scrollBy(event.deltaY > 0 ? 3 : -3);

@@ -258,7 +258,13 @@ export class ReactWorkbenchApp {
         this.render();
       },
       selectDiffFile: (path) => {
-        this.activeSession().selectedDiffPath = path;
+        const session = this.activeSession();
+        session.selectedDiffPath = path;
+        session.activeMainTab = CHANGES_TAB;
+        this.state.focus = "editor";
+        if (this.diffTick) {
+          this.scheduleDiffTick(this.diffTick);
+        }
         this.render();
       },
       getFilePatch: (path) => computeFilePatch(this.activeSession().cwd, path),
@@ -298,10 +304,6 @@ export class ReactWorkbenchApp {
     };
   }
 
-  private activeDiff(): SessionDiff | undefined {
-    return this.diffCache.get(this.activeSession().cwd);
-  }
-
   private startDiffPolling() {
     if (
       Bun.env.WORKBENCH_UI_SCREENSHOT === "1" &&
@@ -319,9 +321,9 @@ export class ReactWorkbenchApp {
     void tick();
   }
 
-  // Poll quickly only while the Changes tab is open (so it feels live as an
-  // agent edits files); otherwise the diffs just back the sidebar badge, so a
-  // slow cadence is plenty and keeps the constant git/subprocess churn down.
+  // Poll quickly only while the Changes view is open (so it feels live as an
+  // agent edits files); otherwise the diffs just back badges/side summaries, so
+  // a slow cadence is plenty and keeps constant git/subprocess churn down.
   private scheduleDiffTick(tick: () => void) {
     if (this.shuttingDown) {
       return;
@@ -330,7 +332,7 @@ export class ReactWorkbenchApp {
       clearTimeout(this.diffTimer);
     }
     const onChanges = isChangesTab(this.activeSession().activeMainTab);
-    this.diffTimer = setTimeout(tick, onChanges ? 2000 : 6000);
+    this.diffTimer = setTimeout(tick, onChanges ? 2000 : 10_000);
     this.diffTick = tick;
   }
 
@@ -496,11 +498,6 @@ export class ReactWorkbenchApp {
 
   private mainTabOptions(): TabSelectOption[] {
     const session = this.activeSession();
-    const diff = this.activeDiff();
-    const hasChanges = diff && diff.files.length > 0;
-    // Keep the tab label fixed-width (a dot marks "has changes"); the actual
-    // counts live in the sidebar badge and the Changes view header.
-    const changesLabel = hasChanges ? "Changes \u25cf" : "Changes";
     return [
       ...session.harnesses.map((harness) => ({
         name: harness.name,
@@ -512,11 +509,6 @@ export class ReactWorkbenchApp {
         description: terminal.cwd,
         value: `term:${terminal.id}`,
       })),
-      {
-        name: changesLabel,
-        description: `${diff?.files.length ?? 0} changed files`,
-        value: CHANGES_TAB,
-      },
       ...session.openTabs.map((tab) => ({
         name: `${tab.dirty ? "*" : ""}${tab.name}`,
         description: relative(session.cwd, tab.path),

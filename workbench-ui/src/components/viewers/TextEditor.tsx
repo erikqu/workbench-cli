@@ -36,6 +36,8 @@ export function ReadOnlyViewer({
       borderStyle="single"
       flexDirection="column"
       flexGrow={1}
+      minHeight={1}
+      minWidth={1}
       onMouseDown={(event) => {
         actions.focus("editor");
         event.stopPropagation();
@@ -50,7 +52,7 @@ export function ReadOnlyViewer({
             : "Large file preview is truncated and read-only."}
         </Text>
       ) : null}
-      <Box flexGrow={1} minWidth={1}>
+      <Box flexGrow={1} minHeight={1} minWidth={1}>
         <LineList
           focused={focused}
           lines={lines}
@@ -93,6 +95,8 @@ export function FileEditor({
       borderStyle="single"
       flexDirection="column"
       flexGrow={1}
+      minHeight={1}
+      minWidth={1}
       onMouseDown={(event) => {
         actions.focus("editor");
         event.stopPropagation();
@@ -102,7 +106,7 @@ export function FileEditor({
       <Text
         color={tab.dirty ? colors.accentAlt : colors.dim}
       >{`${tab.dirty ? "* " : ""}${rel}`}</Text>
-      <Box flexGrow={1} minWidth={1}>
+      <Box flexGrow={1} minHeight={1} minWidth={1}>
         <LineList
           focused={focused}
           lines={lines}
@@ -164,6 +168,7 @@ export function LineList<T>({
   return (
     <Box
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onWheel={(event) => {
         listRef.current?.scrollBy(event.deltaY > 0 ? 3 : -3);

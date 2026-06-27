@@ -34,6 +34,7 @@ export function ChangesView({
       borderStyle="single"
       flexDirection="column"
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onMouseDown={(event) => {
         actions.focus("editor");
@@ -53,7 +54,7 @@ export function ChangesView({
           </Text>
         </Box>
       ) : null}
-      <Box flexDirection="row" flexGrow={1} minWidth={1}>
+      <Box flexDirection="row" flexGrow={1} minHeight={1} minWidth={1}>
         <FileList
           actions={actions}
           files={files}
@@ -70,7 +71,101 @@ export function ChangesView({
   );
 }
 
-function ChangesHeader({ diff }: { diff?: SessionDiff }) {
+export function ChangesSidebarList({
+  view,
+  actions,
+}: {
+  view: WorkbenchViewModel;
+  actions: WorkbenchActions;
+}) {
+  const diff = view.diff;
+  const focused = view.state.focus === "editor";
+  const files = diff?.files ?? [];
+  const selectedPath =
+    files.find((file) => file.path === view.session.selectedDiffPath)?.path ??
+    files[0]?.path;
+
+  return (
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      height="100%"
+      minHeight={1}
+      minWidth={1}
+      overflow="hidden"
+    >
+      <ChangesHeader compact diff={diff} />
+      {diff?.reason ? (
+        <Text color={colors.dim} wrap={false}>
+          {diff.reason}
+        </Text>
+      ) : null}
+      {files.length === 0 ? (
+        <Text color={colors.dim}>No changes</Text>
+      ) : (
+        <FileListBody
+          actions={actions}
+          active={focused}
+          files={files}
+          selectedPath={selectedPath}
+        />
+      )}
+    </Box>
+  );
+}
+
+export function DiffDetailView({
+  view,
+  actions,
+}: {
+  view: WorkbenchViewModel;
+  actions: WorkbenchActions;
+}) {
+  const diff = view.diff;
+  const files = diff?.files ?? [];
+  const selected =
+    files.find((file) => file.path === view.session.selectedDiffPath) ??
+    files[0];
+  const focused = view.state.focus === "editor";
+
+  return (
+    <Box
+      backgroundColor={colors.editor}
+      borderColor={focused ? colors.borderFocus : colors.border}
+      borderStyle="single"
+      flexDirection="column"
+      flexGrow={1}
+      minHeight={1}
+      minWidth={1}
+      onMouseDown={(event) => {
+        actions.focus("editor");
+        event.stopPropagation();
+      }}
+    >
+      <ChangesHeader diff={diff} />
+      {diff?.reason ? (
+        <Box flexShrink={0} height={1} paddingX={1}>
+          <Text color={colors.dim} wrap={false}>
+            {diff.reason}
+          </Text>
+        </Box>
+      ) : null}
+      <DiffDetail
+        file={selected}
+        focused={focused}
+        getFilePatch={actions.getFilePatch}
+      />
+    </Box>
+  );
+}
+
+function ChangesHeader({
+  diff,
+  compact = false,
+}: {
+  compact?: boolean;
+  diff?: SessionDiff;
+}) {
   const baseline = diff?.isGit ? "vs HEAD" : "vs session start";
   return (
     <Box
@@ -85,13 +180,17 @@ function ChangesHeader({ diff }: { diff?: SessionDiff }) {
         <Text color={colors.accentAlt}>Changes</Text>
         {diff && diff.files.length > 0 ? (
           <>
-            <Text color={colors.dim}>{`  ${diff.files.length} files  `}</Text>
+            <Text color={colors.dim}>
+              {compact
+                ? ` ${diff.files.length}`
+                : `  ${diff.files.length} files  `}
+            </Text>
             <Text color={colors.diffAddFg}>{`+${diff.totalAdded} `}</Text>
             <Text color={colors.diffDelFg}>{`-${diff.totalDeleted}`}</Text>
           </>
         ) : null}
       </Box>
-      <Text color={colors.dim}>{baseline}</Text>
+      {compact ? null : <Text color={colors.dim}>{baseline}</Text>}
     </Box>
   );
 }
@@ -148,7 +247,7 @@ function FileListBody({
   const listRef = useRef<ListViewHandle>(null);
   const rect = useBoxRectDangerously();
   const height = Math.max(1, Math.floor(rect.height));
-  const innerWidth = listWidth - 2;
+  const innerWidth = Math.max(1, Math.floor(rect.width) - 1);
   const selectedIndex = Math.max(
     0,
     files.findIndex((file) => file.path === selectedPath)
@@ -172,12 +271,14 @@ function FileListBody({
   return (
     <Box
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onWheel={(event) => {
         listRef.current?.scrollBy(event.deltaY > 0 ? 3 : -3);
         event.preventDefault();
         event.stopPropagation();
       }}
+      overflow="hidden"
     >
       <ListView
         active={false}
@@ -330,6 +431,7 @@ function DiffDetail({
       backgroundColor={colors.editor}
       flexDirection="column"
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       paddingX={1}
     >
@@ -347,6 +449,7 @@ function DiffDetail({
           ) : (
             <Box
               flexGrow={1}
+              minHeight={1}
               minWidth={1}
               onWheel={(event) => {
                 listRef.current?.scrollBy(event.deltaY > 0 ? 3 : -3);

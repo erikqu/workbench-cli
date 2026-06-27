@@ -25,8 +25,7 @@ import {
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { colors } from "../ui/theme";
 import { ToastHost } from "../ui/toast";
-import { ChangesView } from "./ChangesView";
-import { Explorer } from "./Explorer";
+import { DiffDetailView } from "./ChangesView";
 import { MainTabs } from "./MainTabs";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { NewHarnessDialog } from "./NewHarnessDialog";
@@ -34,6 +33,7 @@ import { SessionsSidebar } from "./SessionsSidebar";
 import { Splash } from "./Splash";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 import { SuppressImagesContext, SyntaxViewer } from "./viewers/SyntaxViewer";
+import { WorkspaceSidePane } from "./WorkspaceSidePane";
 
 const PLUS_ANCHOR_ID = "workbench-plus-button";
 
@@ -87,12 +87,18 @@ export function Workbench({
               Workbench
             </Text>
           </Box>
-          <Box backgroundColor={colors.bg} flexDirection="row" flexGrow={1}>
+          <Box
+            backgroundColor={colors.bg}
+            flexDirection="row"
+            flexGrow={1}
+            minHeight={1}
+          >
             <SessionsSidebar actions={actions} view={view} />
             <Box
               backgroundColor={colors.bg}
               flexDirection="column"
               flexGrow={1}
+              minHeight={1}
               minWidth={20}
             >
               <Box
@@ -106,27 +112,32 @@ export function Workbench({
                 </Box>
                 <PlusButton actions={actions} view={view} />
               </Box>
-              {harnessTab ? (
+              {terminalTab ? (
+                <TerminalView actions={actions} view={view} />
+              ) : (
                 <Box
                   backgroundColor={colors.bg}
                   flexDirection="row"
                   flexGrow={1}
+                  minHeight={1}
                   minWidth={1}
                 >
-                  <Explorer actions={actions} view={view} />
-                  <HarnessView actions={actions} view={view} />
-                </Box>
-              ) : terminalTab ? (
-                <TerminalView actions={actions} view={view} />
-              ) : changesTab ? (
-                <ChangesView actions={actions} view={view} />
-              ) : (
-                <Box
-                  backgroundColor={colors.editor}
-                  flexDirection="column"
-                  flexGrow={1}
-                >
-                  <SyntaxViewer actions={actions} view={view} />
+                  <WorkspaceSidePane actions={actions} view={view} />
+                  {harnessTab ? (
+                    <HarnessView actions={actions} view={view} />
+                  ) : changesTab ? (
+                    <DiffDetailView actions={actions} view={view} />
+                  ) : (
+                    <Box
+                      backgroundColor={colors.editor}
+                      flexDirection="column"
+                      flexGrow={1}
+                      minHeight={1}
+                      minWidth={1}
+                    >
+                      <SyntaxViewer actions={actions} view={view} />
+                    </Box>
+                  )}
                 </Box>
               )}
             </Box>
@@ -566,16 +577,23 @@ function MeasuredTerminalGrid({
     return () => clearTimeout(timer);
   }, [cols, rows, panel, resize]);
 
-  // silvery's terminal cursor path currently emits a steady caret. Re-apply a
-  // blinking style after focused terminal renders so agent harness prompts blink
-  // like a normal terminal cursor.
+  // silvery's terminal cursor path currently emits a steady caret. Keep this
+  // refresh low-frequency; doing it on every terminal frame makes busy agent
+  // panes lag.
   useEffect(() => {
     if (!focused) {
       return;
     }
     writeHostCursorStyle("bar", true);
-    return resetHostCursorStyle;
-  });
+    const timer = setInterval(() => {
+      writeHostCursorStyle("bar", true);
+    }, 1000);
+    timer.unref?.();
+    return () => {
+      clearInterval(timer);
+      resetHostCursorStyle();
+    };
+  }, [focused]);
 
   const onMouse = (event: TerminalMouseEvent) => {
     if (event.type === "wheel") {

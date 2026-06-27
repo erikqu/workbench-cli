@@ -59,14 +59,98 @@ export function Explorer({
         <Text color={colors.dim}>Explorer</Text>
         <Text color={colors.dim}>{String(options.length)}</Text>
       </Box>
-      <Box flexGrow={1} minWidth={1}>
-        <ExplorerTree
-          active={focused}
-          expandedIds={expandedIds}
-          onActivate={select}
-          tree={tree}
-        />
+      <ExplorerBody
+        active={focused}
+        expandedIds={expandedIds}
+        onActivate={select}
+        tree={tree}
+      />
+    </Box>
+  );
+}
+
+export function ExplorerSection({
+  view,
+  actions,
+  height,
+}: {
+  view: WorkbenchViewModel;
+  actions: WorkbenchActions;
+  height: number;
+}) {
+  const focused = view.state.focus === "explorer";
+  const options = view.explorerOptions;
+  const { tree, byPath } = useMemo(() => buildTree(options), [options]);
+  const expandedIds = useMemo(
+    () =>
+      new Set(
+        options
+          .filter((option) => option.value.isDirectory && option.value.expanded)
+          .map((option) => option.value.path)
+      ),
+    [options]
+  );
+
+  const select = (id: string) => {
+    const option = byPath.get(id);
+    if (option) {
+      actions.selectExplorer(option);
+    }
+  };
+
+  return (
+    <Box
+      flexDirection="column"
+      flexShrink={1}
+      height={height}
+      minHeight={1}
+      minWidth={1}
+      onMouseDown={(event) => {
+        actions.focus("explorer");
+        event.stopPropagation();
+      }}
+      overflow="hidden"
+    >
+      <Box
+        backgroundColor={colors.panelAlt}
+        flexDirection="row"
+        flexShrink={0}
+        height={1}
+        justifyContent="space-between"
+        paddingX={1}
+      >
+        <Text color={colors.accentAlt}>Explorer</Text>
+        <Text color={colors.dim}>{String(options.length)}</Text>
       </Box>
+      <ExplorerBody
+        active={focused}
+        expandedIds={expandedIds}
+        onActivate={select}
+        tree={tree}
+      />
+    </Box>
+  );
+}
+
+function ExplorerBody({
+  tree,
+  expandedIds,
+  active,
+  onActivate,
+}: {
+  tree: TreeNode[];
+  expandedIds: Set<string>;
+  active: boolean;
+  onActivate(id: string): void;
+}) {
+  return (
+    <Box flexGrow={1} minWidth={1}>
+      <ExplorerTree
+        active={active}
+        expandedIds={expandedIds}
+        onActivate={onActivate}
+        tree={tree}
+      />
     </Box>
   );
 }
