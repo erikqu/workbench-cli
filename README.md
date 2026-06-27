@@ -1,6 +1,6 @@
 # Workbench CLI
 
-![Workbench CLI](workbench-ui/assets/images/sample.png)
+![Workbench CLI](workbench-ui/assets/images/sample_white.png)
 
 ```text
 888       888                  888      888                                 888
