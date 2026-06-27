@@ -54,7 +54,9 @@ info "Installing dependencies ..."
 # Symlink the launcher onto PATH.
 mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/bin/workbench-cli" "$BIN_DIR/workbench-cli"
+ln -sf "$INSTALL_DIR/bin/workbench-cli" "$BIN_DIR/work"
 info "Linked $BIN_DIR/workbench-cli -> $INSTALL_DIR/bin/workbench-cli"
+info "Linked $BIN_DIR/work -> $INSTALL_DIR/bin/workbench-cli"
 
 # Friendly checks for the external tools the workbench drives.
 command -v tmux >/dev/null 2>&1 ||
@@ -68,4 +70,4 @@ case ":$PATH:" in
     export PATH=\"$BIN_DIR:\$PATH\"" ;;
 esac
 
-info "Done. Launch it with: workbench-cli"
+info "Done. Launch it with: workbench-cli (or: work)"
