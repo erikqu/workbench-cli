@@ -86,10 +86,9 @@ architecture details live in
 | `Ctrl+H` | Add a harness (agent) to the active workspace |
 | `Ctrl+B` | Toggle the sessions sidebar |
 | `Ctrl+W` | Close the active file or terminal tab |
-| `Ctrl+S` | Save the active file tab |
 | `Ctrl+Q` | Quit |
-| `Tab` / `Shift+Tab` | Cycle focus (or sent to the focused agent/terminal) |
-| `Esc` | Return focus to the agent / editor |
+| `Tab` / `Shift+Tab` | Cycle top-level tabs when the UI has focus; sent through to focused agents/terminals |
+| `Esc` | Return focus to the active agent, terminal, or editor pane |
 | `Option+1..9` | Jump to that tab in the active workspace |
 | `Option+Shift+1..9` | Jump to that workspace |
 | `Option+Space` | Cycle to the next workspace |

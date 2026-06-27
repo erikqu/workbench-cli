@@ -1,85 +1,80 @@
-# Workbench OpenTUI Workbench
+# Workbench UI
 
-Experimental React/OpenTUI frontend for the Rust Workbench agent: a terminal
-workbench that tracks multiple workbench agents (sessions) across workspaces.
+The Bun + React + Silvery package behind Workbench CLI. It renders the
+full-screen terminal workbench that runs coding-agent CLIs, shell terminals,
+workspace files, and live git changes side by side.
 
-Each session in the left sidebar is its own PTY-backed raw `workbench chat`
-process running in that session's workspace folder. Every session owns its
-own tab set: its terminals, its open file tabs, and its active tab. Switching
-sessions swaps the whole tab strip; switching back restores it exactly. New
-sessions start with one terminal in their workspace folder.
+## Run Locally
 
-## Try It
-
-From `workbench-agent-rs/`:
+From `workbench-ui/`:
 
 ```bash
-cargo build -p workbench --release
-cd workbench-ui
 bun install
-bun start
+bun run start
 ```
 
-Run the screenshot harness, which also simulates clicks and keystrokes to
-verify the sessions sidebar, Explorer, terminal tabs, the [+] menu, and the
-Workbench CLI stay interactive:
+The launcher in `../bin/workbench-cli` is what installed users run as
+`workbench-cli` or `work`; it resolves the repo location, optionally enables Bun
+watch mode, and execs `src/index.ts`.
+
+## Development Commands
 
 ```bash
-bun screenshot
+bun run typecheck
+bun test
+bun run check
+bun run fix
+WORKBENCH_UI_CWD="$PWD" bun run screenshot
 ```
 
-Screenshots are written to `artifacts/screenshots/`: `workbench.png` (chat
-tab), `workbench-editor.png` (editor tab), and `workbench-sessions.png`
-(second session + second terminal). The script exits non-zero if any
-interaction check fails.
+The screenshot harness drives the real app in a browser-backed PTY and writes
+artifacts under `artifacts/screenshots/`. Point `WORKBENCH_UI_CWD` at this
+package root so the bundled fixtures under `test-harness/` resolve correctly.
 
-## Layout
+## Runtime Shape
 
-```text
-+----------+----------------------------------------------------+
-| Sessions | [ Workbench Chat | Terminal 1 | app-react.tsx ]  [+] |
-|          +----------------------------------------------------+
-| + New    | chat tab:     [ Explorer |  Workbench CLI PTY ]      |
-| agent-1  | terminal tab: [ shell PTY (its own folder)  ]      |
-| agent-2  | file tab:     [ editor                      ]      |
-+----------+----------------------------------------------------+
+Each workspace session owns:
+
+- One or more agent harness tabs backed by persistent tmux sessions.
+- Shell terminal tabs, also persistent across relaunches.
+- File viewer tabs for text, Markdown preview/source, images, PDFs, videos, and
+  Mermaid diagrams.
+- A side pane with the active agent, Explorer, Terminals, and Changes sections.
+
+Agent harnesses are defined in `src/state/harnesses.ts`. The current IDs are
+`claude`, `gemini`, `goose`, `opencode`, and `cursor`; `claude` is the default.
+
+## Runtime Options
+
+```bash
+work [path] [--harness <id>] [--hot]
 ```
 
-Inside the UI:
+- `path` opens a workspace directory.
+- `--harness <id>` / `--agent <id>` selects the default harness for new
+  workspaces.
+- `--hot` (also `--dev` / `--watch`) restarts the UI on source changes while
+  persistent tmux panes reattach.
 
-```text
-Sessions sidebar  one workbench agent per row; click to switch; x closes
-+ New agent       new session dialog with folder autocomplete (Ctrl+N)
-[+] button        top-right menu: New Workbench Chat / New Terminal
-Workbench Chat tab  Explorer + raw `workbench chat` for the active session
-Terminal tabs     the active session's shells (Ctrl+T adds one)
-File tabs         the active session's buffers: editable text with syntax
-                  highlighting, rendered markdown (.md), and decoded images
-                  (.png/.jpg/.gif/...). Images use the kitty graphics protocol
-                  (Unicode placeholders) when the terminal supports it, fall
-                  back to sixel, then to true-color half-block art everywhere
-                  else. Force a mode with WORKBENCH_UI_IMAGE_PROTOCOL=kitty|
-                  sixel|halfblock (auto-detected by default; the screenshot
-                  harness always uses half-block).
-Tab x button      every tab except Workbench Chat closes with a click on its x
-Ctrl+S            save active file tab
-Tab               cycle focus: sessions -> explorer -> CLI (chat tab)
-Esc               return focus to Workbench CLI / editor
-Ctrl+B            toggle sessions sidebar
-Ctrl+W            close active file or terminal tab
-Ctrl+Q            quit workbench
-Ctrl+C            sent to the focused Workbench CLI / terminal
-```
+Useful environment variables:
 
-In the new-agent dialog, the input is pre-filled with the active session's
-folder. Type a path (with `~` and relative paths resolved), use Up/Down to
-choose a directory suggestion, Tab to complete it, Enter to create the agent,
-and Esc to cancel.
+- `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID`
+- `WORKBENCH_UI_CWD`
+- `WORKBENCH_UI_THEME`
+- `WORKBENCH_UI_IMAGE_PROTOCOL=kitty|sixel|halfblock`
+- `WORKBENCH_UI_CELL_ASPECT`
+- `WORKBENCH_CLI_HOT=1`
 
-The Explorer is backed by `fast-glob`, `ignore`, and `chokidar`, follows the
-active session's workspace, respects ignore rules, and workbenches after file
-changes. The workbench shell uses `@opentui/react`.
+## Architecture Notes
 
-All PTYs (each session's Workbench CLI and each terminal tab's shell) render
-with full ANSI colors via `@xterm/headless` and spawn at the exact size of
-their rendered panes. Typing goes to whichever pane has focus.
+`src/app/WorkbenchApp.tsx` owns lifecycle, state mutation, diff polling,
+persistence, and the throttled top-level render. `src/components/Workbench.tsx`
+renders the shell and routes keyboard input. `src/terminal/terminal-panel.ts`
+wraps `@xterm/headless` plus Bun PTYs/tmux, exposing the `TerminalReadable`
+shape consumed by Silvery's `<Terminal>`.
+
+Terminal output should stay on the `TerminalPanel` subscription path. Do not
+route PTY frames through the whole-app render loop; the terminal subtree
+subscribes directly via `useSyncExternalStore` and a revision prop.
+
+For deeper agent-facing guidance, see `../AGENT.md`.

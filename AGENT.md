@@ -1,8 +1,9 @@
 # AGENT.md — workbench-cli
 
 Notes for agents working in `workbench-cli/`. This is the **Bun + React + Silvery
-terminal workbench** (a TUI that drives multiple coding agents). It is distinct
-from the Rust agent documented in the repo-root `AGENTS.md`/`CLAUDE.md`.
+terminal workbench** (a TUI that drives multiple coding-agent CLIs). The real app
+lives under `workbench-ui/`; the repo root mainly holds the installer, launcher,
+public readme, and this agent guide.
 
 ## Layout
 
@@ -115,6 +116,11 @@ being seamless.
   PTY, **not** `input`. Silvery's Kitty-protocol normalizes `input` to base keys
   (`!`→`1`, `A`→`a`); using `input` mangles every shifted symbol/capital. Keep
   `key.text` first.
+- `TerminalPanel.write()` and `paste()` call `snapToBottomIfScrolled()` before
+  forwarding user input. Keep this behavior: if a user scrolls up in a
+  primary-buffer pane, xterm parks `viewportY` above `baseY`; without snapping
+  back on input, later agent output makes the prompt appear to drift downward
+  off the visible pane.
 - **Quick-switch (`Workbench.handleKey`)**: `Option/Alt+1..9` jumps to that tab in
   the active session; `Option/Alt+Shift+1..9` jumps to that session;
   `Option/Alt+Space` cycles forward through sessions (wraps). `key.meta`
@@ -136,15 +142,16 @@ Markdown tabs open as a **rendered Preview** by default and carry a small
 strip); Source shows the line-numbered, syntax-highlighted raw `.md`. The mode is
 per-tab (`EditorTab.mdView`, default `"preview"`), set via
 `actions.setMarkdownView(path, mode)`, and is in-memory only (resets to preview
-on relaunch/hot-reload). File editing is not wired — all file viewers are
-read-only displays.
+on relaunch/hot-reload). File editing is not wired in the UI yet — text viewers
+are scrollable/read-only displays, though the state layer still carries dirty
+buffer/save plumbing for future editor work.
 
 ## Silvery: authority + conformance
 
-The workbench is built on **silvery** (v0.21.0). The authoritative reference is
-`silvery/CLAUDE.md` at the repo root (plus `silvery/docs/guide/*` and the source
-under `silvery/packages/`). Consult it before changing rendering, input, focus,
-theming, or the embedded terminal. Our usage was cross-referenced against it:
+The workbench is built on **silvery** (v0.21.0). Consult the installed package
+types/source plus upstream Silvery docs before changing rendering, input, focus,
+theming, or the embedded terminal. Our usage was cross-referenced against
+Silvery's intended APIs:
 
 Validated as canonical (do not "fix" these — they match silvery's intended API):
 
