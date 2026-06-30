@@ -70,7 +70,7 @@ work
 ```
 
 `workbench-cli` still works too. Open a different directory with
-`work path/to/project`, or choose a different agent with `work --harness cursor`.
+`work path/to/project`, or choose a different agent with `work --harness claude`.
 
 ## Four Commands
 
@@ -89,8 +89,8 @@ top-right `+` menu.
 
 ## What It Does
 
-- Runs coding agents side by side: Claude Code by default, plus Gemini, Goose,
-  OpenCode, and Cursor.
+- Runs coding agents side by side: Cursor by default, plus Claude Code, Gemini,
+  Goose, and OpenCode.
 - Keeps agent and terminal panes alive on a private tmux server, so relaunches
   reattach to the same sessions.
 - Shows files, terminals, and changes together: Agent, Explorer, Terminals, and

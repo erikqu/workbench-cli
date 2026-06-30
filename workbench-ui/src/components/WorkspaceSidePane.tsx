@@ -207,7 +207,7 @@ function AgentButton({
     view.session.harnesses.find(
       (item) => `harness:${item.id}` === view.session.activeMainTab
     ) ?? view.session.harnesses[0];
-  const spec = harnessSpec(harness?.harnessId ?? "claude");
+  const spec = harnessSpec(harness?.harnessId ?? "cursor");
   const active = harness
     ? harnessIdFromTab(view.session.activeMainTab) === harness.id
     : false;

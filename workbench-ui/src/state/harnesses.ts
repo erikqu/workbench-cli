@@ -13,6 +13,14 @@ export interface HarnessSpec {
 
 export const harnessSpecs: HarnessSpec[] = [
   {
+    id: "cursor",
+    label: "Cursor",
+    description: "Cursor Agent CLI",
+    installHint:
+      "Install Cursor CLI and make `cursor-agent` available on PATH.",
+    command: () => ({ command: "cursor-agent" }),
+  },
+  {
     id: "claude",
     label: "Claude Code",
     description: "Anthropic Claude Code CLI",
@@ -43,19 +51,11 @@ export const harnessSpecs: HarnessSpec[] = [
     installHint: "Install OpenCode and make `opencode` available on PATH.",
     command: () => ({ command: "opencode" }),
   },
-  {
-    id: "cursor",
-    label: "Cursor",
-    description: "Cursor Agent CLI",
-    installHint:
-      "Install Cursor CLI and make `cursor-agent` available on PATH.",
-    command: () => ({ command: "cursor-agent" }),
-  },
 ];
 
 export function defaultHarnessId() {
   return (
-    Bun.env.WORKBENCH_UI_HARNESS_ID || Bun.env.WORKBENCH_UI_AGENT_ID || "claude"
+    Bun.env.WORKBENCH_UI_HARNESS_ID || Bun.env.WORKBENCH_UI_AGENT_ID || "cursor"
   );
 }
 
