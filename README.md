@@ -11,8 +11,9 @@
 888P     Y888  "Y88P"  888     888  888 88888P"   "Y88888 888  888  "Y8888P 888  888
 ```
 
-A clickable terminal workbench for running coding-agent CLIs side by side. Each
-workspace gets a persistent, tmux-backed agent pane, a file explorer, live
+**A terminal workbench for running multiple coding agents side by side — tmux-backed, fast, no Electron.**
+
+Each workspace gets a persistent, tmux-backed agent pane, a file explorer, live
 changes, extra terminals, and rich file viewers in one full-screen TUI.
 
 ```bash
@@ -24,15 +25,31 @@ curl -fsSL https://ehq.so/install | bash
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
 
+## Why
+
+Terminals are the best UI for coding agents. The agent CLIs are already great;
+they just weren't built to run several at once, keep them alive across restarts,
+and show you what they changed — without a browser or Electron.
+
+| | Raw agent CLI | `tmux` + agents | Browser agent UIs | **Workbench CLI** |
+| --- | :---: | :---: | :---: | :---: |
+| Multiple agents side by side | — | manual | some | **yes** |
+| Sessions survive relaunch | — | yes | — | **yes** |
+| Files + live changes in one view | — | — | some | **yes** |
+| Rich viewers (PDF, images, Mermaid, video) | — | — | yes | **yes** |
+| No Electron / no browser | **yes** | **yes** | — | **yes** |
+| Mouse + keyboard, full-screen TUI | — | — | — | **yes** |
+
 ## Terminal Support
 
-🚨 **Workbench CLI is supported for use in [Ghostty](https://ghostty.org/). Use
-Ghostty for the intended experience.** 🚨
+🚨 **Workbench CLI is built for [Ghostty](https://ghostty.org). Use Ghostty for
+the intended experience.** 🚨
 
-All other terminal emulators are experimental. Workbench CLI may launch in other
-terminals, including Kitty-compatible or Sixel-capable terminals, but rendering,
+It also launches in other terminals — Kitty-compatible or Sixel-capable ones
+tend to work best. Anything other than Ghostty is **experimental**: rendering,
 mouse input, images, cursor behavior, and tmux passthrough may break or drift.
-Bug reports and fixes are welcome, but Ghostty is the only supported target.
+Bug reports and fixes for other terminals are welcome; Ghostty is the one we
+develop and test against.
 
 ## Install
 
