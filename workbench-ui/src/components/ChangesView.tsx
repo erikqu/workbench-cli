@@ -7,6 +7,7 @@ import {
   useBoxRectDangerously,
   useInput,
 } from "silvery";
+import { isChangesTab } from "../state/types";
 import type { DiffFile, DiffLine, FilePatch, SessionDiff } from "../text/diff";
 import { colors } from "../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
@@ -79,7 +80,12 @@ export function ChangesSidebarList({
   actions: WorkbenchActions;
 }) {
   const diff = view.diff;
-  const focused = view.state.focus === "editor";
+  // Only claim arrow keys when the Changes tab is the active main content.
+  // Otherwise the editor focus is showing a file/PDF/image tab, whose own
+  // viewer owns up/down — without this guard the sidebar diff list would steal
+  // those keys and cycle diffs while a PDF (or other viewer) is open.
+  const active =
+    view.state.focus === "editor" && isChangesTab(view.session.activeMainTab);
   const files = diff?.files ?? [];
   const selectedPath =
     files.find((file) => file.path === view.session.selectedDiffPath)?.path ??
@@ -105,7 +111,7 @@ export function ChangesSidebarList({
       ) : (
         <FileListBody
           actions={actions}
-          active={focused}
+          active={active}
           files={files}
           selectedPath={selectedPath}
         />
