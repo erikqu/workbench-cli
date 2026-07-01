@@ -31,10 +31,10 @@ export function PdfViewer({
     if (!focused) {
       return;
     }
-    if (key.pageUp) {
+    if (key.pageUp || key.upArrow) {
       changePage(-1);
     }
-    if (key.pageDown) {
+    if (key.pageDown || key.downArrow) {
       changePage(1);
     }
   });
@@ -62,7 +62,7 @@ export function PdfViewer({
         <Text color={colors.dim}>{rel}</Text>
         <Text
           color={colors.dim}
-        >{`PDF page ${page}${pageCount ? ` / ${pageCount}` : ""}  PgUp/PgDn`}</Text>
+        >{`PDF page ${page}${pageCount ? ` / ${pageCount}` : ""}  ↑↓/PgUp/PgDn`}</Text>
       </Box>
       <Box flexGrow={1} minWidth={1} overflow="hidden">
         <MeasuredPdfContent
