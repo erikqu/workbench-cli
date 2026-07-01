@@ -53,6 +53,29 @@ export function getCellAspect(): number {
   return cellAspect;
 }
 
+// Real device pixels per terminal cell, learned from the startup terminal probe
+// (CSI 14 t / 16 t / 18 t replies). On HiDPI/Retina displays this reflects the
+// backing-store density, so callers that rasterize to a cell region (e.g. the
+// PDF viewer) can target the monitor's native resolution instead of guessing.
+// Undefined until the probe reports it (or on terminals that stay silent).
+let cellPixelSize: { w: number; h: number } | undefined;
+
+export function setCellPixelSize(value: { w: number; h: number }): void {
+  if (
+    Number.isFinite(value.w) &&
+    Number.isFinite(value.h) &&
+    value.w > 0 &&
+    value.h > 0
+  ) {
+    cellPixelSize = { w: value.w, h: value.h };
+  }
+}
+
+// Native device pixels per cell column, or undefined if unknown.
+export function getCellPixelWidth(): number | undefined {
+  return cellPixelSize?.w;
+}
+
 const MAX_ART_COLS = 100;
 // Cap the pixel size we transmit/encode so escapes stay small.
 const MAX_TRANSMIT_DIM = 720;

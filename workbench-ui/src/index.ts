@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 import { runWorkbench } from "./app/WorkbenchApp";
-import { setCellAspect } from "./media/image";
+import { setCellAspect, setCellPixelSize } from "./media/image";
 import {
   inMultiplexer,
   probedGraphicsSupport,
@@ -60,6 +60,9 @@ if (process.env.WORKBENCH_UI_SCREENSHOT !== "1") {
     const probe = await probeTerminal();
     if (probe?.aspect && !process.env.WORKBENCH_UI_CELL_ASPECT) {
       setCellAspect(probe.aspect);
+    }
+    if (probe?.cellPx) {
+      setCellPixelSize(probe.cellPx);
     }
     if (probe && imageOverride !== "halfblock") {
       setGraphicsSupport({ kitty: probe.kitty, sixel: probe.sixel });

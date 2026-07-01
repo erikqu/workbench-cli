@@ -4,6 +4,12 @@ import { inMultiplexer, wrapForMultiplexer } from "../media/image-protocol";
 export interface TerminalProbe {
   // Cell width/height ratio derived from pixel-geometry replies, or null.
   aspect: number | null;
+  // Real device pixels per cell (width/height), from the terminal's own
+  // pixel-geometry replies. This is the actual on-screen density — on HiDPI /
+  // Retina displays Ghostty reports the backing-store pixels — so rasterizing a
+  // page at `cols * cellPx.w` matches the monitor's native resolution. Null when
+  // the terminal doesn't answer the pixel-geometry queries.
+  cellPx: { w: number; h: number } | null;
   // Terminal answered the Kitty graphics query positively.
   kitty: boolean;
   // DA1 reply advertised Sixel (attribute "4").
@@ -42,6 +48,7 @@ export async function probeTerminal(
     let settled = false;
     let kitty = false;
     let aspect: number | null = null;
+    let cellPx: { w: number; h: number } | null = null;
     let areaPx: { w: number; h: number } | undefined;
     let cells: { cols: number; rows: number } | undefined;
     let grace: ReturnType<typeof setTimeout> | undefined;
@@ -77,9 +84,6 @@ export async function probeTerminal(
     };
 
     const deriveAspect = () => {
-      if (aspect !== null) {
-        return;
-      }
       if (
         areaPx &&
         cells &&
@@ -88,7 +92,15 @@ export async function probeTerminal(
         cells.cols > 0 &&
         cells.rows > 0
       ) {
-        aspect = areaPx.w / cells.cols / (areaPx.h / cells.rows);
+        const w = areaPx.w / cells.cols;
+        const h = areaPx.h / cells.rows;
+        if (aspect === null) {
+          aspect = w / h;
+        }
+        // The text-area reply (CSI 14 t) divided by the cell grid (CSI 18 t)
+        // gives per-cell device pixels even on terminals that don't answer the
+        // direct cell-size query (CSI 16 t).
+        cellPx ??= { w, h };
       }
     };
 
@@ -97,11 +109,12 @@ export async function probeTerminal(
 
       // Cell pixel geometry (CSI 16 t -> CSI 6 ; h ; w t is the direct answer).
       const cell = buffer.match(/\x1b\[6;(\d+);(\d+)t/);
-      if (cell && aspect === null) {
+      if (cell) {
         const h = Number(cell[1]);
         const w = Number(cell[2]);
         if (h > 0 && w > 0) {
-          aspect = w / h;
+          aspect ??= w / h;
+          cellPx ??= { w, h };
         }
       }
       const area = buffer.match(/\x1b\[4;(\d+);(\d+)t/);
@@ -124,11 +137,11 @@ export async function probeTerminal(
       if (/\x1b\[\?[0-9;]+c/.test(buffer)) {
         const sixel = sixelFromBuffer();
         if (kitty || !inMultiplexer()) {
-          return finish({ aspect, kitty, sixel });
+          return finish({ aspect, cellPx, kitty, sixel });
         }
         if (!grace) {
           grace = setTimeout(
-            () => finish({ aspect, kitty, sixel: sixelFromBuffer() }),
+            () => finish({ aspect, cellPx, kitty, sixel: sixelFromBuffer() }),
             90
           );
         }
@@ -136,7 +149,7 @@ export async function probeTerminal(
     };
 
     const timer = setTimeout(
-      () => finish({ aspect, kitty, sixel: sixelFromBuffer() }),
+      () => finish({ aspect, cellPx, kitty, sixel: sixelFromBuffer() }),
       timeoutMs
     );
 

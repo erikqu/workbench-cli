@@ -2,10 +2,17 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getCellPixelWidth } from "./image";
 
 const previewDir = join(tmpdir(), "workbench-ui-pdf-previews");
-const maxRasterWidth = 1800;
+// Ceiling on the rasterized page width. Sized for a HiDPI/Retina pane: a wide
+// pane on a 2x display is ~2000-2600 device px, so 3072 leaves headroom without
+// letting a huge monitor blow up decode/transmit cost.
+const maxRasterWidth = 3072;
 const minRasterWidth = 720;
+// Fallback pixels-per-column when the terminal never reported its real cell
+// geometry (see getCellPixelWidth). Matches the original heuristic.
+const fallbackCellPxWidth = 10;
 const pageCountCache = new Map<string, Promise<number | undefined>>();
 
 export interface PdfPreview {
@@ -26,9 +33,14 @@ export async function preparePdfPreview(
     1,
     pageCount ?? Number.MAX_SAFE_INTEGER
   );
+  // Target the pane's real device pixels: columns * native pixels-per-column, as
+  // reported by the terminal probe. This makes the page as sharp as the monitor
+  // it's shown on, instead of the old fixed 10px/column guess. Falls back to the
+  // heuristic when the terminal never reported its cell geometry.
+  const perColumn = getCellPixelWidth() ?? fallbackCellPxWidth;
   const pixelWidth = Math.min(
     maxRasterWidth,
-    Math.max(minRasterWidth, Math.floor(maxCols) * 10)
+    Math.max(minRasterWidth, Math.round(Math.floor(maxCols) * perColumn))
   );
   const imagePath = cachePath(path, metadata, selectedPage, pixelWidth);
 
