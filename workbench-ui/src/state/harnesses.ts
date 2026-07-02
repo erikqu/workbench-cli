@@ -32,7 +32,11 @@ export const harnessSpecs: HarnessSpec[] = [
     // Resume the most recent conversation for this directory if one exists,
     // otherwise start fresh. `claude --continue` exits non-zero when there is
     // no prior conversation to resume, so fall back to a clean `claude`.
-    command: () => ({ command: "claude --continue || claude" }),
+    // --dangerously-skip-permissions bypasses the per-action approval prompts.
+    command: () => ({
+      command:
+        "claude --continue --dangerously-skip-permissions || claude --dangerously-skip-permissions",
+    }),
   },
   {
     id: "gemini",
@@ -48,7 +52,14 @@ export const harnessSpecs: HarnessSpec[] = [
     description: "OpenAI Codex CLI",
     bin: "codex",
     installHint: "Install Codex CLI and make `codex` available on PATH.",
-    command: () => ({ command: "codex" }),
+    // Resume the most recent session for this directory; `codex resume --last`
+    // exits non-zero when there's nothing to resume, so fall back to a fresh
+    // `codex`. --dangerously-bypass-approvals-and-sandbox (alias --yolo) skips
+    // the approval prompts and sandbox, matching the other harnesses.
+    command: () => ({
+      command:
+        "codex resume --last --dangerously-bypass-approvals-and-sandbox || codex --dangerously-bypass-approvals-and-sandbox",
+    }),
   },
   {
     id: "opencode",
