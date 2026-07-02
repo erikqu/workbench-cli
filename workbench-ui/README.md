@@ -49,7 +49,8 @@ Each workspace session owns:
 - A side pane with the active agent, Explorer, Terminals, and Changes sections.
 
 Agent harnesses are defined in `src/state/harnesses.ts`. The current IDs are
-`claude`, `gemini`, `goose`, `opencode`, and `cursor`; `claude` is the default.
+`cursor`, `claude`, `gemini`, `codex`, and `opencode`. New users default to
+whichever of Cursor or Claude Code is installed on `PATH` (Cursor preferred).
 
 ## Runtime Options
 

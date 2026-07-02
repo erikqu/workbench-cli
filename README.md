@@ -90,7 +90,7 @@ top-right `+` menu.
 ## What It Does
 
 - Runs coding agents side by side: Cursor by default, plus Claude Code, Gemini,
-  Goose, and OpenCode.
+  Codex, and OpenCode.
 - Keeps agent and terminal panes alive on a private tmux server, so relaunches
   reattach to the same sessions.
 - Shows files, terminals, and changes together: Agent, Explorer, Terminals, and

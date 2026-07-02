@@ -193,10 +193,11 @@ the rationale if you touch them):
 
 ## Harnesses
 
-Agent backends are defined in `src/state/harnesses.ts`: `claude`, `gemini`,
-`goose`, `opencode`, `cursor`, ... Each maps to a `command()` spawned in the
-session's cwd. `claude` (Claude Code) is the default; pick another with
-`--harness <id>` / `--agent <id>` or `WORKBENCH_UI_HARNESS_ID`.
+Agent backends are defined in `src/state/harnesses.ts`: `cursor`, `claude`,
+`gemini`, `codex`, `opencode`, ... Each maps to a `command()` spawned in the
+session's cwd. New users default to whichever of Cursor or Claude Code is on
+`PATH` (`defaultHarnessId()` probes each spec's `bin`, Cursor preferred); pick
+another with `--harness <id>` / `--agent <id>` or `WORKBENCH_UI_HARNESS_ID`.
 
 ## Screenshot suite & fixtures (gotcha)
 

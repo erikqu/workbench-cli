@@ -44,7 +44,7 @@ work [path] [--harness <id>] [--hot]
 
 - `path` opens a workspace directory (defaults to the current directory).
 - `--harness <id>` / `--agent <id>` picks the default agent: `claude`,
-  `gemini`, `goose`, `opencode`, or `cursor`.
+  `gemini`, `codex`, `opencode`, or `cursor`.
 - `--hot` (aliases `--dev`, `--watch`) restarts the UI on source changes while
   tmux panes reattach.
 

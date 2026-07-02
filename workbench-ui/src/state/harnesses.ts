@@ -43,12 +43,12 @@ export const harnessSpecs: HarnessSpec[] = [
     command: () => ({ command: "gemini" }),
   },
   {
-    id: "goose",
-    label: "Goose",
-    description: "Block Goose CLI",
-    bin: "goose",
-    installHint: "Install Goose and make `goose` available on PATH.",
-    command: () => ({ command: "goose" }),
+    id: "codex",
+    label: "Codex",
+    description: "OpenAI Codex CLI",
+    bin: "codex",
+    installHint: "Install Codex CLI and make `codex` available on PATH.",
+    command: () => ({ command: "codex" }),
   },
   {
     id: "opencode",
