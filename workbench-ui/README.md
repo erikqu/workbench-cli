@@ -11,6 +11,12 @@ supported terminal target for Workbench CLI; all other terminal emulators are
 experimental and may differ in rendering, images, cursor behavior, mouse input,
 or tmux passthrough.
 
+Workbench is a terminal UI, so live harness panes use the font family and size
+configured in the outer terminal emulator. For readability, use a clear
+monospace font such as JetBrains Mono, Cascadia Mono, Berkeley Mono, or a
+similar terminal font at 14-16 px. Workbench can adjust colors and ANSI styling,
+but it cannot change the outer terminal's font face from inside the app.
+
 ## Run Locally
 
 From `workbench-ui/`:
@@ -37,6 +43,8 @@ WORKBENCH_UI_CWD="$PWD" bun run screenshot
 The screenshot harness drives the real app in a browser-backed PTY and writes
 artifacts under `artifacts/screenshots/`. Point `WORKBENCH_UI_CWD` at this
 package root so the bundled fixtures under `test-harness/` resolve correctly.
+Browser harness font testing can be done with
+`WORKBENCH_SCREENSHOT_QUERY='fontSize=16&lineHeight=1.15' bun run screenshot`.
 
 ## Runtime Shape
 
@@ -71,7 +79,9 @@ Useful environment variables:
 - `WORKBENCH_UI_THEME`
 - `WORKBENCH_UI_IMAGE_PROTOCOL=kitty|sixel|halfblock`
 - `WORKBENCH_UI_CELL_ASPECT`
+- `WORKBENCH_UI_PRESERVE_DIM=1`
 - `WORKBENCH_CLI_HOT=1`
+- `WORKBENCH_SCREENSHOT_QUERY='fontSize=16&fontFamily=JetBrains%20Mono'`
 
 ## Architecture Notes
 

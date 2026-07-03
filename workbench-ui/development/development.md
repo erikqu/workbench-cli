@@ -60,6 +60,8 @@ install alias.
 | `WORKBENCH_UI_THEME` | Initial theme name |
 | `WORKBENCH_UI_IMAGE_PROTOCOL` | Force image rendering: `kitty`, `sixel`, or `halfblock` |
 | `WORKBENCH_UI_CELL_ASPECT` | Override terminal cell aspect ratio for image sizing |
+| `WORKBENCH_UI_PRESERVE_DIM` | Set to `1` to preserve SGR dim in harness and terminal panes |
+| `WORKBENCH_SCREENSHOT_QUERY` | Query string passed to the browser screenshot harness, e.g. `fontSize=16&lineHeight=1.15` |
 | `WORKBENCH_CLI_HOT` | Set to `1` to enable hot reload |
 
 Persistent state is saved under `~/.workbench`, and the private tmux server uses

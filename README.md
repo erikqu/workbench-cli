@@ -51,6 +51,11 @@ mouse input, images, cursor behavior, and tmux passthrough may break or drift.
 Bug reports and fixes for other terminals are welcome; Ghostty is the one we
 develop and test against.
 
+Workbench renders inside your terminal emulator, so harness font family and
+size are controlled by the terminal profile. A clear monospace font such as
+JetBrains Mono, Cascadia Mono, Berkeley Mono, or similar at 14-16 px is the
+recommended starting point.
+
 ## Install
 
 ```bash

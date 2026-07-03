@@ -21,17 +21,25 @@
     <script type="module">
     import { Terminal } from "/node_modules/@xterm/xterm/lib/xterm.mjs";
 
+    const params = new URLSearchParams(location.search);
+    const fontFamily =
+      option("fontFamily") ??
+      "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace";
+
     const term = new Terminal({
       cols: 180,
       rows: 40,
       convertEol: true,
       cursorBlink: false,
-      fontFamily:
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      fontSize: 14,
+      fontFamily,
+      fontSize: numericOption("fontSize", 15),
+      fontWeight: option("fontWeight") ?? "400",
+      fontWeightBold: option("fontWeightBold") ?? "700",
+      letterSpacing: numericOption("letterSpacing", 0),
+      lineHeight: numericOption("lineHeight", 1.12),
       theme: {
         background: "#1e1e1e",
-        foreground: "#d4d4d4",
+        foreground: "#eeece6",
       },
     });
 
@@ -70,6 +78,15 @@
       return { rgb: cell.isFgRGB(), color: cell.getFgColor() };
     };
     window.__workbenchReady = true;
+
+    function option(name) {
+      return params.get(name) ?? localStorage.getItem(`workbench-${name}`);
+    }
+
+    function numericOption(name, fallback) {
+      const value = Number(option(name));
+      return Number.isFinite(value) && value > 0 ? value : fallback;
+    }
     </script>
   </body>
 </html>

@@ -89,12 +89,36 @@ function rgb(hex: string): { r: number; g: number; b: number } {
 const TERM_FG = () => rgb(colors.termFg);
 const TERM_FG_BOLD = () => rgb(colors.termFgBold);
 const TERM_BG = () => rgb(colors.termBg);
+// Host terminals vary wildly in how faint they render SGR dim. Agent CLIs use
+// dim for a lot of secondary text, so default to readability unless explicitly
+// asked to preserve exact styling.
+const PRESERVE_DIM = Bun.env.WORKBENCH_UI_PRESERVE_DIM === "1";
 
-// High-contrast ANSI palette for agent/terminal output. Saturated normals
-// (0-7) that stay legible on the warm near-black background, paired with
-// clearly lighter brights (8-15) so the bold -> bright promotion in cellColor()
-// reads as genuinely bolder. Blue is aligned to the app's #5c9cf5 secondary.
-const ANSI_16 = [
+// High-contrast ANSI foreground palette for agent/terminal output. Saturated
+// normals (0-7) that stay legible on the warm near-black background, paired
+// with clearly lighter brights (8-15) so the bold -> bright promotion in
+// cellColor() reads as genuinely bolder. Blue is aligned to the app's #5c9cf5
+// secondary.
+const ANSI_FG_16 = [
+  "#6f6f78", // 0  black
+  "#ff6b6b", // 1  red
+  "#5fd75f", // 2  green
+  "#ffd152", // 3  yellow
+  "#5c9cf5", // 4  blue
+  "#c792ea", // 5  magenta
+  "#36d6e7", // 6  cyan
+  "#eeece6", // 7  white (= terminal fg)
+  "#9696a0", // 8  bright black
+  "#ff8787", // 9  bright red
+  "#87ef87", // 10 bright green
+  "#ffe08a", // 11 bright yellow
+  "#8fbcff", // 12 bright blue
+  "#ddb6ff", // 13 bright magenta
+  "#79e7f3", // 14 bright cyan
+  "#ffffff", // 15 bright white
+];
+
+const ANSI_BG_16 = [
   "#1b1b1f", // 0  black
   "#ff6b6b", // 1  red
   "#5fd75f", // 2  green
@@ -102,7 +126,7 @@ const ANSI_16 = [
   "#5c9cf5", // 4  blue
   "#c792ea", // 5  magenta
   "#36d6e7", // 6  cyan
-  "#e4e2dc", // 7  white (= terminal fg)
+  "#eeece6", // 7  white
   "#6c6c74", // 8  bright black
   "#ff8787", // 9  bright red
   "#87ef87", // 10 bright green
@@ -114,7 +138,7 @@ const ANSI_16 = [
 ];
 
 const PALETTE_256 = (() => {
-  const palette = ANSI_16.map(hexToRgb);
+  const palette = ANSI_FG_16.map(hexToRgb);
   const levels = [0, 95, 135, 175, 215, 255];
   for (const r of levels) {
     for (const g of levels) {
@@ -509,7 +533,7 @@ function terminalCell(cell: IBufferCell): TerminalCell {
     fg: fg ?? null,
     bg: bg ?? null,
     bold: !!cell.isBold(),
-    dim: !!cell.isDim(),
+    dim: PRESERVE_DIM && !!cell.isDim(),
     italic: !!cell.isItalic(),
     underline: !!cell.isUnderline(),
     strikethrough: !!cell.isStrikethrough(),
@@ -557,6 +581,9 @@ function cellColor(
   // CLIs lean on bold+color for headers/status; without this it looks muted.
   if (layer === "fg" && color < 8 && cell.isBold()) {
     color += 8;
+  }
+  if (layer === "bg" && color < ANSI_BG_16.length) {
+    return rgb(ANSI_BG_16[color]);
   }
   return PALETTE_256[color] ?? undefined;
 }

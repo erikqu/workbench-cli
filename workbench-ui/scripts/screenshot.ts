@@ -5,6 +5,7 @@ import { chromium, type Page } from "@playwright/test";
 const root = join(import.meta.dir, "..");
 const screenshotDir = join(root, "artifacts", "screenshots");
 const port = Number(Bun.env.WORKBENCH_SCREENSHOT_PORT ?? "4177");
+const screenshotQuery = normalizeQuery(Bun.env.WORKBENCH_SCREENSHOT_QUERY);
 
 mkdirSync(screenshotDir, { recursive: true });
 
@@ -30,7 +31,7 @@ try {
     viewport: { width: 1840, height: 900 },
     deviceScaleFactor: 1,
   });
-  await page.goto(`http://127.0.0.1:${port}`);
+  await page.goto(`http://127.0.0.1:${port}/${screenshotQuery}`);
   await page.waitForFunction(
     () =>
       Boolean(
@@ -301,6 +302,13 @@ try {
 if (failures.length > 0) {
   console.error(`FAILED: ${failures.join(", ")}`);
   process.exit(1);
+}
+
+function normalizeQuery(query: string | undefined) {
+  if (!query) {
+    return "";
+  }
+  return query.startsWith("?") ? query : `?${query}`;
 }
 
 function report(name: string, ok: boolean) {
