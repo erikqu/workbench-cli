@@ -184,6 +184,14 @@ export class TerminalPanel implements TerminalReadable {
       },
     });
     this.terminal.onWriteParsed(() => {
+      // Full-screen TUIs such as Codex wrap redraws in synchronized-output mode
+      // (DEC private mode 2026). Do not expose partially parsed frames while the
+      // mode is active; repaint once the closing sequence has been processed.
+      // Rendering every PTY chunk defeats the mode and produces transient stale
+      // borders/text ("artifacts") during Codex's frequent composer redraws.
+      if (this.terminal.modes.synchronizedOutputMode) {
+        return;
+      }
       this.updateRevision = ++revisionCounter;
       this.emit();
     });

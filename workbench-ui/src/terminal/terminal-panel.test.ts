@@ -15,6 +15,22 @@ function feed(panel: TerminalPanel, data: string): Promise<void> {
   return new Promise((resolve) => rawTerminal(panel).write(data, resolve));
 }
 
+describe("TerminalPanel synchronized output", () => {
+  test("publishes only the completed TUI frame", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24);
+    const initialRevision = panel.getSnapshot();
+
+    await feed(panel, "\x1b[?2026hfirst");
+    expect(panel.getSnapshot()).toBe(initialRevision);
+
+    await feed(panel, " second");
+    expect(panel.getSnapshot()).toBe(initialRevision);
+
+    await feed(panel, "\x1b[?2026l");
+    expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
+  });
+});
+
 describe("TerminalPanel.getCursor", () => {
   test("reports a visible caret at the cursor position", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24);

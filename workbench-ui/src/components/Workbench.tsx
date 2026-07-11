@@ -398,6 +398,7 @@ function HarnessView({
       borderStyle="round"
       flexDirection="column"
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onMouseDown={(event) => {
         actions.focus("harness");
@@ -465,6 +466,7 @@ function TerminalView({
       borderStyle="round"
       flexDirection="column"
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onMouseDown={(event) => {
         actions.focus("terminal");
@@ -516,6 +518,7 @@ function TerminalGrid({
   return (
     <Box
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onWheel={(event) => {
         if (
