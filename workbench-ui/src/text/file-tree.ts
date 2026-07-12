@@ -29,7 +29,12 @@ export function buildExplorerEntries(
   expandedDirs: Set<string>,
   maxEntries = 500
 ): FileTreeEntry[] {
-  const shouldIgnore = createExplorerIgnore(rootPath);
+  // A file explorer should expose local outputs such as gitignored `runs/` and
+  // `data/` directories. Keep only the built-in heavyweight exclusions here;
+  // diff/snapshot code uses the default matcher, which still respects gitignore.
+  const shouldIgnore = createExplorerIgnore(rootPath, {
+    respectGitignore: false,
+  });
   const entries: FileTreeEntry[] = [];
 
   const readDir = (dirPath: string) => {
@@ -178,15 +183,22 @@ const ignoreCache = new Map<
   { mtimeMs: number; matcher: (path: string) => boolean }
 >();
 
-export function createExplorerIgnore(rootPath: string) {
+export function createExplorerIgnore(
+  rootPath: string,
+  options: { respectGitignore?: boolean } = {}
+) {
+  const respectGitignore = options.respectGitignore ?? true;
   const gitignorePath = resolve(rootPath, ".gitignore");
   let mtimeMs = 0;
-  try {
-    mtimeMs = statSync(gitignorePath).mtimeMs;
-  } catch {
-    // No .gitignore; mtimeMs stays 0.
+  if (respectGitignore) {
+    try {
+      mtimeMs = statSync(gitignorePath).mtimeMs;
+    } catch {
+      // No .gitignore; mtimeMs stays 0.
+    }
   }
-  const cached = ignoreCache.get(rootPath);
+  const cacheKey = `${rootPath}\0${respectGitignore ? "gitignore" : "builtin"}`;
+  const cached = ignoreCache.get(cacheKey);
   if (cached && cached.mtimeMs === mtimeMs) {
     return cached.matcher;
   }
@@ -195,7 +207,7 @@ export function createExplorerIgnore(rootPath: string) {
   for (const name of ignored) {
     ig.add([`${name}/`, `${name}/**`, `**/${name}/`, `**/${name}/**`]);
   }
-  if (mtimeMs > 0) {
+  if (respectGitignore && mtimeMs > 0) {
     ig.add(readFileSync(gitignorePath, "utf8"));
   }
 
@@ -211,7 +223,7 @@ export function createExplorerIgnore(rootPath: string) {
     }
     return ig.ignores(relPath);
   };
-  ignoreCache.set(rootPath, { mtimeMs, matcher });
+  ignoreCache.set(cacheKey, { mtimeMs, matcher });
   return matcher;
 }
 

@@ -831,7 +831,9 @@ export class ReactWorkbenchApp {
     }
     void this.explorerWatcher?.close();
     this.watchedCwd = signature;
-    const shouldIgnore = createExplorerIgnore(cwd);
+    const shouldIgnore = createExplorerIgnore(cwd, {
+      respectGitignore: false,
+    });
     this.explorerWatcher = chokidar
       .watch(paths, {
         depth: 0,
