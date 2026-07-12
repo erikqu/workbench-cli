@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { useRef } from "react";
 import {
   Badge,
@@ -7,9 +6,9 @@ import {
   ListView,
   type ListViewHandle,
   Text,
+  truncateText,
   useBoxRectDangerously,
 } from "silvery";
-import { harnessSpec } from "../state/harnesses";
 import type { AgentSession } from "../state/types";
 import type { SessionDiff } from "../text/diff";
 import { colors, THEME_LABELS } from "../ui/theme";
@@ -17,7 +16,8 @@ import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
 const sidebarWidth = 26;
 const collapsedWidth = 3;
-const pathWidth = sidebarWidth - 4;
+// Leaves room for sidebar padding, the shortcut index, a gap, and the close x.
+const sessionNameMaxWidth = sidebarWidth - 9;
 
 export function SessionsSidebar({
   view,
@@ -282,15 +282,20 @@ function SessionRow({
       onClick={select}
       paddingLeft={1}
     >
-      <Box flexDirection="row" height={1} justifyContent="space-between">
-        <Box flexDirection="row" minWidth={1}>
+      <Box flexDirection="row" height={1}>
+        <Box flexDirection="row" flexGrow={1} marginRight={1} minWidth={1}>
           {hint ? (
             <Text
               color={active ? colors.accent : colors.dim}
             >{`${hint} `}</Text>
           ) : null}
-          <Text color={active ? colors.accent : colors.text} wrap={false}>
-            {session.name}
+          <Text
+            color={active ? colors.accent : colors.text}
+            flexShrink={1}
+            minWidth={1}
+            wrap={false}
+          >
+            {truncateText(session.name, sessionNameMaxWidth, "...")}
           </Text>
         </Box>
         {canClose ? (
@@ -300,37 +305,12 @@ function SessionRow({
         ) : null}
       </Box>
       {hasChanges ? (
-        <Box flexDirection="row" height={1}>
-          <Badge label={`+${diff!.totalAdded}`} variant="success" />
+        <Box flexDirection="row" height={1} justifyContent="flex-end">
+          <Badge label={`+${diff.totalAdded}`} variant="success" />
           <Text> </Text>
-          <Badge label={`-${diff!.totalDeleted}`} variant="error" />
-          <Text color={colors.dim} wrap={false}>
-            {` ${activeHarnessLabel(session)}`}
-          </Text>
+          <Badge label={`-${diff.totalDeleted}`} variant="error" />
         </Box>
-      ) : (
-        <Text
-          color={colors.dim}
-        >{`${activeHarnessLabel(session)} | ${shortenPath(session.cwd)}`}</Text>
-      )}
+      ) : null}
     </Box>
   );
-}
-
-function activeHarnessLabel(session: AgentSession) {
-  const active = session.harnesses.find(
-    (harness) => `harness:${harness.id}` === session.activeMainTab
-  );
-  return harnessSpec(
-    active?.harnessId ?? session.harnesses[0]?.harnessId ?? "workbench"
-  ).label;
-}
-
-function shortenPath(path: string) {
-  const home = homedir();
-  const display = path.startsWith(home) ? `~${path.slice(home.length)}` : path;
-  if (display.length <= pathWidth) {
-    return display;
-  }
-  return `..${display.slice(display.length - pathWidth + 2)}`;
 }
