@@ -10,6 +10,7 @@ import {
   Text,
   useBoxRectDangerously,
   useInput,
+  useWindowSize,
 } from "silvery";
 import { harnessSpec } from "../state/harnesses";
 import { focusForMainTab } from "../state/state";
@@ -557,8 +558,8 @@ function MeasuredTerminalGrid({
   scroll(lines: number): void;
 }) {
   const rect = useBoxRectDangerously();
-  const cols = Math.max(1, Math.floor(rect.width));
-  const rows = Math.max(1, Math.floor(rect.height));
+  const windowSize = useWindowSize();
+  const { cols, rows } = terminalGridSize(rect, windowSize);
   // Subscribe to the panel directly so terminal output repaints ONLY this
   // subtree. Previously every PTY frame bumped the whole-app view and re-ran the
   // entire Workbench render (sidebar, tabs, explorer, ...) just to redraw the
@@ -620,13 +621,29 @@ function MeasuredTerminalGrid({
       cols={cols}
       cursor={focused}
       onMouse={onMouse}
-      onResize={resize}
       revision={revision}
       rows={rows}
       selectable
       terminal={panel}
     />
   );
+}
+
+export function terminalGridSize(
+  rect: { x: number; y: number; width: number; height: number },
+  windowSize: { columns: number; rows: number }
+): { cols: number; rows: number } {
+  const x = Math.max(0, Math.floor(rect.x));
+  const y = Math.max(0, Math.floor(rect.y));
+  // TerminalGrid always sits inside a framed pane. Keep its trailing edge one
+  // cell inside the host window so a stale flex measurement cannot place the
+  // PTY (and its composer) underneath the pane's right or bottom border.
+  const visibleCols = Math.max(1, Math.floor(windowSize.columns) - x - 1);
+  const visibleRows = Math.max(1, Math.floor(windowSize.rows) - y - 1);
+  return {
+    cols: Math.max(1, Math.min(Math.floor(rect.width), visibleCols)),
+    rows: Math.max(1, Math.min(Math.floor(rect.height), visibleRows)),
+  };
 }
 
 function PlusButton({

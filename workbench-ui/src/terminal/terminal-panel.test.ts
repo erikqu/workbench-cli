@@ -117,4 +117,32 @@ describe("TerminalPanel input re-anchors the viewport", () => {
     panel.write("x");
     expect(buffer.viewportY).toBe(buffer.baseY);
   });
+
+  test("repairs viewport drift while output following is active", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh");
+    const buffer = activeBuffer(panel);
+
+    // Bypass the panel's explicit-scroll path to model an xterm viewport that
+    // drifted during a resize or redraw while it was still following output.
+    (
+      rawTerminal(panel) as unknown as { scrollLines(lines: number): void }
+    ).scrollLines(-2);
+    expect(buffer.viewportY).toBeLessThan(buffer.baseY);
+
+    await feed(panel, "\r\ni");
+    expect(buffer.viewportY).toBe(buffer.baseY);
+  });
+
+  test("preserves intentional scrollback while new output arrives", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh");
+    const buffer = activeBuffer(panel);
+
+    panel.scrollLines(-2);
+    expect(buffer.viewportY).toBeLessThan(buffer.baseY);
+
+    await feed(panel, "\r\ni");
+    expect(buffer.viewportY).toBeLessThan(buffer.baseY);
+  });
 });

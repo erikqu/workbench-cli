@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseKey } from "silvery";
-import { isThemeCycleKey } from "./Workbench";
+import { isThemeCycleKey, terminalGridSize } from "./Workbench";
 
 function parsed(input: string) {
   return parseKey(input);
@@ -24,5 +24,25 @@ describe("isThemeCycleKey", () => {
   test("does not match plain Tab", () => {
     const [input, key] = parsed("\t");
     expect(isThemeCycleKey(input, key)).toBe(false);
+  });
+});
+
+describe("terminalGridSize", () => {
+  test("uses the measured pane size when it fits the host window", () => {
+    expect(
+      terminalGridSize(
+        { x: 57, y: 5, width: 130, height: 48 },
+        { columns: 188, rows: 54 }
+      )
+    ).toEqual({ cols: 130, rows: 48 });
+  });
+
+  test("clamps runaway layout measurements to visible cells", () => {
+    expect(
+      terminalGridSize(
+        { x: 57, y: 5, width: 500, height: 3102 },
+        { columns: 188, rows: 54 }
+      )
+    ).toEqual({ cols: 130, rows: 48 });
   });
 });

@@ -165,6 +165,7 @@ export class TerminalPanel implements TerminalReadable {
   private pty?: Bun.Terminal;
   private updateRevision = ++revisionCounter;
   private listeners = new Set<() => void>();
+  private followOutput = true;
 
   constructor(
     private readonly cwd: string,
@@ -192,6 +193,7 @@ export class TerminalPanel implements TerminalReadable {
       if (this.terminal.modes.synchronizedOutputMode) {
         return;
       }
+      this.snapFollowingViewportToBottom();
       this.updateRevision = ++revisionCounter;
       this.emit();
     });
@@ -323,6 +325,7 @@ export class TerminalPanel implements TerminalReadable {
       return;
     }
     this.terminal.resize(cols, rows);
+    this.snapFollowingViewportToBottom();
     // Propagate to the child PTY so the program (or tmux client) gets SIGWINCH
     // and reflows to match the newly rendered box.
     this.pty?.resize(cols, rows);
@@ -332,17 +335,20 @@ export class TerminalPanel implements TerminalReadable {
 
   scrollLines(lines: number) {
     this.terminal.scrollLines(lines);
+    this.updateFollowOutput();
     this.updateRevision = ++revisionCounter;
     this.emit();
   }
 
   scrollPages(pages: number) {
     this.terminal.scrollPages(pages);
+    this.updateFollowOutput();
     this.updateRevision = ++revisionCounter;
     this.emit();
   }
 
   scrollToBottom() {
+    this.followOutput = true;
     this.terminal.scrollToBottom();
     this.updateRevision = ++revisionCounter;
     this.emit();
@@ -384,13 +390,28 @@ export class TerminalPanel implements TerminalReadable {
   // prompt. No-op (and free) when already at the bottom or on the alternate
   // buffer, where `viewportY === baseY === 0`.
   private snapToBottomIfScrolled() {
+    this.followOutput = true;
+    if (this.snapFollowingViewportToBottom()) {
+      this.updateRevision = ++revisionCounter;
+      this.emit();
+    }
+  }
+
+  private snapFollowingViewportToBottom(): boolean {
+    if (!this.followOutput) {
+      return false;
+    }
     const buffer = this.terminal.buffer.active;
     if (buffer.viewportY >= buffer.baseY) {
-      return;
+      return false;
     }
     this.terminal.scrollToBottom();
-    this.updateRevision = ++revisionCounter;
-    this.emit();
+    return true;
+  }
+
+  private updateFollowOutput() {
+    const buffer = this.terminal.buffer.active;
+    this.followOutput = buffer.viewportY >= buffer.baseY;
   }
 
   private formatPaste(text: string): string {
