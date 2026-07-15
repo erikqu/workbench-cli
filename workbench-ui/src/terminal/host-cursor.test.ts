@@ -23,14 +23,14 @@ describe("host cursor style sequences", () => {
   });
 
   test("sets and resets a contrasting cursor color", () => {
-    expect(hostCursorColorSequence("#1f2328")).toBe("\x1b]12;#1f2328\x07");
-    expect(resetHostCursorColorSequence()).toBe("\x1b]112\x07");
+    expect(hostCursorColorSequence("#1f2328")).toBe("\x1b]12;#1f2328\x1b\\");
+    expect(resetHostCursorColorSequence()).toBe("\x1b]112\x1b\\");
   });
 
   test("combines cursor shape and color into one write", () => {
     expect(hostCursorAppearanceSequence("bar", true, "#1f2328")).toBe(
-      "\x1b[5 q\x1b]12;#1f2328\x07"
+      "\x1b[5 q\x1b]12;#1f2328\x1b\\"
     );
-    expect(resetHostCursorAppearanceSequence()).toBe("\x1b[0 q\x1b]112\x07");
+    expect(resetHostCursorAppearanceSequence()).toBe("\x1b[0 q\x1b]112\x1b\\");
   });
 });

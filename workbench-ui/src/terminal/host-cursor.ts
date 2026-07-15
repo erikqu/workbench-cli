@@ -1,5 +1,7 @@
 export type HostCursorShape = "block" | "underline" | "bar";
 
+const OSC_TERMINATOR = "\x1b\\";
+
 const CURSOR_CODES: Record<
   HostCursorShape,
   { blinking: number; steady: number }
@@ -24,11 +26,11 @@ export function resetHostCursorStyleSequence(): string {
 }
 
 export function hostCursorColorSequence(color: string): string {
-  return `\x1b]12;${color}\x07`;
+  return `\x1b]12;${color}${OSC_TERMINATOR}`;
 }
 
 export function resetHostCursorColorSequence(): string {
-  return "\x1b]112\x07";
+  return `\x1b]112${OSC_TERMINATOR}`;
 }
 
 export function hostCursorAppearanceSequence(
