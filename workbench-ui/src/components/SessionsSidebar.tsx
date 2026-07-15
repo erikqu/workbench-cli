@@ -228,6 +228,7 @@ function CollapsedSessionsRail({
     actions.toggleSidebar();
     event.stopPropagation();
   };
+  const shortcutSessions = view.state.sessions.slice(0, 9);
 
   return (
     <Box
@@ -238,12 +239,25 @@ function CollapsedSessionsRail({
       flexDirection="column"
       flexShrink={0}
       onClick={click}
+      overflow="hidden"
       width={COLLAPSED_SESSIONS_SIDEBAR_WIDTH}
     >
       <Text color={colors.accentAlt}>{">"}</Text>
-      <Text color={colors.dim}>
-        {String(view.state.sessions.length).slice(0, 1)}
-      </Text>
+      {shortcutSessions.map((session, index) => {
+        const active = session.id === view.state.activeSessionId;
+        return (
+          <Text
+            color={active ? colors.accent : colors.dim}
+            key={session.id}
+            onClick={(event) => {
+              actions.selectSession(session.id);
+              event.stopPropagation();
+            }}
+          >
+            {String(index + 1)}
+          </Text>
+        );
+      })}
     </Box>
   );
 }
