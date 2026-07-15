@@ -1,5 +1,3 @@
-import { writeSync } from "node:fs";
-
 export type HostCursorShape = "block" | "underline" | "bar";
 
 const CURSOR_CODES: Record<
@@ -43,35 +41,4 @@ export function hostCursorAppearanceSequence(
 
 export function resetHostCursorAppearanceSequence(): string {
   return resetHostCursorStyleSequence() + resetHostCursorColorSequence();
-}
-
-export function writeHostCursorStyle(
-  shape: HostCursorShape,
-  blink: boolean
-): void {
-  writeRaw(hostCursorStyleSequence(shape, blink));
-}
-
-export function resetHostCursorStyle(): void {
-  writeRaw(resetHostCursorStyleSequence());
-}
-
-export function writeHostCursorAppearance(
-  shape: HostCursorShape,
-  blink: boolean,
-  color: string
-): void {
-  writeRaw(hostCursorAppearanceSequence(shape, blink, color));
-}
-
-export function resetHostCursorAppearance(): void {
-  writeRaw(resetHostCursorAppearanceSequence());
-}
-
-function writeRaw(sequence: string): void {
-  try {
-    writeSync(1, sequence);
-  } catch {
-    // Best effort: cursor styling should never crash the workbench.
-  }
 }

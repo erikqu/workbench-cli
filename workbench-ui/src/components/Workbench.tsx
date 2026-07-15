@@ -10,6 +10,7 @@ import {
   Text,
   useBoxRectDangerously,
   useInput,
+  useStdout,
   useWindowSize,
 } from "silvery";
 import { harnessSpec } from "../state/harnesses";
@@ -20,8 +21,8 @@ import {
   terminalIdFromTab,
 } from "../state/types";
 import {
-  resetHostCursorAppearance,
-  writeHostCursorAppearance,
+  hostCursorAppearanceSequence,
+  resetHostCursorAppearanceSequence,
 } from "../terminal/host-cursor";
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { colors } from "../ui/theme";
@@ -571,6 +572,7 @@ function MeasuredTerminalGrid({
     panel.getSnapshot
   );
   const cursorColor = colors.cursor;
+  const { write: writeStdout } = useStdout();
 
   useEffect(() => {
     if (cols < 20 || rows < 5) {
@@ -585,21 +587,21 @@ function MeasuredTerminalGrid({
 
   // silvery's terminal cursor path currently emits a steady caret. Keep this
   // refresh low-frequency; doing it on every terminal frame makes busy agent
-  // panes lag.
+  // panes lag. Route it through silvery so it cannot split an in-flight frame.
   useEffect(() => {
     if (!focused) {
       return;
     }
-    writeHostCursorAppearance("bar", true, cursorColor);
+    writeStdout(hostCursorAppearanceSequence("bar", true, cursorColor));
     const timer = setInterval(() => {
-      writeHostCursorAppearance("bar", true, cursorColor);
+      writeStdout(hostCursorAppearanceSequence("bar", true, cursorColor));
     }, 1000);
     timer.unref?.();
     return () => {
       clearInterval(timer);
-      resetHostCursorAppearance();
+      writeStdout(resetHostCursorAppearanceSequence());
     };
-  }, [cursorColor, focused]);
+  }, [cursorColor, focused, writeStdout]);
 
   const onMouse = (event: TerminalMouseEvent) => {
     if (event.type === "wheel") {

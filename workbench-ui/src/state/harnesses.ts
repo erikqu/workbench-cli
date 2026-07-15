@@ -13,6 +13,83 @@ export interface HarnessSpec {
   label: string;
 }
 
+const DEFAULT_HARNESS_ID = "codex";
+const DEFAULT_HARNESS_PREFERENCE = ["codex", "cursor", "claude"];
+const CODEX_HISTORY_REPLAY_OVERRIDE =
+  "-c tui.terminal_resize_reflow_max_rows=0";
+
+interface ParsedCodexVersion {
+  alpha?: number;
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+function parseCodexVersion(
+  versionOutput: string
+): ParsedCodexVersion | undefined {
+  const match = /(?:^|\s)(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?(?:\s|$)/.exec(
+    versionOutput.trim()
+  );
+  if (!match) {
+    return;
+  }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    alpha: match[4] === undefined ? undefined : Number(match[4]),
+  };
+}
+
+// Codex's capped initial replay could lose finalized transcript rows after a
+// stream was consolidated. The upstream repair first appears in 0.145 alpha
+// 12; stable 0.144 releases need uncapped replay when resuming a conversation.
+export function codexNeedsHistoryReplayWorkaround(
+  versionOutput: string
+): boolean {
+  const version = parseCodexVersion(versionOutput);
+  if (!version || version.major !== 0) {
+    return false;
+  }
+  if (version.minor === 144) {
+    return true;
+  }
+  return (
+    version.minor === 145 &&
+    version.patch === 0 &&
+    version.alpha !== undefined &&
+    version.alpha < 12
+  );
+}
+
+export function codexCommand(versionOutput: string): HarnessCommand {
+  const replayOverride = codexNeedsHistoryReplayWorkaround(versionOutput)
+    ? ` ${CODEX_HISTORY_REPLAY_OVERRIDE}`
+    : "";
+  return {
+    command: `codex resume --last${replayOverride} --dangerously-bypass-approvals-and-sandbox || codex --dangerously-bypass-approvals-and-sandbox`,
+  };
+}
+
+let detectedCodexVersion: string | undefined;
+
+function installedCodexVersion(): string {
+  if (detectedCodexVersion !== undefined) {
+    return detectedCodexVersion;
+  }
+  try {
+    const result = Bun.spawnSync(["codex", "--version"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    detectedCodexVersion = new TextDecoder().decode(result.stdout).trim();
+  } catch {
+    detectedCodexVersion = "";
+  }
+  return detectedCodexVersion;
+}
+
 export const harnessSpecs: HarnessSpec[] = [
   {
     id: "cursor",
@@ -56,10 +133,7 @@ export const harnessSpecs: HarnessSpec[] = [
     // exits non-zero when there's nothing to resume, so fall back to a fresh
     // `codex`. --dangerously-bypass-approvals-and-sandbox (alias --yolo) skips
     // the approval prompts and sandbox, matching the other harnesses.
-    command: () => ({
-      command:
-        "codex resume --last --dangerously-bypass-approvals-and-sandbox || codex --dangerously-bypass-approvals-and-sandbox",
-    }),
+    command: () => codexCommand(installedCodexVersion()),
   },
   {
     id: "opencode",
@@ -72,8 +146,18 @@ export const harnessSpecs: HarnessSpec[] = [
 ];
 
 // Agents tried, in order, when picking a default for a brand-new user: whichever
-// of these is actually installed wins. Cursor first, then Claude Code.
-const DEFAULT_HARNESS_PREFERENCE = ["cursor", "claude"];
+// of these is actually installed wins. Codex is the preferred default.
+export function selectDefaultHarnessId(
+  isInstalled: (bin: string) => boolean
+): string {
+  for (const id of DEFAULT_HARNESS_PREFERENCE) {
+    const spec = harnessSpecs.find((candidate) => candidate.id === id);
+    if (spec && isInstalled(spec.bin)) {
+      return id;
+    }
+  }
+  return DEFAULT_HARNESS_ID;
+}
 
 let detectedDefaultHarnessId: string | undefined;
 
@@ -81,16 +165,7 @@ function detectDefaultHarnessId(): string {
   if (detectedDefaultHarnessId) {
     return detectedDefaultHarnessId;
   }
-  for (const id of DEFAULT_HARNESS_PREFERENCE) {
-    const spec = harnessSpecs.find((candidate) => candidate.id === id);
-    if (spec && Bun.which(spec.bin)) {
-      detectedDefaultHarnessId = id;
-      return id;
-    }
-  }
-  // Nothing detected (or Bun.which unavailable): fall back to the first spec so
-  // the picker still opens on a sensible agent the user can install.
-  detectedDefaultHarnessId = harnessSpecs[0].id;
+  detectedDefaultHarnessId = selectDefaultHarnessId((bin) => !!Bun.which(bin));
   return detectedDefaultHarnessId;
 }
 
@@ -103,5 +178,9 @@ export function defaultHarnessId() {
 }
 
 export function harnessSpec(id: string): HarnessSpec {
-  return harnessSpecs.find((spec) => spec.id === id) ?? harnessSpecs[0];
+  return (
+    harnessSpecs.find((spec) => spec.id === id) ??
+    harnessSpecs.find((spec) => spec.id === DEFAULT_HARNESS_ID) ??
+    harnessSpecs[0]
+  );
 }
