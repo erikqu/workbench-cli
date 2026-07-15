@@ -7,6 +7,14 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { openEditorTab } from "../text/editor";
+import {
+  clampPaneWidth,
+  DEFAULT_SESSIONS_SIDEBAR_WIDTH,
+  DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
+  MAX_PERSISTED_PANE_WIDTH,
+  MIN_SESSIONS_SIDEBAR_WIDTH,
+  MIN_WORKSPACE_SIDE_PANE_WIDTH,
+} from "../ui/pane-layout";
 import { applyTheme, DEFAULT_THEME } from "../ui/theme";
 import { defaultHarnessId, harnessSpec } from "./harnesses";
 import type {
@@ -206,9 +214,19 @@ export function createInitialState(cwd: string): AppState {
     newHarnessOpen: false,
     plusMenuOpen: false,
     focus: focusForMainTab(activeSession.activeMainTab),
+    sessionsSidebarWidth: clampPaneWidth(
+      persisted.sessionsSidebarWidth ?? DEFAULT_SESSIONS_SIDEBAR_WIDTH,
+      MIN_SESSIONS_SIDEBAR_WIDTH,
+      MAX_PERSISTED_PANE_WIDTH
+    ),
     sidebarVisible: persisted.sidebarVisible ?? true,
     splashVisible: true,
     themeName,
+    workspaceSidePaneWidth: clampPaneWidth(
+      persisted.workspaceSidePaneWidth ?? DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
+      MIN_WORKSPACE_SIDE_PANE_WIDTH,
+      MAX_PERSISTED_PANE_WIDTH
+    ),
   };
 }
 
@@ -246,10 +264,12 @@ function createScreenshotState(cwd: string): AppState {
     newHarnessOpen: false,
     plusMenuOpen: false,
     focus: "harness",
+    sessionsSidebarWidth: DEFAULT_SESSIONS_SIDEBAR_WIDTH,
     sidebarVisible: true,
     // Show the splash in screenshots only when explicitly exercising it.
     splashVisible: Bun.env.WORKBENCH_UI_FORCE_SPLASH === "1",
     themeName: applyTheme(Bun.env.WORKBENCH_UI_THEME ?? DEFAULT_THEME),
+    workspaceSidePaneWidth: DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
   };
 }
 
@@ -293,8 +313,10 @@ export function savePersistedState(state: AppState) {
     activeSessionIndex: state.sessions.findIndex(
       (session) => session.id === state.activeSessionId
     ),
+    sessionsSidebarWidth: state.sessionsSidebarWidth,
     sidebarVisible: state.sidebarVisible,
     themeName: state.themeName,
+    workspaceSidePaneWidth: state.workspaceSidePaneWidth,
   };
 
   mkdirSync(dirname(statePath), { recursive: true });

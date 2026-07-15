@@ -54,6 +54,14 @@ import {
   toggleDirectory,
 } from "../text/file-tree";
 import {
+  COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  clampPaneWidth,
+  MIN_SESSIONS_SIDEBAR_WIDTH,
+  MIN_WORKSPACE_SIDE_PANE_WIDTH,
+  maxSessionsSidebarWidth,
+  maxWorkspaceSidePaneWidth,
+} from "../ui/pane-layout";
+import {
   applyTheme,
   nextThemeName,
   THEME_LABELS,
@@ -194,6 +202,21 @@ export class ReactWorkbenchApp {
         const panel = this.harnessPanel(harness);
         panel.resize(cols, rows);
       },
+      resizeSessionsSidebar: (width) => {
+        const maxWidth = maxSessionsSidebarWidth(
+          process.stdout.columns ?? 100,
+          this.state.workspaceSidePaneWidth
+        );
+        const next = clampPaneWidth(
+          width,
+          MIN_SESSIONS_SIDEBAR_WIDTH,
+          maxWidth
+        );
+        if (next !== this.state.sessionsSidebarWidth) {
+          this.state.sessionsSidebarWidth = next;
+          this.persistAndRender();
+        }
+      },
       resizeTerminal: (cols, rows) => {
         const terminal = this.activeTerminal();
         if (!terminal) {
@@ -201,6 +224,24 @@ export class ReactWorkbenchApp {
         }
         const panel = this.shellPanel(terminal);
         panel.resize(cols, rows);
+      },
+      resizeWorkspaceSidePane: (width) => {
+        const sessionsWidth = this.state.sidebarVisible
+          ? this.state.sessionsSidebarWidth
+          : COLLAPSED_SESSIONS_SIDEBAR_WIDTH;
+        const maxWidth = maxWorkspaceSidePaneWidth(
+          process.stdout.columns ?? 100,
+          sessionsWidth
+        );
+        const next = clampPaneWidth(
+          width,
+          MIN_WORKSPACE_SIDE_PANE_WIDTH,
+          maxWidth
+        );
+        if (next !== this.state.workspaceSidePaneWidth) {
+          this.state.workspaceSidePaneWidth = next;
+          this.persistAndRender();
+        }
       },
       scrollHarness: (lines) => {
         const harness = this.activeHarness();
@@ -936,8 +977,16 @@ export class ReactWorkbenchApp {
   // Initial PTY size estimates only; the panes resize to exact dimensions via
   // onSizeChange before the PTY spawns.
   private estimateCols() {
-    const sidebar = this.state.sidebarVisible ? 26 : 3;
-    return Math.max(20, (process.stdout.columns ?? 100) - sidebar - 34);
+    const sidebar = this.state.sidebarVisible
+      ? this.state.sessionsSidebarWidth
+      : COLLAPSED_SESSIONS_SIDEBAR_WIDTH;
+    return Math.max(
+      20,
+      (process.stdout.columns ?? 100) -
+        sidebar -
+        this.state.workspaceSidePaneWidth -
+        4
+    );
   }
 
   private estimateRows() {

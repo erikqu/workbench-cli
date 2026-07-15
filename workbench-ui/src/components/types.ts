@@ -39,7 +39,9 @@ export interface WorkbenchActions {
   openNewAgent(): void;
   openNewHarness(): void;
   resizeHarness(cols: number, rows: number): void;
+  resizeSessionsSidebar(width: number): void;
   resizeTerminal(cols: number, rows: number): void;
+  resizeWorkspaceSidePane(width: number): void;
   saveActiveFile(): void;
   scrollHarness(lines: number): void;
   scrollTerminal(lines: number): void;

@@ -90,11 +90,13 @@ export interface AppState {
   newHarnessOpen: boolean;
   plusMenuOpen: boolean;
   sessions: AgentSession[];
+  sessionsSidebarWidth: number;
   sidebarVisible: boolean;
   // Startup splash overlay; shown on launch, dismissed on first interaction.
   splashVisible: boolean;
   // Active UI theme name (see theme.ts THEME_ORDER); cycled with Option+Tab.
   themeName: string;
+  workspaceSidePaneWidth: number;
 }
 
 export interface PersistedSession {
@@ -125,8 +127,10 @@ export interface PersistedTerminalTab {
 export interface PersistedWorkbenchState {
   activeSessionIndex?: number;
   sessions?: PersistedSession[];
+  sessionsSidebarWidth?: number;
   sidebarVisible?: boolean;
   themeName?: string;
+  workspaceSidePaneWidth?: number;
 }
 
 export function terminalIdFromTab(tab: MainTabId): string | undefined {

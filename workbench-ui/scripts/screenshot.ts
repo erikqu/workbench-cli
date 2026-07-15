@@ -1,11 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, type Page } from "@playwright/test";
+import { defaultHarnessId, harnessSpec } from "../src/state/harnesses";
 
 const root = join(import.meta.dir, "..");
 const screenshotDir = join(root, "artifacts", "screenshots");
 const port = Number(Bun.env.WORKBENCH_SCREENSHOT_PORT ?? "4177");
 const screenshotQuery = normalizeQuery(Bun.env.WORKBENCH_SCREENSHOT_QUERY);
+const defaultHarnessLabel = harnessSpec(defaultHarnessId()).label;
 
 mkdirSync(screenshotDir, { recursive: true });
 
@@ -16,6 +18,7 @@ const server = Bun.spawn(["bun", "test-harness/server.ts"], {
   env: {
     ...Bun.env,
     WORKBENCH_SCREENSHOT_PORT: String(port),
+    WORKBENCH_UI_CWD: root,
     // Diff polling is skipped in screenshot mode by default; force it on so the
     // Changes tab populates against the working tree for the diff check below.
     WORKBENCH_UI_FORCE_DIFF: "1",
@@ -47,9 +50,38 @@ try {
   // 1. The default harness tab should render and remain live. Some harnesses
   // do not echo typed text immediately, so input fidelity is covered by the
   // terminal tab check below.
-  const harnessVisible = await waitForText(page, "Claude Code", 8000);
+  const harnessVisible = await waitForText(page, defaultHarnessLabel, 8000);
   report("default harness pane renders", harnessVisible);
   await page.screenshot({ path: join(screenshotDir, "workbench.png") });
+
+  // 1b. Both vertical pane borders are draggable. Move each six columns right,
+  // assert its new position, then restore the default geometry so subsequent
+  // coordinate-bounded checks keep their stable fixture ranges.
+  await drag(page, 25, 10, 31, 10);
+  await page.waitForTimeout(250);
+  report("sessions sidebar border is draggable", await hasBorderAt(page, 31));
+  await drag(page, 31, 10, 25, 10);
+  await page.waitForTimeout(250);
+  await drag(page, 25, 10, 10, 10);
+  await page.waitForTimeout(250);
+  report("sessions sidebar enforces its minimum", await hasBorderAt(page, 17));
+  await drag(page, 17, 10, 25, 10);
+  await page.waitForTimeout(250);
+
+  await drag(page, 55, 10, 61, 10);
+  await page.waitForTimeout(250);
+  report("file explorer border is draggable", await hasBorderAt(page, 61));
+  await drag(page, 61, 10, 55, 10);
+  await page.waitForTimeout(250);
+  await drag(page, 55, 10, 35, 10);
+  await page.waitForTimeout(250);
+  report("file explorer enforces its minimum", await hasBorderAt(page, 45));
+  await drag(page, 45, 10, 55, 10);
+  await page.waitForTimeout(250);
+  report(
+    "pane resizing keeps the screen anchored",
+    await screenIsAnchored(page)
+  );
 
   // 2. Clicking the Terminal 1 tab focuses its shell; typing should reach it.
   const terminalTab = await findCell(page, "Terminal 1");
@@ -64,7 +96,7 @@ try {
   }
 
   // 3. Back on the harness tab, clicking a file in the explorer opens the editor.
-  const chatTab = await findCell(page, "Claude Code");
+  const chatTab = await findCell(page, defaultHarnessLabel);
   if (chatTab) {
     await click(page, chatTab.col + 2, chatTab.row + 1);
     await page.waitForTimeout(400);
@@ -87,6 +119,10 @@ try {
       3000
     );
     report("editor pane scrolls with wheel", editorScrolled);
+    report(
+      "scrollable file viewer shows a scrollbar",
+      await hasScrollbar(page, 56)
+    );
     await page.screenshot({
       path: join(screenshotDir, "workbench-editor.png"),
     });
@@ -331,6 +367,40 @@ async function bufferText(page: Page): Promise<string> {
 async function click(page: Page, col: number, row: number) {
   await send(page, `\x1b[<0;${col};${row}M`);
   await send(page, `\x1b[<0;${col};${row}m`);
+}
+
+async function drag(
+  page: Page,
+  fromCol: number,
+  fromRow: number,
+  toCol: number,
+  toRow: number
+) {
+  await send(page, `\x1b[<0;${fromCol + 1};${fromRow + 1}M`);
+  await send(page, `\x1b[<32;${toCol + 1};${toRow + 1}M`);
+  await send(page, `\x1b[<0;${toCol + 1};${toRow + 1}m`);
+}
+
+async function hasBorderAt(page: Page, col: number): Promise<boolean> {
+  const lines = (await bufferText(page)).split("\n");
+  return lines.slice(4, -2).some((line) => line[col] === "│");
+}
+
+async function screenIsAnchored(page: Page): Promise<boolean> {
+  return (
+    (await bufferText(page)).split("\n")[0]?.includes("Workbench") ?? false
+  );
+}
+
+async function hasScrollbar(
+  page: Page,
+  contentStart: number
+): Promise<boolean> {
+  const thumb = new Set("▁▂▃▄▅▆▇█");
+  const lines = (await bufferText(page)).split("\n");
+  return lines.some((line) =>
+    [...line.slice(contentStart)].some((char) => thumb.has(char))
+  );
 }
 
 async function wheel(page: Page, col: number, row: number, direction: 1 | -1) {

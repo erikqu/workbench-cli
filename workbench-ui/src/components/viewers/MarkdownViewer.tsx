@@ -501,7 +501,8 @@ function MarkdownList({
   const listRef = useRef<ListViewHandle>(null);
   const rect = useBoxRectDangerously();
   const height = Math.max(1, Math.floor(rect.height));
-  const width = Math.max(10, Math.floor(rect.width) - 1);
+  const viewportWidth = Math.max(1, Math.floor(rect.width));
+  const width = Math.max(10, viewportWidth - 1);
   const pageRows = Math.max(1, height - 1);
 
   useInput((_input, key) => {
@@ -572,7 +573,8 @@ function MarkdownList({
             </Box>
           )
         }
-        scrollbarVisibility="auto"
+        scrollbarVisibility="always"
+        width={viewportWidth}
       />
     </Box>
   );

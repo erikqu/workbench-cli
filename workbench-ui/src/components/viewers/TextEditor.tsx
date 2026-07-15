@@ -144,6 +144,7 @@ export function LineList<T>({
   const listRef = useRef<ListViewHandle>(null);
   const rect = useBoxRectDangerously();
   const height = Math.max(1, Math.floor(rect.height));
+  const width = Math.max(1, Math.floor(rect.width));
   const pageRows = Math.max(1, height - 1);
 
   useInput((_input, key) => {
@@ -184,7 +185,8 @@ export function LineList<T>({
         items={lines}
         ref={listRef}
         renderItem={(item, index) => renderLine(item, index)}
-        scrollbarVisibility="auto"
+        scrollbarVisibility="always"
+        width={width}
       />
     </Box>
   );

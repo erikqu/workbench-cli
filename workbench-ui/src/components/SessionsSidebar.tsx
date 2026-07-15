@@ -8,16 +8,19 @@ import {
   Text,
   truncateText,
   useBoxRectDangerously,
+  useWindowSize,
 } from "silvery";
 import type { AgentSession } from "../state/types";
 import type { SessionDiff } from "../text/diff";
+import {
+  COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  clampPaneWidth,
+  MIN_SESSIONS_SIDEBAR_WIDTH,
+  maxSessionsSidebarWidth,
+} from "../ui/pane-layout";
 import { colors, THEME_LABELS } from "../ui/theme";
+import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
-
-const sidebarWidth = 26;
-const collapsedWidth = 3;
-// Leaves room for sidebar padding, the shortcut index, a gap, and the close x.
-const sessionNameMaxWidth = sidebarWidth - 9;
 
 export function SessionsSidebar({
   view,
@@ -26,39 +29,66 @@ export function SessionsSidebar({
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
 }) {
+  const { columns } = useWindowSize();
   if (!view.state.sidebarVisible) {
     return <CollapsedSessionsRail actions={actions} view={view} />;
   }
+  const maxWidth = maxSessionsSidebarWidth(
+    columns,
+    view.state.workspaceSidePaneWidth
+  );
+  const width = clampPaneWidth(
+    view.state.sessionsSidebarWidth,
+    MIN_SESSIONS_SIDEBAR_WIDTH,
+    maxWidth
+  );
 
   return (
     <Box
-      backgroundColor={colors.panel}
-      borderColor={
-        view.state.focus === "sessions" ? colors.borderFocus : colors.border
-      }
-      borderStyle="single"
-      flexDirection="column"
       flexShrink={0}
       height="100%"
       minHeight={1}
-      onMouseDown={() => actions.focus("sessions")}
+      minWidth={1}
       overflow="hidden"
-      padding={1}
-      width={sidebarWidth}
+      position="relative"
+      width={width}
     >
-      <Box flexDirection="row" height={1} justifyContent="space-between">
-        <Text color={colors.dim}>Sessions</Text>
-        <Box flexDirection="row">
-          <Text color={colors.dim}>{`${view.state.sessions.length} `}</Text>
-          <CollapseButton
-            actions={actions}
-            pinned={view.state.sidebarVisible}
-          />
+      <Box
+        backgroundColor={colors.panel}
+        borderColor={
+          view.state.focus === "sessions" ? colors.borderFocus : colors.border
+        }
+        borderStyle="single"
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={1}
+        minWidth={1}
+        onMouseDown={() => actions.focus("sessions")}
+        overflow="hidden"
+        padding={1}
+      >
+        <Box flexDirection="row" height={1} justifyContent="space-between">
+          <Text color={colors.dim}>Sessions</Text>
+          <Box flexDirection="row">
+            <Text color={colors.dim}>{`${view.state.sessions.length} `}</Text>
+            <CollapseButton
+              actions={actions}
+              pinned={view.state.sidebarVisible}
+            />
+          </Box>
         </Box>
+        <NewAgentRow actions={actions} compact={width < 22} />
+        <SessionList actions={actions} sidebarWidth={width} view={view} />
+        <SidebarControls actions={actions} sidebarWidth={width} view={view} />
       </Box>
-      <NewAgentRow actions={actions} />
-      <SessionList actions={actions} view={view} />
-      <SidebarControls actions={actions} view={view} />
+      <PaneResizeHandle
+        maxWidth={maxWidth}
+        minWidth={MIN_SESSIONS_SIDEBAR_WIDTH}
+        onDragStart={() => actions.focus("sessions")}
+        onResize={actions.resizeSessionsSidebar}
+        width={width}
+      />
     </Box>
   );
 }
@@ -68,9 +98,11 @@ export function SessionsSidebar({
 function SidebarControls({
   view,
   actions,
+  sidebarWidth,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  sidebarWidth: number;
 }) {
   const themeLabel =
     THEME_LABELS[view.state.themeName as keyof typeof THEME_LABELS] ??
@@ -83,19 +115,20 @@ function SidebarControls({
     actions.shutdown(0);
     event?.stopPropagation();
   };
+  const compact = sidebarWidth < 24;
   return (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <Box flexDirection="row" height={1} justifyContent="space-between">
         <Text color={colors.accentAlt} onClick={cycleTheme} wrap={false}>
-          {`Theme: ${themeLabel}`}
+          {compact ? "Theme" : `Theme: ${themeLabel}`}
         </Text>
         <Text color={colors.dim} onClick={quit}>
           Quit
         </Text>
       </Box>
       <LegendRow keys="⌥1-9" label="tab" />
-      <LegendRow keys="⌥⇧1-9" label="session" />
-      <LegendRow keys="⌥Space" label="next session" />
+      <LegendRow keys="⌥⇧1-9" label={compact ? "sess" : "session"} />
+      <LegendRow keys="⌥Space" label={compact ? "next" : "next session"} />
       <LegendRow keys="⌥Tab" label="theme" />
       <LegendRow keys="Ctrl+Q" label="quit" />
     </Box>
@@ -117,9 +150,11 @@ function LegendRow({ keys, label }: { keys: string; label: string }) {
 function SessionList({
   view,
   actions,
+  sidebarWidth,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  sidebarWidth: number;
 }) {
   const listRef = useRef<ListViewHandle>(null);
   return (
@@ -135,7 +170,12 @@ function SessionList({
         event.stopPropagation();
       }}
     >
-      <SessionListBody actions={actions} listRef={listRef} view={view} />
+      <SessionListBody
+        actions={actions}
+        listRef={listRef}
+        nameMaxWidth={Math.max(3, sidebarWidth - 9)}
+        view={view}
+      />
     </Box>
   );
 }
@@ -144,10 +184,12 @@ function SessionListBody({
   listRef,
   view,
   actions,
+  nameMaxWidth,
 }: {
   listRef: React.RefObject<ListViewHandle | null>;
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  nameMaxWidth: number;
 }) {
   const rect = useBoxRectDangerously();
   const height = Math.max(1, Math.floor(rect.height));
@@ -167,6 +209,7 @@ function SessionListBody({
           canClose={sessions.length > 1}
           diff={view.diffs.get(session.cwd)}
           index={sessions.indexOf(session)}
+          nameMaxWidth={nameMaxWidth}
           session={session}
         />
       )}
@@ -195,7 +238,7 @@ function CollapsedSessionsRail({
       flexDirection="column"
       flexShrink={0}
       onClick={click}
-      width={collapsedWidth}
+      width={COLLAPSED_SESSIONS_SIDEBAR_WIDTH}
     >
       <Text color={colors.accentAlt}>{">"}</Text>
       <Text color={colors.dim}>
@@ -227,13 +270,19 @@ function CollapseButton({
   );
 }
 
-function NewAgentRow({ actions }: { actions: WorkbenchActions }) {
+function NewAgentRow({
+  actions,
+  compact,
+}: {
+  actions: WorkbenchActions;
+  compact: boolean;
+}) {
   const open = () => actions.openNewAgent();
   return (
     <Box marginTop={1}>
       <Button
         focusable={false}
-        label="+ New workspace"
+        label={compact ? "+ New" : "+ New workspace"}
         onClick={(event) => {
           open();
           event.stopPropagation();
@@ -253,6 +302,7 @@ function SessionRow({
   canClose,
   diff,
   actions,
+  nameMaxWidth,
 }: {
   session: AgentSession;
   index: number;
@@ -260,6 +310,7 @@ function SessionRow({
   canClose: boolean;
   diff?: SessionDiff;
   actions: WorkbenchActions;
+  nameMaxWidth: number;
 }) {
   const select = (event: { stopPropagation(): void }) => {
     actions.selectSession(session.id);
@@ -295,7 +346,7 @@ function SessionRow({
             minWidth={1}
             wrap={false}
           >
-            {truncateText(session.name, sessionNameMaxWidth, "...")}
+            {truncateText(session.name, nameMaxWidth, "...")}
           </Text>
         </Box>
         {canClose ? (

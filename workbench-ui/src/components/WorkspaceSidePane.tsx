@@ -6,15 +6,24 @@ import {
   type ListViewHandle,
   Text,
   useBoxRectDangerously,
+  useWindowSize,
 } from "silvery";
 import { harnessSpec } from "../state/harnesses";
 import { harnessIdFromTab, terminalIdFromTab } from "../state/types";
+import {
+  COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  clampPaneWidth,
+  MIN_SESSIONS_SIDEBAR_WIDTH,
+  MIN_WORKSPACE_SIDE_PANE_WIDTH,
+  maxSessionsSidebarWidth,
+  maxWorkspaceSidePaneWidth,
+} from "../ui/pane-layout";
 import { colors } from "../ui/theme";
 import { ChangesSidebarList } from "./ChangesView";
 import { ExplorerSection } from "./Explorer";
+import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
-const sidePaneWidth = 30;
 const agentRows = 3;
 const minTerminalRows = 3;
 const minChangesRows = 4;
@@ -28,6 +37,20 @@ export function WorkspaceSidePane({
   actions: WorkbenchActions;
 }) {
   const rect = useBoxRectDangerously();
+  const { columns } = useWindowSize();
+  const sessionsWidth = view.state.sidebarVisible
+    ? clampPaneWidth(
+        view.state.sessionsSidebarWidth,
+        MIN_SESSIONS_SIDEBAR_WIDTH,
+        maxSessionsSidebarWidth(columns, view.state.workspaceSidePaneWidth)
+      )
+    : COLLAPSED_SESSIONS_SIDEBAR_WIDTH;
+  const maxWidth = maxWorkspaceSidePaneWidth(columns, sessionsWidth);
+  const width = clampPaneWidth(
+    view.state.workspaceSidePaneWidth,
+    MIN_WORKSPACE_SIDE_PANE_WIDTH,
+    maxWidth
+  );
   const totalRows = Math.max(1, Math.floor(rect.height));
   // Fixed row budgets: no section flexes after mount, which avoids measured
   // ListViews growing the side pane and pushing lower controls out of sight.
@@ -50,23 +73,40 @@ export function WorkspaceSidePane({
 
   return (
     <Box
-      backgroundColor={colors.panel}
-      borderColor={
-        view.state.focus === "explorer" ? colors.borderFocus : colors.border
-      }
-      borderStyle="single"
-      flexDirection="column"
       flexShrink={0}
       height="100%"
       minHeight={1}
+      minWidth={1}
       overflow="hidden"
-      padding={1}
-      width={sidePaneWidth}
+      position="relative"
+      width={width}
     >
-      <AgentButton actions={actions} view={view} />
-      <ExplorerSection actions={actions} height={explorerRows} view={view} />
-      <TerminalSection actions={actions} height={terminalRows} view={view} />
-      <ChangesSection actions={actions} height={changesRows} view={view} />
+      <Box
+        backgroundColor={colors.panel}
+        borderColor={
+          view.state.focus === "explorer" ? colors.borderFocus : colors.border
+        }
+        borderStyle="single"
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={1}
+        minWidth={1}
+        overflow="hidden"
+        padding={1}
+      >
+        <AgentButton actions={actions} view={view} />
+        <ExplorerSection actions={actions} height={explorerRows} view={view} />
+        <TerminalSection actions={actions} height={terminalRows} view={view} />
+        <ChangesSection actions={actions} height={changesRows} view={view} />
+      </Box>
+      <PaneResizeHandle
+        maxWidth={maxWidth}
+        minWidth={MIN_WORKSPACE_SIDE_PANE_WIDTH}
+        onDragStart={() => actions.focus("explorer")}
+        onResize={actions.resizeWorkspaceSidePane}
+        width={width}
+      />
     </Box>
   );
 }

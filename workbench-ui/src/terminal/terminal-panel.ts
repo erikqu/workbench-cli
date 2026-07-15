@@ -166,6 +166,7 @@ export class TerminalPanel implements TerminalReadable {
   private updateRevision = ++revisionCounter;
   private listeners = new Set<() => void>();
   private followOutput = true;
+  private tmuxCopyModePossible = false;
 
   constructor(
     private readonly cwd: string,
@@ -361,6 +362,7 @@ export class TerminalPanel implements TerminalReadable {
       this.start();
     }
     this.snapToBottomIfScrolled();
+    this.exitTmuxCopyModeIfNeeded();
     this.writeToChild(data);
   }
 
@@ -378,6 +380,7 @@ export class TerminalPanel implements TerminalReadable {
       this.start();
     }
     this.snapToBottomIfScrolled();
+    this.exitTmuxCopyModeIfNeeded();
     this.writeToChild(this.formatPaste(text));
   }
 
@@ -442,11 +445,44 @@ export class TerminalPanel implements TerminalReadable {
     if (!this.child) {
       this.start();
     }
+    // tmux enters copy mode on wheel-up when the pane itself is not tracking
+    // the mouse. Remember that possibility so the next real input can return
+    // to the live pane before forwarding the key or paste.
+    if (direction === "up" && this.persist) {
+      this.tmuxCopyModePossible = true;
+    }
     const button = direction === "up" ? 64 : 65;
     this.writeToChild(
       `\x1b[<${button};${Math.max(1, Math.floor(col) + 1)};${Math.max(1, Math.floor(row) + 1)}M`
     );
     return true;
+  }
+
+  private exitTmuxCopyModeIfNeeded() {
+    if (!this.tmuxCopyModePossible) {
+      return;
+    }
+    this.tmuxCopyModePossible = false;
+    const persist = this.persist;
+    if (!persist) {
+      return;
+    }
+    try {
+      Bun.spawnSync(
+        [
+          "tmux",
+          "-S",
+          persist.socketPath,
+          "copy-mode",
+          "-q",
+          "-t",
+          persist.name,
+        ],
+        { stdout: "ignore", stderr: "ignore" }
+      );
+    } catch {
+      // The session may have exited between the wheel and the next input.
+    }
   }
 
   private writeToChild(data: string) {
