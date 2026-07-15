@@ -158,7 +158,7 @@ const PALETTE_256 = (() => {
 // across panel switches. This lets the silvery <Terminal> redraw when the
 // active pane swaps without remounting (no `key`), keeping switches instant.
 let revisionCounter = 0;
-const SYNCHRONIZED_OUTPUT_FALLBACK_MS = 250;
+const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 250;
 
 export class TerminalPanel implements TerminalReadable {
   private terminal: Terminal;
@@ -168,7 +168,7 @@ export class TerminalPanel implements TerminalReadable {
   private listeners = new Set<() => void>();
   private followOutput = true;
   private tmuxCopyModePossible = false;
-  private synchronizedOutputFallback?: ReturnType<typeof setTimeout>;
+  private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly cwd: string,
@@ -195,10 +195,10 @@ export class TerminalPanel implements TerminalReadable {
       // Rendering every PTY chunk defeats the mode and produces transient stale
       // borders/text ("artifacts") during Codex's frequent composer redraws.
       if (this.terminal.modes.synchronizedOutputMode) {
-        this.scheduleSynchronizedOutputFallback();
+        this.scheduleSynchronizedOutputRecovery();
         return;
       }
-      this.clearSynchronizedOutputFallback();
+      this.clearSynchronizedOutputRecovery();
       this.publishFrame();
     });
   }
@@ -208,24 +208,28 @@ export class TerminalPanel implements TerminalReadable {
     this.emit();
   }
 
-  private scheduleSynchronizedOutputFallback() {
-    if (this.synchronizedOutputFallback) {
-      return;
-    }
-    this.synchronizedOutputFallback = setTimeout(() => {
-      this.synchronizedOutputFallback = undefined;
-      this.snapFollowingViewportToBottom();
-      this.publishFrame();
-    }, SYNCHRONIZED_OUTPUT_FALLBACK_MS);
-    this.synchronizedOutputFallback.unref?.();
+  private scheduleSynchronizedOutputRecovery() {
+    // A legitimate synchronized redraw can span several PTY chunks. Restart
+    // the timer for each parsed chunk so an active redraw is never exposed
+    // halfway through. If the closing marker was interrupted, end the stale
+    // local mode after the stream has gone quiet; the resulting parse event
+    // publishes the recovered frame and restores normal updates.
+    this.clearSynchronizedOutputRecovery();
+    this.synchronizedOutputRecovery = setTimeout(() => {
+      this.synchronizedOutputRecovery = undefined;
+      if (this.terminal.modes.synchronizedOutputMode) {
+        this.terminal.write("\x1b[?2026l");
+      }
+    }, SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS);
+    this.synchronizedOutputRecovery.unref?.();
   }
 
-  private clearSynchronizedOutputFallback() {
-    if (!this.synchronizedOutputFallback) {
+  private clearSynchronizedOutputRecovery() {
+    if (!this.synchronizedOutputRecovery) {
       return;
     }
-    clearTimeout(this.synchronizedOutputFallback);
-    this.synchronizedOutputFallback = undefined;
+    clearTimeout(this.synchronizedOutputRecovery);
+    this.synchronizedOutputRecovery = undefined;
   }
 
   // Subscribe to panel updates (output, resize, scroll). The rendered
@@ -569,7 +573,7 @@ export class TerminalPanel implements TerminalReadable {
   // Stop our local view of the PTY. With a persistent (tmux) panel this only
   // detaches the client; the session keeps running for the next launch.
   detach() {
-    this.clearSynchronizedOutputFallback();
+    this.clearSynchronizedOutputRecovery();
     try {
       this.child?.kill();
     } catch {

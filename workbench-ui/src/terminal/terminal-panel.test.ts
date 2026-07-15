@@ -6,7 +6,10 @@ import { TerminalPanel } from "./terminal-panel";
 function rawTerminal(panel: TerminalPanel) {
   return (
     panel as unknown as {
-      terminal: { write(data: string, cb: () => void): void };
+      terminal: {
+        modes: { synchronizedOutputMode: boolean };
+        write(data: string, cb?: () => void): void;
+      };
     }
   ).terminal;
 }
@@ -40,11 +43,34 @@ describe("TerminalPanel synchronized output", () => {
     await Bun.sleep(300);
 
     expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
+    expect(rawTerminal(panel).modes.synchronizedOutputMode).toBe(false);
     const text = panel
       .getLines()
       .map((row) => row.map((cell) => cell.char).join(""))
       .join("\n");
     expect(text).toContain("> prompt");
+
+    const recoveredRevision = panel.getSnapshot();
+    await feed(panel, " ready");
+    expect(panel.getSnapshot()).toBeGreaterThan(recoveredRevision);
+  });
+
+  test("does not publish a synchronized redraw while chunks are still arriving", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 8);
+    await feed(panel, "old composer");
+    const initialRevision = panel.getSnapshot();
+
+    await feed(panel, "\x1b[?2026h\rpartial redraw");
+    await Bun.sleep(160);
+    await feed(panel, "\r\nmore redraw");
+    await Bun.sleep(140);
+
+    // More than 250 ms has elapsed since the redraw began, but not since its
+    // latest chunk. Publishing here would expose duplicated composer rows.
+    expect(panel.getSnapshot()).toBe(initialRevision);
+
+    await feed(panel, "\x1b[?2026l");
+    expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
   });
 });
 
