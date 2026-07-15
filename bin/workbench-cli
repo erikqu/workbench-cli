@@ -23,6 +23,15 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
+# Silvery's Scope class extends AsyncDisposableStack while its module is being
+# evaluated. Detect an old Bun here so users get a useful recovery instruction
+# instead of a dependency stack trace.
+if ! bun -e 'process.exit(typeof AsyncDisposableStack === "function" ? 0 : 1)' >/dev/null 2>&1; then
+  echo "workbench-cli requires a newer Bun (found $(bun --version))." >&2
+  echo "Upgrade Bun or re-run: curl -fsSL https://ehq.so/install | bash" >&2
+  exit 1
+fi
+
 if [[ ! -d "$UI_DIR" ]]; then
   echo "Missing workbench-ui directory: $UI_DIR" >&2
   exit 1

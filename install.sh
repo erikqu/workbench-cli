@@ -26,15 +26,26 @@ die() {
 command -v git >/dev/null 2>&1 || die "git is required."
 command -v curl >/dev/null 2>&1 || die "curl is required."
 
-# Bun is the runtime. Install it if it isn't already on PATH.
-if ! command -v bun >/dev/null 2>&1; then
-  info "Bun not found; installing from https://bun.sh ..."
+# Silvery uses TC39 explicit resource management at module-load time. Older Bun
+# releases (including 1.2.22) do not provide AsyncDisposableStack, so checking
+# only that `bun` exists lets installation succeed and the app crash on launch.
+bun_is_compatible() {
+  command -v bun >/dev/null 2>&1 &&
+    bun -e 'process.exit(typeof AsyncDisposableStack === "function" ? 0 : 1)' >/dev/null 2>&1
+}
+
+if ! bun_is_compatible; then
+  if command -v bun >/dev/null 2>&1; then
+    info "Bun $(bun --version) is too old; installing a compatible release ..."
+  else
+    info "Bun not found; installing from https://bun.sh ..."
+  fi
   curl -fsSL https://bun.sh/install | bash
   export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
   export PATH="$BUN_INSTALL/bin:$PATH"
 fi
-command -v bun >/dev/null 2>&1 ||
-  die "Bun is still not on PATH. Install it from https://bun.sh and re-run."
+bun_is_compatible ||
+  die "A compatible Bun is still not on PATH. Install the latest Bun from https://bun.sh and re-run."
 
 # Fetch (or update) the source checkout.
 if [ -d "$INSTALL_DIR/.git" ]; then
