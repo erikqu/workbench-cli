@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
+import { extname } from "node:path";
 import { useEffect, useRef, useState } from "react";
-import { Box, Text, useInput } from "silvery";
-import { forgetImage } from "../../media/image";
+import { Box, Text, useBoxRectDangerously, useInput } from "silvery";
+import { forgetImage, getCellPixelWidth } from "../../media/image";
 import {
+  gifPreviewWidth,
   probeVideo,
   startVideoExtraction,
   type VideoExtraction,
@@ -26,6 +28,12 @@ export function VideoViewer({
   actions: WorkbenchActions;
 }) {
   const focused = view.state.focus === "editor";
+  const animatedGif = extname(tab.path).toLowerCase() === ".gif";
+  const mediaLabel = animatedGif ? "GIF" : "video";
+  const rect = useBoxRectDangerously();
+  const previewWidth = animatedGif
+    ? gifPreviewWidth(rect.width, getCellPixelWidth())
+    : undefined;
   const extractionRef = useRef<VideoExtraction | null>(null);
   const metaRef = useRef<VideoMeta | null>(null);
   const prevFrameRef = useRef(0);
@@ -50,7 +58,11 @@ export function VideoViewer({
 
     if (!videoAvailable()) {
       setStatus("error");
-      setError("Install ffmpeg to play videos (and ffprobe for the scrubber).");
+      setError(
+        animatedGif
+          ? "Install ffmpeg to play animated GIFs."
+          : "Install ffmpeg to play videos (and ffprobe for the scrubber)."
+      );
       return;
     }
 
@@ -60,7 +72,9 @@ export function VideoViewer({
           return;
         }
         metaRef.current = meta;
-        extractionRef.current = startVideoExtraction(tab.path, meta);
+        extractionRef.current = startVideoExtraction(tab.path, meta, {
+          previewWidth,
+        });
         setStatus("ready");
       })
       .catch((err: unknown) => {
@@ -69,7 +83,9 @@ export function VideoViewer({
         }
         setStatus("error");
         setError(
-          err instanceof Error ? err.message : "Could not start video playback"
+          err instanceof Error
+            ? err.message
+            : `Could not start ${mediaLabel} playback`
         );
       });
 
@@ -78,7 +94,7 @@ export function VideoViewer({
       extractionRef.current?.stop();
       extractionRef.current = null;
     };
-  }, [tab.path]);
+  }, [animatedGif, mediaLabel, previewWidth, tab.path]);
 
   // Advance frames at the (capped) source rate. Only steps to frames ffmpeg has
   // already written; if extraction is lagging it holds, and when ffmpeg finishes
@@ -95,6 +111,9 @@ export function VideoViewer({
     const id = setInterval(() => {
       setFrame((current) => {
         if (ext.totalFrames && current >= ext.totalFrames) {
+          if (animatedGif) {
+            return 1;
+          }
           setPlaying(false);
           setEnded(true);
           return current;
@@ -104,6 +123,9 @@ export function VideoViewer({
           return next;
         }
         if (ext.isDone()) {
+          if (animatedGif && current > 1) {
+            return 1;
+          }
           setPlaying(false);
           setEnded(true);
           return current;
@@ -112,7 +134,7 @@ export function VideoViewer({
       });
     }, interval);
     return () => clearInterval(id);
-  }, [status, playing]);
+  }, [animatedGif, status, playing]);
 
   // Evict the just-departed frame from the image caches so playback doesn't leak
   // memory across thousands of unique frame paths.
@@ -211,14 +233,14 @@ export function VideoViewer({
       >
         {status === "error" ? (
           <Text color={colors.accentAlt}>
-            {error ?? "Could not play video"}
+            {error ?? `Could not play ${mediaLabel}`}
           </Text>
         ) : status === "loading" ? (
-          <Text color={colors.dim}>Loading video...</Text>
+          <Text color={colors.dim}>Loading {mediaLabel}...</Text>
         ) : haveFrame && framePath ? (
           <MeasuredImageContent path={framePath} />
         ) : (
-          <Text color={colors.dim}>Buffering video...</Text>
+          <Text color={colors.dim}>Buffering {mediaLabel}...</Text>
         )}
       </Box>
     </Box>

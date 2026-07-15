@@ -29,6 +29,23 @@ describe("TerminalPanel synchronized output", () => {
     await feed(panel, "\x1b[?2026l");
     expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
   });
+
+  test("publishes a complete-enough frame when the closing marker is lost", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 8);
+    const initialRevision = panel.getSnapshot();
+
+    await feed(panel, "\x1b[?2026hWorking\r\n\r\n> prompt");
+    expect(panel.getSnapshot()).toBe(initialRevision);
+
+    await Bun.sleep(300);
+
+    expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
+    const text = panel
+      .getLines()
+      .map((row) => row.map((cell) => cell.char).join(""))
+      .join("\n");
+    expect(text).toContain("> prompt");
+  });
 });
 
 describe("TerminalPanel.getCursor", () => {

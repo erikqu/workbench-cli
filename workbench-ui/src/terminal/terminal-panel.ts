@@ -158,6 +158,7 @@ const PALETTE_256 = (() => {
 // across panel switches. This lets the silvery <Terminal> redraw when the
 // active pane swaps without remounting (no `key`), keeping switches instant.
 let revisionCounter = 0;
+const SYNCHRONIZED_OUTPUT_FALLBACK_MS = 250;
 
 export class TerminalPanel implements TerminalReadable {
   private terminal: Terminal;
@@ -167,6 +168,7 @@ export class TerminalPanel implements TerminalReadable {
   private listeners = new Set<() => void>();
   private followOutput = true;
   private tmuxCopyModePossible = false;
+  private synchronizedOutputFallback?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly cwd: string,
@@ -186,18 +188,44 @@ export class TerminalPanel implements TerminalReadable {
       },
     });
     this.terminal.onWriteParsed(() => {
+      this.snapFollowingViewportToBottom();
       // Full-screen TUIs such as Codex wrap redraws in synchronized-output mode
       // (DEC private mode 2026). Do not expose partially parsed frames while the
       // mode is active; repaint once the closing sequence has been processed.
       // Rendering every PTY chunk defeats the mode and produces transient stale
       // borders/text ("artifacts") during Codex's frequent composer redraws.
       if (this.terminal.modes.synchronizedOutputMode) {
+        this.scheduleSynchronizedOutputFallback();
         return;
       }
-      this.snapFollowingViewportToBottom();
-      this.updateRevision = ++revisionCounter;
-      this.emit();
+      this.clearSynchronizedOutputFallback();
+      this.publishFrame();
     });
+  }
+
+  private publishFrame() {
+    this.updateRevision = ++revisionCounter;
+    this.emit();
+  }
+
+  private scheduleSynchronizedOutputFallback() {
+    if (this.synchronizedOutputFallback) {
+      return;
+    }
+    this.synchronizedOutputFallback = setTimeout(() => {
+      this.synchronizedOutputFallback = undefined;
+      this.snapFollowingViewportToBottom();
+      this.publishFrame();
+    }, SYNCHRONIZED_OUTPUT_FALLBACK_MS);
+    this.synchronizedOutputFallback.unref?.();
+  }
+
+  private clearSynchronizedOutputFallback() {
+    if (!this.synchronizedOutputFallback) {
+      return;
+    }
+    clearTimeout(this.synchronizedOutputFallback);
+    this.synchronizedOutputFallback = undefined;
   }
 
   // Subscribe to panel updates (output, resize, scroll). The rendered
@@ -541,6 +569,7 @@ export class TerminalPanel implements TerminalReadable {
   // Stop our local view of the PTY. With a persistent (tmux) panel this only
   // detaches the client; the session keeps running for the next launch.
   detach() {
+    this.clearSynchronizedOutputFallback();
     try {
       this.child?.kill();
     } catch {

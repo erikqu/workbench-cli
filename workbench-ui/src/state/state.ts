@@ -246,6 +246,7 @@ function createScreenshotState(cwd: string): AppState {
     join(cwd, "test-harness", "sample.ts"),
     join(cwd, "README.md"),
     join(cwd, "test-harness", "sample.png"),
+    join(cwd, "test-harness", "sample.gif"),
     join(cwd, "test-harness", "diagram.md"),
     join(cwd, "test-harness", "sample.pdf"),
     join(cwd, "test-harness", "sample.mp4"),

@@ -11,7 +11,6 @@ const imageExtensions = new Set([
   ".jfif",
   ".pjpeg",
   ".pjp",
-  ".gif",
   ".bmp",
   ".tiff",
   ".tif",
@@ -25,6 +24,7 @@ const imageExtensions = new Set([
 const markdownExtensions = new Set([".md", ".markdown", ".mdx"]);
 const pdfExtensions = new Set([".pdf"]);
 const videoExtensions = new Set([
+  ".gif",
   ".mp4",
   ".m4v",
   ".mov",

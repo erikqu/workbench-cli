@@ -174,6 +174,25 @@ try {
     report("sample.png tab located", false);
   }
 
+  // 3c-i. Animated GIFs use the frame player rather than freezing on the first
+  // image. The shared playback controls prove ffmpeg probing/extraction started.
+  const gifTab = await findCell(page, "sample.gif");
+  if (gifTab) {
+    await click(page, gifTab.col + 2, gifTab.row + 1);
+    const controlsShown = await waitForText(page, "Space play/pause", 12_000);
+    const frameDrawn = await waitForText(page, "\u2580", 12_000);
+    const notBinary = !(await bufferText(page)).includes("(binary file)");
+    report(
+      "animated GIF tab renders in the frame player",
+      controlsShown && frameDrawn && notBinary
+    );
+    await page.screenshot({ path: join(screenshotDir, "workbench-gif.png") });
+    await send(page, " ");
+    await page.waitForTimeout(300);
+  } else {
+    report("sample.gif tab located", false);
+  }
+
   // 3c-ii. A markdown file with a ```mermaid block renders the diagram as an
   // image (half-block art in screenshot mode), not as raw source.
   const diagramTab = await findCell(page, "diagram.md");

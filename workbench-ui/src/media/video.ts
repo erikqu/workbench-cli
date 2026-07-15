@@ -14,6 +14,10 @@ const PLAYBACK_FPS_CAP = 15;
 // downscales further to the pane, so this is an upper bound on quality, not the
 // display size. 480px keeps each PNG small enough to write/read at frame rate.
 const FRAME_WIDTH = 480;
+const PREVIEW_MIN_WIDTH = 720;
+const PREVIEW_MAX_WIDTH = 3072;
+const PREVIEW_WIDTH_STEP = 128;
+const FALLBACK_CELL_PIXEL_WIDTH = 10;
 
 let ffmpegBin: string | null | undefined;
 let ffprobeBin: string | null | undefined;
@@ -131,12 +135,44 @@ export interface VideoExtraction {
   totalFrames: number;
 }
 
+export interface VideoExtractionOptions {
+  previewWidth?: number;
+}
+
+// Match the PDF viewer's native-pixel policy, rounded to coarse steps so a
+// one-column pane drag does not restart frame extraction.
+export function gifPreviewWidth(
+  maxCols: number,
+  cellPixelWidth = FALLBACK_CELL_PIXEL_WIDTH
+): number {
+  const measured =
+    Math.max(1, Math.floor(maxCols)) * Math.max(1, cellPixelWidth);
+  const quantized =
+    Math.ceil(measured / PREVIEW_WIDTH_STEP) * PREVIEW_WIDTH_STEP;
+  return Math.min(PREVIEW_MAX_WIDTH, Math.max(PREVIEW_MIN_WIDTH, quantized));
+}
+
+export function frameExtractionFilter(
+  fps: number,
+  previewWidth?: number
+): string {
+  if (previewWidth === undefined) {
+    return `fps=${fps},scale=${FRAME_WIDTH}:-2:flags=fast_bilinear`;
+  }
+  const width = Math.min(
+    PREVIEW_MAX_WIDTH,
+    Math.max(PREVIEW_MIN_WIDTH, Math.round(previewWidth))
+  );
+  return `fps=${fps},scale=w='min(iw,${width})':h='min(ih,${PREVIEW_MAX_WIDTH})':force_original_aspect_ratio=decrease:flags=lanczos`;
+}
+
 // Start decoding `path` into PNG frames. Returns immediately; frames appear in
 // `dir` sequentially as ffmpeg writes them, so the player can begin as soon as
 // the first frame lands instead of waiting for the whole file.
 export function startVideoExtraction(
   path: string,
-  meta: VideoMeta | null
+  meta: VideoMeta | null,
+  options: VideoExtractionOptions = {}
 ): VideoExtraction {
   const bin = ffmpeg();
   if (!bin) {
@@ -159,7 +195,7 @@ export function startVideoExtraction(
         "-i",
         path,
         "-vf",
-        `fps=${fps},scale=${FRAME_WIDTH}:-2:flags=fast_bilinear`,
+        frameExtractionFilter(fps, options.previewWidth),
         "-an",
         pattern,
       ],
