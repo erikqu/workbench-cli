@@ -64,7 +64,12 @@ export function PdfViewer({
           color={colors.dim}
         >{`PDF page ${page}${pageCount ? ` / ${pageCount}` : ""}  ↑↓/PgUp/PgDn`}</Text>
       </Box>
-      <Box flexGrow={1} minWidth={1} overflow="hidden">
+      <Box
+        backgroundColor={colors.panelAlt}
+        flexGrow={1}
+        minWidth={1}
+        overflow="hidden"
+      >
         <MeasuredPdfContent
           page={page}
           path={tab.path}

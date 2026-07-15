@@ -203,7 +203,12 @@ export function VideoViewer({
             : ""}
         </Text>
       </Box>
-      <Box flexGrow={1} minWidth={1} overflow="hidden">
+      <Box
+        backgroundColor={colors.panelAlt}
+        flexGrow={1}
+        minWidth={1}
+        overflow="hidden"
+      >
         {status === "error" ? (
           <Text color={colors.accentAlt}>
             {error ?? "Could not play video"}

@@ -20,8 +20,8 @@ import {
   terminalIdFromTab,
 } from "../state/types";
 import {
-  resetHostCursorStyle,
-  writeHostCursorStyle,
+  resetHostCursorAppearance,
+  writeHostCursorAppearance,
 } from "../terminal/host-cursor";
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { colors } from "../ui/theme";
@@ -72,6 +72,7 @@ export function Workbench({
       <SuppressImagesContext.Provider value={view.state.splashVisible}>
         <Box
           backgroundColor={colors.bg}
+          color={colors.text}
           flexDirection="column"
           height="100%"
           onMouseDown={() => actions.closePlusMenu()}
@@ -569,6 +570,7 @@ function MeasuredTerminalGrid({
     panel.getSnapshot,
     panel.getSnapshot
   );
+  const cursorColor = colors.cursor;
 
   useEffect(() => {
     if (cols < 20 || rows < 5) {
@@ -588,16 +590,16 @@ function MeasuredTerminalGrid({
     if (!focused) {
       return;
     }
-    writeHostCursorStyle("bar", true);
+    writeHostCursorAppearance("bar", true, cursorColor);
     const timer = setInterval(() => {
-      writeHostCursorStyle("bar", true);
+      writeHostCursorAppearance("bar", true, cursorColor);
     }, 1000);
     timer.unref?.();
     return () => {
       clearInterval(timer);
-      resetHostCursorStyle();
+      resetHostCursorAppearance();
     };
-  }, [focused]);
+  }, [cursorColor, focused]);
 
   const onMouse = (event: TerminalMouseEvent) => {
     if (event.type === "wheel") {

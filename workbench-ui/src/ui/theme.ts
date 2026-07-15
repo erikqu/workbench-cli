@@ -246,6 +246,7 @@ function colorMap(t: Record<string, string>) {
     termBg: t["term-bg"],
     termFg: t["term-fg"],
     termFgBold: t["term-fg-bold"],
+    cursor: t["fg-accent"],
   };
 }
 
@@ -276,6 +277,10 @@ export function isThemeName(name: string | undefined): name is ThemeName {
 
 export function themeTokens(name: string): Record<string, string> {
   return (BUILT[name as ThemeName] ?? BUILT[DEFAULT_THEME]).tokens;
+}
+
+export function themeMode(name: string): ThemeDef["mode"] {
+  return (DEFS[name as ThemeName] ?? DEFS[DEFAULT_THEME]).mode;
 }
 
 // Stable palette reference. Mutated in place by applyTheme(); never reassign or

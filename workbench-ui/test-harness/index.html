@@ -22,6 +22,14 @@
     import { Terminal } from "/node_modules/@xterm/xterm/lib/xterm.mjs";
 
     const params = new URLSearchParams(location.search);
+    const lightTerminal = option("terminalTheme") === "light";
+    const terminalTheme = lightTerminal
+      ? { background: "#ffffff", foreground: "#18181b", cursor: "#1f2328" }
+      : { background: "#1e1e1e", foreground: "#eeece6", cursor: "#e4e4e7" };
+    document.documentElement.style.background = terminalTheme.background;
+    document.body.style.background = terminalTheme.background;
+    document.getElementById("terminal").style.background =
+      terminalTheme.background;
     const fontFamily =
       option("fontFamily") ??
       "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace";
@@ -37,10 +45,7 @@
       fontWeightBold: option("fontWeightBold") ?? "700",
       letterSpacing: numericOption("letterSpacing", 0),
       lineHeight: numericOption("lineHeight", 1.12),
-      theme: {
-        background: "#1e1e1e",
-        foreground: "#eeece6",
-      },
+      theme: terminalTheme,
     });
 
     term.open(document.getElementById("terminal"));

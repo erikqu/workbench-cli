@@ -47,7 +47,12 @@ export function ImageViewer({
       padding={1}
     >
       <Text color={colors.dim}>{rel}</Text>
-      <Box flexGrow={1} minWidth={1} overflow="hidden">
+      <Box
+        backgroundColor={colors.panelAlt}
+        flexGrow={1}
+        minWidth={1}
+        overflow="hidden"
+      >
         <MeasuredImageContent path={tab.path} />
       </Box>
     </Box>

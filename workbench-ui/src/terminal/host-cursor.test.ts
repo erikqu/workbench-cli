@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  hostCursorAppearanceSequence,
+  hostCursorColorSequence,
   hostCursorStyleSequence,
+  resetHostCursorAppearanceSequence,
+  resetHostCursorColorSequence,
   resetHostCursorStyleSequence,
 } from "./host-cursor";
 
@@ -16,5 +20,17 @@ describe("host cursor style sequences", () => {
 
   test("emits the terminal default reset sequence", () => {
     expect(resetHostCursorStyleSequence()).toBe("\x1b[0 q");
+  });
+
+  test("sets and resets a contrasting cursor color", () => {
+    expect(hostCursorColorSequence("#1f2328")).toBe("\x1b]12;#1f2328\x07");
+    expect(resetHostCursorColorSequence()).toBe("\x1b]112\x07");
+  });
+
+  test("combines cursor shape and color into one write", () => {
+    expect(hostCursorAppearanceSequence("bar", true, "#1f2328")).toBe(
+      "\x1b[5 q\x1b]12;#1f2328\x07"
+    );
+    expect(resetHostCursorAppearanceSequence()).toBe("\x1b[0 q\x1b]112\x07");
   });
 });

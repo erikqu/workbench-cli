@@ -9,10 +9,12 @@ import { join } from "node:path";
 // or half-block ASCII fallback), so diagrams show as real images wherever the
 // terminal supports it and degrade gracefully where it doesn't.
 
-const THEME = "dark";
-// Match the editor pane background so the diagram blends in seamlessly.
-const BACKGROUND = "#19191b";
 const SCALE = "2";
+
+const RENDER_STYLES = {
+  dark: { theme: "dark", background: "#19191b" },
+  light: { theme: "default", background: "#ffffff" },
+} as const;
 
 const cacheDir = join(Bun.env.HOME ?? homedir(), ".workbench", "mermaid-cache");
 
@@ -53,14 +55,19 @@ let chain: Promise<unknown> = Promise.resolve();
 
 // Returns a path to a cached PNG for the given Mermaid source, or null if the
 // diagram could not be rendered (mmdc missing or the source failed to parse).
-export function renderMermaidToPng(source: string): Promise<string | null> {
+export function renderMermaidToPng(
+  source: string,
+  mode: keyof typeof RENDER_STYLES = "dark"
+): Promise<string | null> {
   const trimmed = source.trim();
   if (!trimmed) {
     return Promise.resolve(null);
   }
 
+  const style = RENDER_STYLES[mode];
+
   const key = createHash("sha256")
-    .update(`${THEME}|${BACKGROUND}|${SCALE}|${trimmed}`)
+    .update(`${style.theme}|${style.background}|${SCALE}|${trimmed}`)
     .digest("hex");
   const outPath = join(cacheDir, `${key}.png`);
   if (existsSync(outPath)) {
@@ -83,7 +90,7 @@ export function renderMermaidToPng(source: string): Promise<string | null> {
       return null;
     }
     // Queue behind any in-progress render.
-    const run = chain.then(() => runMmdc(mmdc, key, trimmed, outPath));
+    const run = chain.then(() => runMmdc(mmdc, key, trimmed, outPath, style));
     chain = run.catch(() => {});
     return run;
   })();
@@ -97,7 +104,8 @@ async function runMmdc(
   mmdc: string,
   key: string,
   source: string,
-  outPath: string
+  outPath: string,
+  style: (typeof RENDER_STYLES)[keyof typeof RENDER_STYLES]
 ): Promise<string | null> {
   const inPath = join(cacheDir, `${key}.mmd`);
   try {
@@ -115,9 +123,9 @@ async function runMmdc(
         "-o",
         outPath,
         "-t",
-        THEME,
+        style.theme,
         "-b",
-        BACKGROUND,
+        style.background,
         "-s",
         SCALE,
         "-p",

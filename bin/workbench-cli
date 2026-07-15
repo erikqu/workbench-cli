@@ -54,5 +54,8 @@ if [[ "$hot" == "1" ]]; then
   bun_flags+=(--watch)
 fi
 
-exec env WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
+exec env -u NO_COLOR \
+  COLORTERM="${COLORTERM:-truecolor}" \
+  FORCE_COLOR=1 \
+  WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
   bun ${bun_flags[@]+"${bun_flags[@]}"} "$UI_DIR/src/index.ts" ${args[@]+"${args[@]}"}

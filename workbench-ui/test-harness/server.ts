@@ -32,16 +32,20 @@ const server = Bun.serve({
   websocket: {
     open(socket) {
       const shellCommand = `stty cols ${cols} rows ${rows}; ${command}`;
+      const childEnv = {
+        ...Bun.env,
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        FORCE_COLOR: "1",
+        COLUMNS: String(cols),
+        LINES: String(rows),
+        WORKBENCH_LOG_FILTER: "off",
+        WORKBENCH_UI_SCREENSHOT: "1",
+      };
+      delete childEnv.NO_COLOR;
       const child = Bun.spawn(["script", "-qefc", shellCommand, "/dev/null"], {
         cwd: root,
-        env: {
-          ...Bun.env,
-          TERM: "xterm-256color",
-          COLUMNS: String(cols),
-          LINES: String(rows),
-          WORKBENCH_LOG_FILTER: "off",
-          WORKBENCH_UI_SCREENSHOT: "1",
-        },
+        env: childEnv,
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",

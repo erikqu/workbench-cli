@@ -25,6 +25,26 @@ export function resetHostCursorStyleSequence(): string {
   return "\x1b[0 q";
 }
 
+export function hostCursorColorSequence(color: string): string {
+  return `\x1b]12;${color}\x07`;
+}
+
+export function resetHostCursorColorSequence(): string {
+  return "\x1b]112\x07";
+}
+
+export function hostCursorAppearanceSequence(
+  shape: HostCursorShape,
+  blink: boolean,
+  color: string
+): string {
+  return hostCursorStyleSequence(shape, blink) + hostCursorColorSequence(color);
+}
+
+export function resetHostCursorAppearanceSequence(): string {
+  return resetHostCursorStyleSequence() + resetHostCursorColorSequence();
+}
+
 export function writeHostCursorStyle(
   shape: HostCursorShape,
   blink: boolean
@@ -34,6 +54,18 @@ export function writeHostCursorStyle(
 
 export function resetHostCursorStyle(): void {
   writeRaw(resetHostCursorStyleSequence());
+}
+
+export function writeHostCursorAppearance(
+  shape: HostCursorShape,
+  blink: boolean,
+  color: string
+): void {
+  writeRaw(hostCursorAppearanceSequence(shape, blink, color));
+}
+
+export function resetHostCursorAppearance(): void {
+  writeRaw(resetHostCursorAppearanceSequence());
 }
 
 function writeRaw(sequence: string): void {

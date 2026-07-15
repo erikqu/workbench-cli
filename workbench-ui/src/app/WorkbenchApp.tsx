@@ -125,6 +125,12 @@ export class ReactWorkbenchApp {
   }
 
   async run() {
+    // Workbench themes and media previews require color even when a parent
+    // shell exports NO_COLOR. Child harnesses already apply the same override.
+    delete process.env.NO_COLOR;
+    process.env.FORCE_COLOR = "1";
+    process.env.COLORTERM ??= "truecolor";
+
     this.rebuildExplorer();
     this.syncExplorerWatcher();
     this.startDiffPolling();

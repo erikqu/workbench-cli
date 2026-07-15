@@ -6,7 +6,11 @@ import { defaultHarnessId, harnessSpec } from "../src/state/harnesses";
 const root = join(import.meta.dir, "..");
 const screenshotDir = join(root, "artifacts", "screenshots");
 const port = Number(Bun.env.WORKBENCH_SCREENSHOT_PORT ?? "4177");
-const screenshotQuery = normalizeQuery(Bun.env.WORKBENCH_SCREENSHOT_QUERY);
+const lightTheme = Bun.env.WORKBENCH_UI_THEME === "light";
+const screenshotQuery = normalizeQuery(
+  Bun.env.WORKBENCH_SCREENSHOT_QUERY ??
+    (lightTheme ? "terminalTheme=light" : undefined)
+);
 const defaultHarnessLabel = harnessSpec(defaultHarnessId()).label;
 
 mkdirSync(screenshotDir, { recursive: true });
@@ -110,8 +114,9 @@ try {
       "editor pane syntax parses keywords",
       await keywordIsHighlighted(page)
     );
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       await wheel(page, 90, 20, 1);
+      await page.waitForTimeout(40);
     }
     const editorScrolled = await waitForText(
       page,
@@ -139,6 +144,12 @@ try {
     const renderedHeading =
       buffer.includes("Workbench") && !buffer.includes("# Workbench");
     report("markdown tab renders formatted markdown", renderedHeading);
+    if (lightTheme) {
+      report(
+        "light theme markdown preview uses dark text",
+        await textHasDarkRgbForeground(page, "The Bun", 26)
+      );
+    }
     await page.screenshot({
       path: join(screenshotDir, "workbench-markdown.png"),
     });
@@ -153,6 +164,10 @@ try {
     const halfBlocksDrawn = await waitForText(page, "\u2580", 5000);
     const notBinary = !(await bufferText(page)).includes("(binary file)");
     report("image tab renders half-block art", halfBlocksDrawn && notBinary);
+    report(
+      "image preview preserves RGB colors",
+      await regionHasRgbVariation(page, 56)
+    );
     await page.waitForTimeout(500);
     await page.screenshot({ path: join(screenshotDir, "workbench-image.png") });
   } else {
@@ -225,7 +240,7 @@ try {
     (await findCell(page, "Changes", 26)) ??
     (await findCell(page, "\u25cf", 26));
   if (changesTab) {
-    await click(page, changesTab.col + 2, changesTab.row + 1);
+    await click(page, changesTab.col + 2, changesTab.row + 2);
     const headerShown = await waitForText(page, "vs HEAD", 4000);
     const patchShown = await waitForText(page, "@@", 4000);
     report("changes tab renders working-tree diff", headerShown && patchShown);
@@ -442,11 +457,12 @@ async function findPlusButton(
   return null;
 }
 
-// Verify an "import" keyword in the editor pane renders in the keyword color
-// (#569cd6) rather than the default text color, proving highlights applied.
+// Verify an "import" keyword in the editor pane renders in the active theme's
+// keyword color rather than the default text color, proving highlights applied.
 // Polled, because the ListView-backed editor settles its measured viewport over
 // a couple of frames after the file opens.
 async function keywordIsHighlighted(page: Page): Promise<boolean> {
+  const expected = lightTheme ? 0x00_00_ff : 0x56_9c_d6;
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
     const lines = (await bufferText(page)).split("\n");
@@ -459,13 +475,56 @@ async function keywordIsHighlighted(page: Page): Promise<boolean> {
         ({ col, row }) => (window as any).__cellFg(col, row),
         { col, row }
       );
-      if (fg?.rgb && fg.color === 0x56_9c_d6) {
+      if (fg?.rgb && fg.color === expected) {
         return true;
       }
     }
     await page.waitForTimeout(200);
   }
   return false;
+}
+
+async function regionHasRgbVariation(
+  page: Page,
+  colStart: number
+): Promise<boolean> {
+  return page.evaluate((start) => {
+    const colors = new Set<number>();
+    for (let row = 0; row < 40; row++) {
+      for (let col = start; col < 180; col++) {
+        const fg = (window as any).__cellFg(col, row);
+        if (fg?.rgb) {
+          colors.add(fg.color);
+        }
+        if (colors.size >= 8) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, colStart);
+}
+
+async function textHasDarkRgbForeground(
+  page: Page,
+  needle: string,
+  colStart: number
+): Promise<boolean> {
+  const cell = await findCell(page, needle, colStart);
+  if (!cell) {
+    return false;
+  }
+  const fg = await page.evaluate(
+    ({ col, row }) => (window as any).__cellFg(col, row),
+    cell
+  );
+  if (!fg?.rgb) {
+    return false;
+  }
+  const red = (fg.color >> 16) & 0xff;
+  const green = (fg.color >> 8) & 0xff;
+  const blue = fg.color & 0xff;
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue < 128;
 }
 
 async function waitForText(

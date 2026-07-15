@@ -28,7 +28,7 @@ import { cacheRemoteImage } from "../../media/image";
 import { mermaidAvailable, renderMermaidToPng } from "../../media/mermaid";
 import type { EditorTab } from "../../state/types";
 import { highlightLineTokens } from "../../text/syntax";
-import { colors } from "../../ui/theme";
+import { colors, themeMode } from "../../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "../types";
 import { MeasuredImageContent } from "./ImageViewer";
 import { CodeLine, LineList } from "./TextEditor";
@@ -405,6 +405,7 @@ export function MarkdownViewer({
             baseDir={dirname(tab.path)}
             blocks={blocks}
             focused={focused}
+            mode={themeMode(view.state.themeName)}
           />
         ) : (
           <LineList
@@ -493,10 +494,12 @@ function MarkdownList({
   blocks,
   focused,
   baseDir,
+  mode,
 }: {
   blocks: MarkdownBlock[];
   focused: boolean;
   baseDir: string;
+  mode: "dark" | "light";
 }) {
   const listRef = useRef<ListViewHandle>(null);
   const rect = useBoxRectDangerously();
@@ -555,7 +558,7 @@ function MarkdownList({
         ref={listRef}
         renderItem={(block, index) =>
           block.type === "mermaid" ? (
-            <MermaidBlock source={block.source} width={width} />
+            <MermaidBlock mode={mode} source={block.source} width={width} />
           ) : block.type === "image" ? (
             <ImageBlock
               alt={block.alt}
@@ -583,7 +586,15 @@ function MarkdownList({
 // A ```mermaid block: rendered to a PNG and shown via the image pipeline, with a
 // graceful fall back to the raw source when mermaid-cli isn't installed or the
 // diagram fails to parse.
-function MermaidBlock({ source, width }: { source: string; width: number }) {
+function MermaidBlock({
+  source,
+  width,
+  mode,
+}: {
+  source: string;
+  width: number;
+  mode: "dark" | "light";
+}) {
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const [path, setPath] = useState<string | null>(null);
 
@@ -591,7 +602,7 @@ function MermaidBlock({ source, width }: { source: string; width: number }) {
     let cancelled = false;
     setStatus("loading");
     setPath(null);
-    renderMermaidToPng(source)
+    renderMermaidToPng(source, mode)
       .then((result) => {
         if (cancelled) {
           return;
@@ -611,13 +622,18 @@ function MermaidBlock({ source, width }: { source: string; width: number }) {
     return () => {
       cancelled = true;
     };
-  }, [source]);
+  }, [source, mode]);
 
   if (status === "ok" && path) {
     return (
       <Box flexDirection="column" flexShrink={0}>
         <Text color={colors.dim}>mermaid</Text>
-        <Box flexShrink={0} height={MERMAID_ROWS} width={width}>
+        <Box
+          backgroundColor={colors.panelAlt}
+          flexShrink={0}
+          height={MERMAID_ROWS}
+          width={width}
+        >
           <MeasuredImageContent path={path} />
         </Box>
       </Box>
@@ -689,7 +705,13 @@ function ImageBlock({
     <Box flexDirection="column" flexShrink={0}>
       <Text color={colors.dim}>{alt ? `image: ${alt}` : "image"}</Text>
       {status === "ok" && path ? (
-        <Box flexShrink={0} height={IMAGE_ROWS} overflow="hidden" width={width}>
+        <Box
+          backgroundColor={colors.panelAlt}
+          flexShrink={0}
+          height={IMAGE_ROWS}
+          overflow="hidden"
+          width={width}
+        >
           <MeasuredImageContent path={path} />
         </Box>
       ) : (
