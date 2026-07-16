@@ -103,6 +103,8 @@ describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
     );
     expect(created.exitCode).toBe(0);
     await waitForFile(oldTermPath);
+    const existingTerm = readFileSync(oldTermPath, "utf8");
+    const existingPanePid = panePid(socketPath, "existing_session");
 
     const newCommand = `printf %s "$TERM" > ${shellQuote(newTermPath)}; sleep 30`;
     const panel = new TerminalPanel(suiteRoot, 80, 24, {
@@ -112,7 +114,8 @@ describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
     try {
       panel.start();
       await waitForFile(newTermPath);
-      expect(readFileSync(oldTermPath, "utf8")).toBe("screen");
+      expect(readFileSync(oldTermPath, "utf8")).toBe(existingTerm);
+      expect(panePid(socketPath, "existing_session")).toBe(existingPanePid);
       expect(readFileSync(newTermPath, "utf8")).toBe("tmux-256color");
       const existing = Bun.spawnSync(
         ["tmux", "-S", socketPath, "has-session", "-t", "existing_session"],
@@ -171,6 +174,26 @@ function clientCount(socketPath: string, session: string): number {
   }
   return new TextDecoder().decode(result.stdout).split("\n").filter(Boolean)
     .length;
+}
+
+function panePid(socketPath: string, session: string): string {
+  const result = Bun.spawnSync(
+    [
+      "tmux",
+      "-S",
+      socketPath,
+      "list-panes",
+      "-t",
+      session,
+      "-F",
+      "#{pane_pid}",
+    ],
+    { stderr: "ignore", stdout: "pipe" }
+  );
+  if (result.exitCode !== 0) {
+    return "";
+  }
+  return new TextDecoder().decode(result.stdout).trim();
 }
 
 function killServer(socketPath: string) {
