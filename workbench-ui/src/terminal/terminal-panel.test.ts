@@ -40,7 +40,7 @@ describe("TerminalPanel synchronized output", () => {
     await feed(panel, "\x1b[?2026hWorking\r\n\r\n> prompt");
     expect(panel.getSnapshot()).toBe(initialRevision);
 
-    await Bun.sleep(300);
+    await Bun.sleep(1100);
 
     expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
     expect(rawTerminal(panel).modes.synchronizedOutputMode).toBe(false);
@@ -65,9 +65,23 @@ describe("TerminalPanel synchronized output", () => {
     await feed(panel, "\r\nmore redraw");
     await Bun.sleep(140);
 
-    // More than 250 ms has elapsed since the redraw began, but not since its
-    // latest chunk. Publishing here would expose duplicated composer rows.
+    // Time has elapsed since the redraw began, but not one recovery period
+    // since its latest chunk. Publishing here would expose duplicate rows.
     expect(panel.getSnapshot()).toBe(initialRevision);
+
+    await feed(panel, "\x1b[?2026l");
+    expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
+  });
+
+  test("does not recover a quiet synchronized frame before one second", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 8);
+    const initialRevision = panel.getSnapshot();
+
+    await feed(panel, "\x1b[?2026h\x1b[2J\x1b[Hpaused redraw");
+    await Bun.sleep(350);
+
+    expect(panel.getSnapshot()).toBe(initialRevision);
+    expect(rawTerminal(panel).modes.synchronizedOutputMode).toBe(true);
 
     await feed(panel, "\x1b[?2026l");
     expect(panel.getSnapshot()).toBeGreaterThan(initialRevision);
@@ -187,5 +201,28 @@ describe("TerminalPanel input re-anchors the viewport", () => {
 
     await feed(panel, "\r\ni");
     expect(buffer.viewportY).toBeLessThan(buffer.baseY);
+  });
+});
+
+describe("TerminalPanel resize generations", () => {
+  test("coalesces a resize burst and sends only the newest size to the PTY", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24);
+    const calls: [number, number][] = [];
+    (
+      panel as unknown as { pty: { resize(cols: number, rows: number): void } }
+    ).pty = {
+      resize(cols, rows) {
+        calls.push([cols, rows]);
+      },
+    };
+
+    panel.resize(90, 25);
+    panel.resize(100, 30);
+    panel.resize(120, 40);
+
+    expect(calls).toEqual([]);
+    await Bun.sleep(0);
+    expect(calls).toEqual([[120, 40]]);
+    expect([panel.cols, panel.rows]).toEqual([120, 40]);
   });
 });

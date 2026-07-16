@@ -34,9 +34,11 @@
       option("fontFamily") ??
       "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace";
 
+    const initialCols = numericOption("cols", 180);
+    const initialRows = numericOption("rows", 40);
     const term = new Terminal({
-      cols: 180,
-      rows: 40,
+      cols: initialCols,
+      rows: initialRows,
       convertEol: true,
       cursorBlink: false,
       fontFamily,
@@ -50,8 +52,16 @@
 
     term.open(document.getElementById("terminal"));
     const socket = new WebSocket(`ws://${location.host}/pty`);
+    let outputBytes = 0;
+    let outputEvents = 0;
+    let parsedWrites = 0;
     socket.addEventListener("message", (event) => {
-      term.write(event.data);
+      const data = event.data;
+      outputBytes += new TextEncoder().encode(data).byteLength;
+      outputEvents += 1;
+      term.write(data, () => {
+        parsedWrites += 1;
+      });
       window.__workbenchSawOutput = true;
     });
     socket.addEventListener("open", () => {
@@ -64,6 +74,13 @@
     // Test hooks: send raw bytes to the workbench PTY and read back the
     // rendered terminal buffer so the screenshot script can assert on it.
     window.__send = (data) => socket.send(data);
+    window.__paste = (data) =>
+      socket.send(`\x1b[200~${data.replaceAll("\x1b[201~", "")}\x1b[201~`);
+    window.__resizeTerminal = (cols, rows) => {
+      term.resize(cols, rows);
+      socket.send(`\0WORKBENCH_RESIZE ${cols} ${rows}`);
+    };
+    window.__outputStats = () => ({ outputBytes, outputEvents, parsedWrites });
     window.__bufferText = () => {
       const buffer = term.buffer.active;
       const lines = [];
@@ -73,6 +90,40 @@
         );
       }
       return lines.join("\n");
+    };
+    window.__bufferGrid = () => {
+      const buffer = term.buffer.active;
+      const lines = [];
+      for (let i = 0; i < term.rows; i++) {
+        lines.push(
+          (buffer.getLine(buffer.viewportY + i)?.translateToString(false) ?? "")
+            .slice(0, term.cols)
+            .padEnd(term.cols, " ")
+        );
+      }
+      return { cols: term.cols, lines, rows: term.rows };
+    };
+    window.__cursorState = () => {
+      const buffer = term.buffer.active;
+      const coreService = term._core?.coreService;
+      return {
+        visible: coreService?.isCursorHidden !== true,
+        x: buffer.cursorX,
+        y: buffer.cursorY + buffer.baseY - buffer.viewportY,
+      };
+    };
+    window.__cellState = (col, row) => {
+      const buffer = term.buffer.active;
+      const cell = buffer.getLine(buffer.viewportY + row)?.getCell(col);
+      if (!cell) {
+        return null;
+      }
+      return {
+        inverse: Boolean(cell.isInverse()),
+        chars: cell.getChars(),
+        bg: cell.getBgColor(),
+        bgRgb: cell.isBgRGB(),
+      };
     };
     window.__cellFg = (col, row) => {
       const buffer = term.buffer.active;

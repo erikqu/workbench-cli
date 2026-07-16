@@ -51,11 +51,14 @@ const cwd = resolve(cwdArg ?? process.env.WORKBENCH_UI_CWD ?? ".");
 const imageOverride = (
   process.env.WORKBENCH_UI_IMAGE_PROTOCOL ?? ""
 ).toLowerCase();
+const automatedTerminal =
+  process.env.WORKBENCH_UI_SCREENSHOT === "1" ||
+  process.env.WORKBENCH_UI_E2E === "1";
 
 // Actively probe the terminal before the renderer grabs stdin: cell geometry
 // (so images aren't stretched) and which graphics protocol it actually speaks.
 // Best effort — null on non-TTY / busy stdin; kitty stays the default anyway.
-if (process.env.WORKBENCH_UI_SCREENSHOT !== "1") {
+if (!automatedTerminal) {
   try {
     const probe = await probeTerminal();
     if (probe?.aspect && !process.env.WORKBENCH_UI_CELL_ASPECT) {
@@ -72,11 +75,7 @@ if (process.env.WORKBENCH_UI_SCREENSHOT !== "1") {
   }
 }
 
-if (
-  process.env.WORKBENCH_UI_SCREENSHOT !== "1" &&
-  imageOverride !== "halfblock" &&
-  !inMultiplexer()
-) {
+if (!automatedTerminal && imageOverride !== "halfblock" && !inMultiplexer()) {
   const support = probedGraphicsSupport();
   const sixelOnly = support?.sixel && !support.kitty;
   const explicitSixel = imageOverride === "sixel";

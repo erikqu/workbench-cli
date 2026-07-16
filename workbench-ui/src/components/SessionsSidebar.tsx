@@ -1,5 +1,6 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
+  AnchoredOverlay,
   Badge,
   Box,
   Button,
@@ -19,19 +20,28 @@ import {
   maxSessionsSidebarWidth,
 } from "../ui/pane-layout";
 import { colors, THEME_LABELS } from "../ui/theme";
+import { CloseButton } from "./CloseButton";
 import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
 export function SessionsSidebar({
   view,
   actions,
+  onContextMenuChange,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
   const { columns } = useWindowSize();
   if (!view.state.sidebarVisible) {
-    return <CollapsedSessionsRail actions={actions} view={view} />;
+    return (
+      <CollapsedSessionsRail
+        actions={actions}
+        onContextMenuChange={onContextMenuChange}
+        view={view}
+      />
+    );
   }
   const maxWidth = maxSessionsSidebarWidth(
     columns,
@@ -79,7 +89,12 @@ export function SessionsSidebar({
           </Box>
         </Box>
         <NewAgentRow actions={actions} compact={width < 22} />
-        <SessionList actions={actions} sidebarWidth={width} view={view} />
+        <SessionList
+          actions={actions}
+          onContextMenuChange={onContextMenuChange}
+          sidebarWidth={width}
+          view={view}
+        />
         <SidebarControls actions={actions} sidebarWidth={width} view={view} />
       </Box>
       <PaneResizeHandle
@@ -150,10 +165,12 @@ function LegendRow({ keys, label }: { keys: string; label: string }) {
 function SessionList({
   view,
   actions,
+  onContextMenuChange,
   sidebarWidth,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  onContextMenuChange(value: SessionContextMenuState | null): void;
   sidebarWidth: number;
 }) {
   const listRef = useRef<ListViewHandle>(null);
@@ -174,6 +191,7 @@ function SessionList({
         actions={actions}
         listRef={listRef}
         nameMaxWidth={Math.max(3, sidebarWidth - 9)}
+        onContextMenuChange={onContextMenuChange}
         view={view}
       />
     </Box>
@@ -185,11 +203,13 @@ function SessionListBody({
   view,
   actions,
   nameMaxWidth,
+  onContextMenuChange,
 }: {
   listRef: React.RefObject<ListViewHandle | null>;
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
   nameMaxWidth: number;
+  onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
   const rect = useBoxRectDangerously();
   const height = Math.max(1, Math.floor(rect.height));
@@ -210,6 +230,7 @@ function SessionListBody({
           diff={view.diffs.get(session.cwd)}
           index={sessions.indexOf(session)}
           nameMaxWidth={nameMaxWidth}
+          onContextMenuChange={onContextMenuChange}
           session={session}
         />
       )}
@@ -220,9 +241,11 @@ function SessionListBody({
 function CollapsedSessionsRail({
   view,
   actions,
+  onContextMenuChange,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
   const click = (event: { stopPropagation(): void }) => {
     actions.toggleSidebar();
@@ -246,16 +269,32 @@ function CollapsedSessionsRail({
       {shortcutSessions.map((session, index) => {
         const active = session.id === view.state.activeSessionId;
         return (
-          <Text
-            color={active ? colors.accent : colors.dim}
+          <Box
+            anchorRef={`workbench-session-${session.id}`}
             key={session.id}
             onClick={(event) => {
+              if (event.button !== 0) {
+                return;
+              }
               actions.selectSession(session.id);
               event.stopPropagation();
             }}
+            onMouseDown={(event) => {
+              if (event.button !== 2) {
+                return;
+              }
+              onContextMenuChange({
+                anchorId: `workbench-session-${session.id}`,
+                sessionId: session.id,
+              });
+              event.preventDefault();
+              event.stopPropagation();
+            }}
           >
-            {String(index + 1)}
-          </Text>
+            <Text color={active ? colors.accent : colors.dim}>
+              {String(index + 1)}
+            </Text>
+          </Box>
         );
       })}
     </Box>
@@ -317,6 +356,7 @@ function SessionRow({
   diff,
   actions,
   nameMaxWidth,
+  onContextMenuChange,
 }: {
   session: AgentSession;
   index: number;
@@ -325,13 +365,16 @@ function SessionRow({
   diff?: SessionDiff;
   actions: WorkbenchActions;
   nameMaxWidth: number;
+  onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
-  const select = (event: { stopPropagation(): void }) => {
+  const anchorId = `workbench-session-${session.id}`;
+  const select = (event: { button: number; stopPropagation(): void }) => {
+    if (event.button !== 0) {
+      event.stopPropagation();
+      return;
+    }
+    onContextMenuChange(null);
     actions.selectSession(session.id);
-    event.stopPropagation();
-  };
-  const close = (event: { stopPropagation(): void }) => {
-    actions.closeSession(session.id);
     event.stopPropagation();
   };
   const hasChanges = diff && diff.files.length > 0;
@@ -340,15 +383,24 @@ function SessionRow({
 
   return (
     <Box
+      anchorRef={anchorId}
       backgroundColor={active ? colors.selectedMuted : colors.panel}
       flexDirection="column"
       flexShrink={0}
       height={2}
       onClick={select}
+      onMouseDown={(event) => {
+        if (event.button !== 2) {
+          return;
+        }
+        onContextMenuChange({ anchorId, sessionId: session.id });
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       paddingLeft={1}
     >
       <Box flexDirection="row" height={1}>
-        <Box flexDirection="row" flexGrow={1} marginRight={1} minWidth={1}>
+        <Box flexDirection="row" flexGrow={1} minWidth={1}>
           {hint ? (
             <Text
               color={active ? colors.accent : colors.dim}
@@ -364,9 +416,7 @@ function SessionRow({
           </Text>
         </Box>
         {canClose ? (
-          <Text color={colors.dim} onClick={close}>
-            x
-          </Text>
+          <CloseButton onClose={() => actions.closeSession(session.id)} />
         ) : null}
       </Box>
       {hasChanges ? (
@@ -376,6 +426,126 @@ function SessionRow({
           <Badge label={`-${diff.totalDeleted}`} variant="error" />
         </Box>
       ) : null}
+    </Box>
+  );
+}
+
+export interface SessionContextMenuState {
+  anchorId: string;
+  sessionId: string;
+}
+
+type SessionCloseScope = "bottom" | "others" | "top";
+
+export function sessionCloseTargets(
+  sessions: readonly AgentSession[],
+  target: string,
+  scope: SessionCloseScope
+): string[] {
+  const targetIndex = sessions.findIndex((session) => session.id === target);
+  if (targetIndex === -1) {
+    return [];
+  }
+  return sessions
+    .filter((session, index) => {
+      if (session.id === target) {
+        return false;
+      }
+      if (scope === "top") {
+        return index < targetIndex;
+      }
+      if (scope === "bottom") {
+        return index > targetIndex;
+      }
+      return true;
+    })
+    .map((session) => session.id);
+}
+
+export function SessionContextMenuOverlay({
+  actions,
+  contextMenu,
+  onClose,
+  view,
+}: {
+  actions: WorkbenchActions;
+  contextMenu: SessionContextMenuState | null;
+  onClose(): void;
+  view: WorkbenchViewModel;
+}) {
+  if (!contextMenu) {
+    return null;
+  }
+  if (
+    !view.state.sessions.some((session) => session.id === contextMenu.sessionId)
+  ) {
+    return null;
+  }
+  const close = (scope: SessionCloseScope) => {
+    const targets = sessionCloseTargets(
+      view.state.sessions,
+      contextMenu.sessionId,
+      scope
+    );
+    onClose();
+    for (const id of targets) {
+      actions.closeSession(id);
+    }
+  };
+
+  return (
+    <AnchoredOverlay
+      anchorId={contextMenu.anchorId}
+      backgroundColor={colors.panel}
+      borderColor={colors.borderFocus}
+      borderStyle="round"
+      flexDirection="column"
+      onMouseDown={(event) => event.stopPropagation()}
+      open
+      placement="right-start"
+      size={{ width: 24, height: 5 }}
+    >
+      <SessionContextMenuRow
+        label="Close Others"
+        onPress={() => close("others")}
+      />
+      <SessionContextMenuRow
+        label="Close to the Top"
+        onPress={() => close("top")}
+      />
+      <SessionContextMenuRow
+        label="Close to the Bottom"
+        onPress={() => close("bottom")}
+      />
+    </AnchoredOverlay>
+  );
+}
+
+function SessionContextMenuRow({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress(): void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Box
+      backgroundColor={hovered ? colors.selected : colors.panel}
+      height={1}
+      onClick={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        onPress();
+        event.stopPropagation();
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      paddingX={1}
+      width="100%"
+    >
+      <Text color={hovered ? colors.onSelected : colors.text}>{label}</Text>
     </Box>
   );
 }

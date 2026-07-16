@@ -42,13 +42,10 @@ fi
 # relaunch. Enable with WORKBENCH_CLI_HOT=1 or by passing --hot (aliases: --dev,
 # --watch).
 #
-# We use `bun --watch` (a clean full restart) rather than in-process `bun --hot`:
-# the workbench owns raw-mode stdin and a single render loop, so re-evaluating
-# the entry in place would stack a second instance. A restart is near-seamless
-# here anyway -- the agent and terminal panels live on a persistent private tmux
-# server and the UI layout is saved to disk, so on the SIGTERM that `--watch`
-# sends, the workbench detaches (never kills) those sessions and reattaches them,
-# with tabs restored, on the next launch.
+# The application-owned hot runner watches source files, sends SIGTERM to the
+# current UI, waits for it to save and detach, then launches the replacement.
+# Do not replace it with Bun's native --watch: native watch restarts do not
+# guarantee Workbench's shutdown handoff and can reset active coding sessions.
 hot="${WORKBENCH_CLI_HOT:-0}"
 args=()
 for arg in "$@"; do
@@ -58,13 +55,14 @@ for arg in "$@"; do
   esac
 done
 
-bun_flags=()
+entry="$UI_DIR/src/index.ts"
 if [[ "$hot" == "1" ]]; then
-  bun_flags+=(--watch)
+  entry="$UI_DIR/scripts/hot-runner.ts"
 fi
 
 exec env -u NO_COLOR \
   COLORTERM="${COLORTERM:-truecolor}" \
   FORCE_COLOR=1 \
+  WORKBENCH_CLI_HOT="$hot" \
   WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
-  bun ${bun_flags[@]+"${bun_flags[@]}"} "$UI_DIR/src/index.ts" ${args[@]+"${args[@]}"}
+  bun "$entry" ${args[@]+"${args[@]}"}

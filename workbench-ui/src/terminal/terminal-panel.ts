@@ -46,15 +46,34 @@ function hasSetsid(): boolean {
 // Minimal config for our private tmux server so embedded harness panes look
 // clean: no status bar, mouse on, and none of the user's keybindings/status
 // line or (possibly unsupported) options from ~/.tmux.conf leak in.
-const TMUX_CONF = [
-  "set -g status off",
-  "set -g mouse on",
-  "set -g escape-time 1",
-  "set -g history-limit 20000",
-  "set -g focus-events on",
-  "setw -g aggressive-resize on",
-  "",
-].join("\n");
+let tmux256ColorAvailable: boolean | undefined;
+function hasTmux256Color(): boolean {
+  if (tmux256ColorAvailable === undefined) {
+    try {
+      tmux256ColorAvailable =
+        Bun.spawnSync(["infocmp", "tmux-256color"], {
+          stderr: "ignore",
+          stdout: "ignore",
+        }).exitCode === 0;
+    } catch {
+      tmux256ColorAvailable = false;
+    }
+  }
+  return tmux256ColorAvailable;
+}
+
+function tmuxConf(): string {
+  return [
+    "set -g status off",
+    "set -g mouse on",
+    "set -g escape-time 1",
+    "set -g history-limit 20000",
+    "set -g focus-events on",
+    "setw -g aggressive-resize on",
+    ...(hasTmux256Color() ? ['set -g default-terminal "tmux-256color"'] : []),
+    "",
+  ].join("\n");
+}
 
 let tmuxConfPath: string | undefined;
 function ensureTmuxConf(): string {
@@ -63,13 +82,38 @@ function ensureTmuxConf(): string {
     const path = join(dir, "workbench-ui-tmux.conf");
     try {
       mkdirSync(dir, { recursive: true });
-      writeFileSync(path, TMUX_CONF);
+      writeFileSync(path, tmuxConf());
     } catch {
       // Fall back to default config if we can't write ours.
     }
     tmuxConfPath = path;
   }
   return tmuxConfPath;
+}
+
+function configureExistingTmuxServer(socketPath: string) {
+  if (!hasTmux256Color()) {
+    return;
+  }
+  try {
+    // A running private server has already read its config. Updating the
+    // default affects only panes created afterward; existing sessions retain
+    // the TERM they started with and are never restarted or destroyed.
+    Bun.spawnSync(
+      [
+        "tmux",
+        "-S",
+        socketPath,
+        "set-option",
+        "-g",
+        "default-terminal",
+        "tmux-256color",
+      ],
+      { stderr: "ignore", stdout: "ignore" }
+    );
+  } catch {
+    // No server yet: the first new-session reads the generated config instead.
+  }
 }
 
 // Terminal default foreground/background follow the active app theme so the
@@ -158,7 +202,7 @@ const PALETTE_256 = (() => {
 // across panel switches. This lets the silvery <Terminal> redraw when the
 // active pane swaps without remounting (no `key`), keeping switches instant.
 let revisionCounter = 0;
-const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 250;
+const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
 
 export class TerminalPanel implements TerminalReadable {
   private terminal: Terminal;
@@ -169,6 +213,13 @@ export class TerminalPanel implements TerminalReadable {
   private followOutput = true;
   private tmuxCopyModePossible = false;
   private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
+  private resizeGeneration = 0;
+  private resizeScheduled = false;
+  private pendingResize?: {
+    cols: number;
+    generation: number;
+    rows: number;
+  };
 
   constructor(
     private readonly cwd: string,
@@ -306,6 +357,7 @@ export class TerminalPanel implements TerminalReadable {
     }
     const persist = this.persist;
     if (persist) {
+      configureExistingTmuxServer(persist.socketPath);
       // Run inside (or re-attach to) a persistent tmux session on a dedicated
       // socket. -A attaches if it exists, otherwise creates it and runs `inner`.
       // Drop TMUX so our private server never collides with an outer tmux the
@@ -316,7 +368,7 @@ export class TerminalPanel implements TerminalReadable {
         .map(([key, value]) => `-e ${shellQuote(`${key}=${value}`)}`)
         .join(" ");
       const tmux = [
-        `tmux -S ${shellQuote(persist.socketPath)} -f ${shellQuote(ensureTmuxConf())} new-session -A`,
+        `tmux -S ${shellQuote(persist.socketPath)} -f ${shellQuote(ensureTmuxConf())} new-session -A -D`,
         `-s ${shellQuote(persist.name)}`,
         `-x ${cols} -y ${rows}`,
         envFlags,
@@ -354,16 +406,46 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   resize(cols: number, rows: number) {
-    if (cols === this.terminal.cols && rows === this.terminal.rows) {
+    if (this.pendingResize?.cols === cols && this.pendingResize.rows === rows) {
       return;
     }
-    this.terminal.resize(cols, rows);
-    this.snapFollowingViewportToBottom();
-    // Propagate to the child PTY so the program (or tmux client) gets SIGWINCH
-    // and reflows to match the newly rendered box.
-    this.pty?.resize(cols, rows);
-    this.updateRevision = ++revisionCounter;
-    this.emit();
+    if (
+      !this.pendingResize &&
+      cols === this.terminal.cols &&
+      rows === this.terminal.rows
+    ) {
+      return;
+    }
+    const generation = ++this.resizeGeneration;
+    this.pendingResize = { cols, generation, rows };
+    if (this.resizeScheduled) {
+      return;
+    }
+    this.resizeScheduled = true;
+    queueMicrotask(() => {
+      this.resizeScheduled = false;
+      const pending = this.pendingResize;
+      this.pendingResize = undefined;
+      // Only the newest layout generation may resize xterm and the child PTY.
+      // Older effects can still run after a newer React layout has committed;
+      // dropping them here prevents multiple SIGWINCH redraws at stale sizes.
+      if (!pending || pending.generation !== this.resizeGeneration) {
+        return;
+      }
+      if (
+        pending.cols === this.terminal.cols &&
+        pending.rows === this.terminal.rows
+      ) {
+        return;
+      }
+      this.terminal.resize(pending.cols, pending.rows);
+      this.snapFollowingViewportToBottom();
+      // Propagate the winning generation so the program (or tmux client) gets
+      // one SIGWINCH and reflows to the same dimensions as the rendered box.
+      this.pty?.resize(pending.cols, pending.rows);
+      this.updateRevision = ++revisionCounter;
+      this.emit();
+    });
   }
 
   scrollLines(lines: number) {
@@ -574,6 +656,8 @@ export class TerminalPanel implements TerminalReadable {
   // detaches the client; the session keeps running for the next launch.
   detach() {
     this.clearSynchronizedOutputRecovery();
+    this.pendingResize = undefined;
+    this.resizeGeneration += 1;
     try {
       this.child?.kill();
     } catch {

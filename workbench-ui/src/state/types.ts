@@ -106,6 +106,7 @@ export interface PersistedSession {
   cwd: string;
   expandedDirs?: string[];
   harnesses?: PersistedHarnessTab[];
+  id?: string;
   openTabs?: string[];
   terminalCount?: number;
   terminals?: PersistedTerminalTab[];
@@ -114,12 +115,14 @@ export interface PersistedSession {
 export interface PersistedHarnessTab {
   cwd?: string;
   harnessId: string;
+  id?: string;
   name?: string;
   tmux?: string;
 }
 
 export interface PersistedTerminalTab {
   cwd?: string;
+  id?: string;
   name?: string;
   tmux?: string;
 }

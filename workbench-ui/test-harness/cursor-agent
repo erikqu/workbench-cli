@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec bun "${WORKBENCH_E2E_FIXTURE_ROOT:?}/test-harness/simulated-agent.ts"

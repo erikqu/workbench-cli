@@ -232,6 +232,8 @@ function colorMap(t: Record<string, string>) {
     selected: t["bg-selected"],
     selectedMuted: t["bg-muted"],
     onSelected: t["fg-on-selected"],
+    error: t["bg-error"],
+    onError: t["fg-on-error"],
     diffAddFg: t["diff-add-fg"],
     diffDelFg: t["diff-del-fg"],
     diffAddBg: t["diff-add-bg"],

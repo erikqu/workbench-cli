@@ -5,7 +5,7 @@
     "ignore": "^7.0.5",
     "jimp": "^1.6.1",
     "react": "^19.2.7",
-    "silvery": "0.21.0"
+    "silvery": "0.21.1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
@@ -23,14 +23,16 @@
   },
   "scripts": {
     "start": "bun src/index.ts",
-    "dev": "bun --watch src/index.ts",
+    "dev": "bun scripts/hot-runner.ts",
     "screenshot": "bun scripts/screenshot.ts",
+    "test:terminal": "bun scripts/terminal-regression.ts",
+    "test:terminal:red": "bun scripts/terminal-regression.ts --idle-only --idle-samples=10 --keep-artifacts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true
 }

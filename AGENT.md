@@ -58,20 +58,29 @@ bun run screenshot    # Playwright screenshot + interaction suite
 ## Hot reload
 
 Opt-in. Enable with `WORKBENCH_CLI_HOT=1` or by passing `--hot` (aliases `--dev`,
-`--watch`) to `workbench-cli`; or run `bun run dev` directly. The launcher adds
-`bun --watch`, which does a **clean full restart** on any source change.
+`--watch`) to `workbench-cli`; or run `bun run dev` directly. The launcher runs
+`scripts/hot-runner.ts`, which owns a clean child-process restart on source
+changes.
 
-Why `--watch` (restart) and not in-process `bun --hot`: the workbench owns
-raw-mode stdin and a single render loop, and `index.ts` has top-level side
-effects (`probeTerminal`, `runWorkbench`). In-process `--hot` would re-run those
-and stack a second instance fighting over stdin/PTYs.
+Do not replace the hot runner with native `bun --watch` or in-process
+`bun --hot`. Native watch can replace the program without completing its JS
+shutdown handlers; this has reproduced lost composer state and restarted coding
+agents. In-process hot reload would re-run top-level terminal side effects and
+stack instances fighting over stdin and PTYs.
 
-A restart is near-seamless here because of the persistence model (below):
-`bun --watch` sends **SIGTERM** → `shutdown()` saves layout + **detaches** (never
-kills) the tmux panels + restores the terminal → the new process reattaches the
-same live sessions with tabs restored. Don't add code that kills tmux sessions
-or skips `shutdown()` on SIGTERM, or hot reload (and normal relaunch) stops
-being seamless.
+The required handoff is serialized: the hot runner sends **SIGTERM** →
+`shutdown()` saves layout + **detaches** (never kills) the tmux panels + restores
+the terminal → the runner waits for exit → only then does it launch the next UI,
+which reattaches the same sessions. Don't weaken or parallelize this sequence.
+
+Hot-reload identity is part of that contract. Persist and restore both the
+stable `id` and `tmux` fields for every workspace, harness, and terminal:
+`activeMainTab` contains one of those IDs and cannot be restored if IDs are
+regenerated. A hot launch must also skip the startup splash, because the splash
+masks the reattached pane and consumes the user's first keypress. Before
+changing lifecycle or persistence code, run
+`bun test src/state/state.persistence.test.ts` and exercise a watched restart
+with text already present in the agent composer.
 
 ## Persistence model (important)
 
@@ -82,7 +91,20 @@ being seamless.
 - UI layout (sessions, harnesses, terminals, open tabs, active tab, sidebar,
   expanded dirs) is saved via `savePersistedState` and restored by
   `loadPersistedState`/`createInitialState`.
+- Persistent IDs are not cosmetic: `activeMainTab` references them. Never save
+  an active tab ID without saving the matching harness/terminal ID.
 - `shutdown()` (SIGINT/SIGTERM/Ctrl+Q) detaches panels, never kills them.
+
+## Overlay and close-control behavior
+
+- Tab and session close buttons stay visible, use a three-cell hit target with
+  a bold multiplication sign, and use the destructive/inverted color only on
+  hover.
+- Right-click menus expose directional batch closes: tabs use left/right and
+  sessions use top/bottom, both with Close Others.
+- Render `AnchoredOverlay` menus in Workbench's final overlay layer, after the
+  main content. Rendering one inside the tab strip or sidebar allows later
+  siblings to paint over it even though its state and layout are valid.
 
 ## Performance — keep it fast (this was an explicit requirement)
 
@@ -148,7 +170,7 @@ buffer/save plumbing for future editor work.
 
 ## Silvery: authority + conformance
 
-The workbench is built on **silvery** (v0.21.0). Consult the installed package
+The workbench is built on **silvery** (v0.21.1). Consult the installed package
 types/source plus upstream Silvery docs before changing rendering, input, focus,
 theming, or the embedded terminal. Our usage was cross-referenced against
 Silvery's intended APIs:

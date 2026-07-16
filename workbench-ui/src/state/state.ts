@@ -27,7 +27,12 @@ import type {
   PersistedWorkbenchState,
   TerminalTab,
 } from "./types";
-import { harnessIdFromTab, terminalIdFromTab } from "./types";
+import {
+  CHANGES_TAB,
+  harnessIdFromTab,
+  isChangesTab,
+  terminalIdFromTab,
+} from "./types";
 
 const statePath = join(
   Bun.env.HOME ?? ".",
@@ -115,7 +120,7 @@ function isDirectory(path: string) {
   }
 }
 
-function restoreSession(
+export function restoreSession(
   persisted: PersistedSession,
   existing: AgentSession[]
 ): AgentSession {
@@ -132,8 +137,10 @@ function restoreSession(
     existing,
     persistedHarnesses[0]?.harnessId ?? defaultHarnessId()
   );
+  session.id = persisted.id ?? session.id;
   session.harnesses = persistedHarnesses.map((entry, index) => ({
-    id: index === 0 ? session.harnesses[0].id : crypto.randomUUID(),
+    id:
+      entry.id ?? (index === 0 ? session.harnesses[0].id : crypto.randomUUID()),
     harnessId: entry.harnessId,
     cwd: entry.cwd ?? session.cwd,
     name: entry.name ?? harnessSpec(entry.harnessId).label,
@@ -150,7 +157,8 @@ function restoreSession(
         () => ({})
       );
   session.terminals = persistedTerminals.map((entry, index) => ({
-    id: index === 0 ? session.terminals[0].id : crypto.randomUUID(),
+    id:
+      entry.id ?? (index === 0 ? session.terminals[0].id : crypto.randomUUID()),
     cwd: entry.cwd ?? session.cwd,
     name: entry.name ?? `Terminal ${index + 1}`,
     tmux:
@@ -172,11 +180,23 @@ function restoreSession(
   const restoredHarness = persistedHarnessId
     ? session.harnesses.find((harness) => harness.id === persistedHarnessId)
     : undefined;
+  const persistedTerminalId = persisted.activeMainTab
+    ? terminalIdFromTab(persisted.activeMainTab)
+    : undefined;
+  const restoredTerminal = persistedTerminalId
+    ? session.terminals.find((terminal) => terminal.id === persistedTerminalId)
+    : undefined;
   session.activeMainTab = restoredHarness
     ? `harness:${restoredHarness.id}`
-    : session.openTabs.some((tab) => tab.path === persisted.activeMainTab)
-      ? (persisted.activeMainTab ?? `harness:${session.harnesses[0].id}`)
-      : `harness:${session.harnesses[0].id}`;
+    : restoredTerminal
+      ? `term:${restoredTerminal.id}`
+      : isChangesTab(persisted.activeMainTab ?? "")
+        ? CHANGES_TAB
+        : session.openTabs.some((tab) => tab.path === persisted.activeMainTab)
+          ? (persisted.activeMainTab ?? `harness:${session.harnesses[0].id}`)
+          : persistedTerminalId && session.terminals[0]
+            ? `term:${session.terminals[0].id}`
+            : `harness:${session.harnesses[0].id}`;
   session.expandedDirs = new Set(persisted.expandedDirs ?? []);
   return session;
 }
@@ -220,7 +240,9 @@ export function createInitialState(cwd: string): AppState {
       MAX_PERSISTED_PANE_WIDTH
     ),
     sidebarVisible: persisted.sidebarVisible ?? true,
-    splashVisible: true,
+    // A watched process restarts repeatedly. Re-showing the splash masks the
+    // restored coding pane and consumes its first keypress after every edit.
+    splashVisible: Bun.env.WORKBENCH_CLI_HOT !== "1",
     themeName,
     workspaceSidePaneWidth: clampPaneWidth(
       persisted.workspaceSidePaneWidth ?? DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
@@ -294,15 +316,18 @@ export function savePersistedState(state: AppState) {
   }
   const payload: PersistedWorkbenchState = {
     sessions: state.sessions.map((session) => ({
+      id: session.id,
       harnesses: session.harnesses.map((harness) => ({
         harnessId: harness.harnessId,
         cwd: harness.cwd,
+        id: harness.id,
         name: harness.name,
         tmux: harness.tmux,
       })),
       cwd: session.cwd,
       terminals: session.terminals.map((terminal) => ({
         cwd: terminal.cwd,
+        id: terminal.id,
         name: terminal.name,
         tmux: terminal.tmux,
       })),

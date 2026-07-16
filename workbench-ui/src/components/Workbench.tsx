@@ -1,16 +1,14 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   AnchoredOverlay,
   Box,
   Button,
   type Key,
   Screen,
-  Terminal,
   type TerminalMouseEvent,
   Text,
   useBoxRectDangerously,
   useInput,
-  useStdout,
   useWindowSize,
 } from "silvery";
 import { harnessSpec } from "../state/harnesses";
@@ -20,18 +18,25 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
-import {
-  hostCursorAppearanceSequence,
-  resetHostCursorAppearanceSequence,
-} from "../terminal/host-cursor";
 import { terminalInputForKey } from "../terminal/terminal-panel";
+import { COLLAPSED_SESSIONS_SIDEBAR_WIDTH } from "../ui/pane-layout";
 import { colors } from "../ui/theme";
 import { ToastHost } from "../ui/toast";
 import { DiffDetailView } from "./ChangesView";
-import { MainTabs } from "./MainTabs";
+import { FocusedTerminal } from "./FocusedTerminal";
+import {
+  MainTabs,
+  TabContextMenuOverlay,
+  type TabContextMenuState,
+  tabIndexAtOffset,
+} from "./MainTabs";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { NewHarnessDialog } from "./NewHarnessDialog";
-import { SessionsSidebar } from "./SessionsSidebar";
+import {
+  SessionContextMenuOverlay,
+  type SessionContextMenuState,
+  SessionsSidebar,
+} from "./SessionsSidebar";
 import { Splash } from "./Splash";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 import { SuppressImagesContext, SyntaxViewer } from "./viewers/SyntaxViewer";
@@ -46,8 +51,17 @@ export function Workbench({
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
 }) {
+  const [tabContextMenu, setTabContextMenu] =
+    useState<TabContextMenuState | null>(null);
+  const [sessionContextMenu, setSessionContextMenu] =
+    useState<SessionContextMenuState | null>(null);
   useInput(
     (input, key) => {
+      if ((tabContextMenu || sessionContextMenu) && key.escape) {
+        setTabContextMenu(null);
+        setSessionContextMenu(null);
+        return;
+      }
       handleKey(input, key, view, actions);
     },
     {
@@ -76,7 +90,33 @@ export function Workbench({
           color={colors.text}
           flexDirection="column"
           height="100%"
-          onMouseDown={() => actions.closePlusMenu()}
+          onMouseDown={(event) => {
+            if (event.button === 2 && event.y >= 1 && event.y < 3) {
+              const tabStart = view.state.sidebarVisible
+                ? view.state.sessionsSidebarWidth + 1
+                : COLLAPSED_SESSIONS_SIDEBAR_WIDTH;
+              const index = tabIndexAtOffset(
+                view.mainTabOptions,
+                Math.floor(event.x - tabStart),
+                view.session.harnesses.length > 1
+              );
+              const option = view.mainTabOptions[index];
+              if (option) {
+                actions.closePlusMenu();
+                setSessionContextMenu(null);
+                setTabContextMenu({
+                  anchorId: `workbench-tab-${index}`,
+                  value: option.value,
+                });
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
+            }
+            actions.closePlusMenu();
+            setTabContextMenu(null);
+            setSessionContextMenu(null);
+          }}
           width="100%"
         >
           <Box
@@ -96,7 +136,15 @@ export function Workbench({
             flexGrow={1}
             minHeight={1}
           >
-            <SessionsSidebar actions={actions} view={view} />
+            <SessionsSidebar
+              actions={actions}
+              onContextMenuChange={(value) => {
+                actions.closePlusMenu();
+                setTabContextMenu(null);
+                setSessionContextMenu(value);
+              }}
+              view={view}
+            />
             <Box
               backgroundColor={colors.bg}
               flexDirection="column"
@@ -111,7 +159,15 @@ export function Workbench({
                 height={2}
               >
                 <Box flexGrow={1} minWidth={10}>
-                  <MainTabs actions={actions} view={view} />
+                  <MainTabs
+                    actions={actions}
+                    onContextMenuChange={(value) => {
+                      actions.closePlusMenu();
+                      setSessionContextMenu(null);
+                      setTabContextMenu(value);
+                    }}
+                    view={view}
+                  />
                 </Box>
                 <PlusButton actions={actions} view={view} />
               </Box>
@@ -146,6 +202,18 @@ export function Workbench({
             </Box>
           </Box>
           <PlusMenu actions={actions} open={view.state.plusMenuOpen} />
+          <TabContextMenuOverlay
+            actions={actions}
+            contextMenu={tabContextMenu}
+            onClose={() => setTabContextMenu(null)}
+            view={view}
+          />
+          <SessionContextMenuOverlay
+            actions={actions}
+            contextMenu={sessionContextMenu}
+            onClose={() => setSessionContextMenu(null)}
+            view={view}
+          />
           {view.state.newAgentOpen ? (
             <NewAgentDialog actions={actions} view={view} />
           ) : null}
@@ -571,9 +639,6 @@ function MeasuredTerminalGrid({
     panel.getSnapshot,
     panel.getSnapshot
   );
-  const cursorColor = colors.cursor;
-  const { write: writeStdout } = useStdout();
-
   useEffect(() => {
     if (cols < 20 || rows < 5) {
       return;
@@ -584,24 +649,6 @@ function MeasuredTerminalGrid({
     }, 80);
     return () => clearTimeout(timer);
   }, [cols, rows, panel, resize]);
-
-  // silvery's terminal cursor path currently emits a steady caret. Keep this
-  // refresh low-frequency; doing it on every terminal frame makes busy agent
-  // panes lag. Route it through silvery so it cannot split an in-flight frame.
-  useEffect(() => {
-    if (!focused) {
-      return;
-    }
-    writeStdout(hostCursorAppearanceSequence("bar", true, cursorColor));
-    const timer = setInterval(() => {
-      writeStdout(hostCursorAppearanceSequence("bar", true, cursorColor));
-    }, 1000);
-    timer.unref?.();
-    return () => {
-      clearInterval(timer);
-      writeStdout(resetHostCursorAppearanceSequence());
-    };
-  }, [cursorColor, focused, writeStdout]);
 
   const onMouse = (event: TerminalMouseEvent) => {
     if (event.type === "wheel") {
@@ -621,9 +668,9 @@ function MeasuredTerminalGrid({
   };
 
   return (
-    <Terminal
+    <FocusedTerminal
       cols={cols}
-      cursor={focused}
+      focused={focused}
       onMouse={onMouse}
       revision={revision}
       rows={rows}
