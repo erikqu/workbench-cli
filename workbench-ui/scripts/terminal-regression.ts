@@ -18,6 +18,7 @@ import {
 interface FixtureEnvelope {
   cols: number;
   cursor: { visible: boolean; x: number; y: number };
+  pid: number;
   rows: number;
   state: SimulatedAgentState;
   term: string;
@@ -169,6 +170,25 @@ try {
 
 async function runSimulatedAgentScenario(page: Page, initial: Location) {
   let location = initial;
+  const originalAgentPid = location.fixture.pid;
+  await typeCharacters(page, "restart probe");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "restart probe",
+    5000
+  );
+  await send(page, "\x1b[104;5u");
+  await waitForText(page, "Switch CLI harness", 3000);
+  await waitForText(page, "Cursor  refresh", 3000);
+  await send(page, "\r");
+  location = await waitForReference(
+    page,
+    (fixture) =>
+      fixture.pid !== originalAgentPid && fixture.state.composer === "",
+    8000
+  );
+  report("re-selecting the active harness restarts its pane in place");
+
   const sessionRow = await findCell(page, "1 workbench-ui");
   if (!sessionRow) {
     throw new Error("could not locate the active session for its context menu");

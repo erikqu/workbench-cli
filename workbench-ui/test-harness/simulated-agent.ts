@@ -242,6 +242,7 @@ function writeState(
     JSON.stringify({
       cols,
       cursor,
+      pid: process.pid,
       rows,
       state: snapshot,
       term: Bun.env.TERM ?? "",

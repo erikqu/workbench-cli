@@ -9,15 +9,26 @@ export function NewHarnessDialog({
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
 }) {
-  const activeId = activeHarnessId(view);
+  const active = activeHarness(view);
+  const activeId = active?.harnessId ?? view.session.harnesses[0]?.harnessId;
   const initialIndex = Math.max(
     0,
     view.harnessSpecs.findIndex((spec) => spec.id === activeId)
   );
-  const items = view.harnessSpecs.map((spec) => ({
-    label: `${spec.label}${view.session.harnesses.some((harness) => harness.harnessId === spec.id) ? "  open" : "  new"}  ${spec.description}`,
-    value: spec.id,
-  }));
+  const items = view.harnessSpecs.map((spec) => {
+    const status =
+      active?.harnessId === spec.id
+        ? "refresh"
+        : view.session.harnesses.some(
+              (harness) => harness.harnessId === spec.id
+            )
+          ? "open"
+          : "new";
+    return {
+      label: `${spec.label}  ${status}  ${spec.description}`,
+      value: spec.id,
+    };
+  });
 
   useInput((_input, key) => {
     if (key.escape) {
@@ -42,7 +53,7 @@ export function NewHarnessDialog({
       >
         <ModalDialog
           borderColor={colors.borderFocus}
-          footer="Enter start/switch   Up/Down choose   Esc cancel"
+          footer="Enter start/switch/refresh   Up/Down choose   Esc cancel"
           onClose={() => actions.cancelNewHarness()}
           title="Switch CLI harness"
           titleColor={colors.accentAlt}
@@ -63,9 +74,8 @@ export function NewHarnessDialog({
   );
 }
 
-function activeHarnessId(view: WorkbenchViewModel) {
-  const active = view.session.harnesses.find(
+function activeHarness(view: WorkbenchViewModel) {
+  return view.session.harnesses.find(
     (harness) => `harness:${harness.id}` === view.session.activeMainTab
   );
-  return active?.harnessId ?? view.session.harnesses[0]?.harnessId;
 }

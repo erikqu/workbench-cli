@@ -727,13 +727,23 @@ export class ReactWorkbenchApp {
 
   private addHarness(harnessId: string) {
     const session = this.activeSession();
-    const existing = session.harnesses.find(
-      (harness) => harness.harnessId === harnessId
-    );
+    const active = this.activeHarness();
+    const existing =
+      (active?.harnessId === harnessId ? active : undefined) ??
+      session.harnesses.find((harness) => harness.harnessId === harnessId);
     const harness =
       existing ?? createHarness(session.cwd, session.harnesses, harnessId);
     if (!existing) {
       session.harnesses.push(harness);
+    } else if (active?.id === existing.id) {
+      // Re-selecting the harness that already owns this pane is an explicit
+      // restart. Keep the tab and its stable tmux identity, but destroy the
+      // current tmux session and replace the local panel so the next render
+      // starts a clean harness process in place.
+      const panel =
+        this.harnessPanels.get(existing.id) ?? this.harnessPanel(existing);
+      panel.kill();
+      this.harnessPanels.delete(existing.id);
     }
     session.activeMainTab = `harness:${harness.id}`;
     this.state.newHarnessOpen = false;
