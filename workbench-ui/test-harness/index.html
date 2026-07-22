@@ -39,7 +39,10 @@
     const term = new Terminal({
       cols: initialCols,
       rows: initialRows,
-      convertEol: true,
+      // Match a real terminal: LF moves vertically but does not implicitly
+      // return to column zero. Enabling convertEol here can hide a missing CR
+      // in Workbench's emitted frame stream.
+      convertEol: false,
       cursorBlink: false,
       fontFamily,
       fontSize: numericOption("fontSize", 15),
@@ -112,6 +115,7 @@
         y: buffer.cursorY + buffer.baseY - buffer.viewportY,
       };
     };
+    window.__synchronizedOutputMode = () => term.modes.synchronizedOutputMode;
     window.__cellState = (col, row) => {
       const buffer = term.buffer.active;
       const cell = buffer.getLine(buffer.viewportY + row)?.getCell(col);

@@ -158,6 +158,25 @@ with text already present in the agent composer.
   focused (agent CLIs never bind Alt+digit). The matching index badges live in
   `MainTabs.tsx` (tabs) and `SessionsSidebar.tsx` (rows + `⌥`/`⌥⇧` legend).
 
+## Terminal-corruption workflow
+
+- Do not change renderer, cursor, resize, or tmux behavior until
+  `bun run test:terminal` has a deterministic failing frame. A pane that looks
+  clean after output stops does not disprove a transient streaming failure, but
+  a browser grid sampled while xterm still has queued writes is not a settled
+  frame either. Read the grid, parser queue counters, and DEC 2026 mode in one
+  atomic browser evaluation before declaring a regression red.
+- The plain-shell regression must cross the bottom edge, include an unthrottled
+  burst, scroll up and naturally back down while output continues, and run with
+  seeded ANSI fragmentation (`--chunk-seed=N`). Keep `convertEol: false` in the
+  outer xterm fixture so it has real-terminal LF semantics.
+- If the deterministic fixture stays green, stop before applying a speculative
+  fix. Relaunch with `workbench-cli --terminal-trace` and reproduce once. The
+  trace is written to `~/.workbench/terminal-trace.ndjson`; it contains only
+  dimensions, buffer positions, opaque per-process row IDs, byte counts, and
+  control-sequence counts -- never terminal text or raw ANSI. A custom path can
+  be set with `WORKBENCH_TERMINAL_TRACE=/path/to/trace.ndjson`.
+
 ## Viewers
 
 File tabs are rendered by `components/viewers/` — a `SyntaxViewer.tsx` dispatcher

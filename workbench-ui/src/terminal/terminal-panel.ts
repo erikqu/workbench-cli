@@ -9,6 +9,7 @@ import type {
   TerminalReadable,
 } from "silvery";
 import { colors } from "../ui/theme";
+import { terminalTrace, terminalTraceEnabled } from "./terminal-trace";
 
 export interface TerminalPanelOptions {
   command?: string;
@@ -202,9 +203,13 @@ const PALETTE_256 = (() => {
 // across panel switches. This lets the silvery <Terminal> redraw when the
 // active pane swaps without remounting (no `key`), keeping switches instant.
 let revisionCounter = 0;
+let tracePanelCounter = 0;
 const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
 
 export class TerminalPanel implements TerminalReadable {
+  private readonly traceId = ++tracePanelCounter;
+  private readonly traceRowIds = new Map<string, number>();
+  private nextTraceRowId = 0;
   private terminal: Terminal;
   private child?: ReturnType<typeof Bun.spawn>;
   private pty?: Bun.Terminal;
@@ -238,8 +243,15 @@ export class TerminalPanel implements TerminalReadable {
         foreground: "#e4e2dc",
       },
     });
+    terminalTrace("panel-create", {
+      cols,
+      panel: this.traceId,
+      persistent: Boolean(this.options.persist),
+      rows,
+    });
     this.terminal.onWriteParsed(() => {
       this.snapFollowingViewportToBottom();
+      this.traceBuffer("panel-parse");
       // Full-screen TUIs such as Codex wrap redraws in synchronized-output mode
       // (DEC private mode 2026). Do not expose partially parsed frames while the
       // mode is active; repaint once the closing sequence has been processed.
@@ -395,6 +407,10 @@ export class TerminalPanel implements TerminalReadable {
       rows,
       name: "xterm-256color",
       data: (_pty, bytes) => {
+        terminalTrace("panel-pty", {
+          bytes: bytes.byteLength,
+          panel: this.traceId,
+        });
         this.terminal.write(bytes);
       },
     });
@@ -410,6 +426,11 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   resize(cols: number, rows: number) {
+    terminalTrace("panel-resize-request", {
+      cols,
+      panel: this.traceId,
+      rows,
+    });
     if (this.pendingResize?.cols === cols && this.pendingResize.rows === rows) {
       return;
     }
@@ -453,6 +474,7 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   scrollLines(lines: number) {
+    terminalTrace("panel-scroll", { lines, panel: this.traceId });
     this.terminal.scrollLines(lines);
     this.updateFollowOutput();
     this.updateRevision = ++revisionCounter;
@@ -560,6 +582,12 @@ export class TerminalPanel implements TerminalReadable {
     if (!this.hasMouseTracking()) {
       return false;
     }
+    terminalTrace("panel-wheel", {
+      col,
+      direction,
+      panel: this.traceId,
+      row,
+    });
     if (!this.child) {
       this.start();
     }
@@ -622,7 +650,42 @@ export class TerminalPanel implements TerminalReadable {
       }
       rows.push(cells);
     }
+    if (terminalTraceEnabled()) {
+      const rowIds: number[] = [];
+      for (let row = 0; row < this.terminal.rows; row += 1) {
+        const fingerprint =
+          buffer.getLine(start + row)?.translateToString(false) ?? "";
+        let id = this.traceRowIds.get(fingerprint);
+        if (id === undefined) {
+          id = ++this.nextTraceRowId;
+          this.traceRowIds.set(fingerprint, id);
+        }
+        rowIds.push(id);
+      }
+      terminalTrace("panel-snapshot", {
+        baseY: buffer.baseY,
+        panel: this.traceId,
+        revision: this.updateRevision,
+        rowIds,
+        viewportY: buffer.viewportY,
+      });
+    }
     return rows;
+  }
+
+  private traceBuffer(event: string) {
+    if (!terminalTraceEnabled()) {
+      return;
+    }
+    const buffer = this.terminal.buffer.active;
+    terminalTrace(event, {
+      baseY: buffer.baseY,
+      cursorX: buffer.cursorX,
+      cursorY: buffer.cursorY,
+      panel: this.traceId,
+      synchronizedOutput: this.terminal.modes.synchronizedOutputMode,
+      viewportY: buffer.viewportY,
+    });
   }
 
   getCursor(): TerminalCursor {

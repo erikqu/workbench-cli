@@ -65,6 +65,8 @@ const server = Bun.spawn(
       HOME: home,
       WORKBENCH_E2E_AGENT_STATE: agentStatePath,
       WORKBENCH_E2E_APP_ROOT: appRoot,
+      WORKBENCH_E2E_CHUNK_SEED:
+        options.chunkSeed === undefined ? "" : String(options.chunkSeed),
       WORKBENCH_E2E_COLS: String(initialCols),
       WORKBENCH_E2E_PORT: String(port),
       WORKBENCH_E2E_ROWS: String(initialRows),
@@ -108,11 +110,24 @@ try {
 
   // A normal (non-screenshot) Workbench starts with its splash. The first
   // interaction dismisses it and is intentionally not forwarded to the pane.
+  // Wait for the splash frame itself: strict terminal emulators make the first
+  // render slower, and sending Escape after only the startup control sequences
+  // can race the input handler and leave the splash covering the fixture.
+  await waitForText(page, "Workbench", 5000);
+  await waitForOutputSettled(page, 5000);
   await send(page, "\x1b");
   let location = await waitForReference(page, () => true, 12_000);
   report(`initial reference frame (${location.fixture.term || "TERM unset"})`);
+  if (options.chunkSeed !== undefined) {
+    await send(page, "\0WORKBENCH_CHUNK_OUTPUT");
+  }
 
   if (options.idleOnly) {
+    await assertIdleWindows(page, options.idleSamples);
+  } else if (options.plainOnly) {
+    await runPlainShellScenario(page);
+    await send(page, "\x1b1");
+    await waitForReference(page, () => true, 8000);
     await assertIdleWindows(page, options.idleSamples);
   } else {
     location = await runSimulatedAgentScenario(page, location);
@@ -341,6 +356,34 @@ async function runPlainShellScenario(page: Page) {
   await waitForPromptAfter(page, "[SHELL-AFTER] ok", 5000);
   report("real shell streaming, scroll, resize, and resumed input");
 
+  await send(
+    page,
+    "clear; for i in $(seq 1 120); do printf '[SHELL-EDGE-%03d] row\\n' \"$i\"; sleep .01; done\r"
+  );
+  await waitForConsecutiveShellRows(page, "SHELL-EDGE", 120, 8000);
+  report("real shell scrolls past the pane bottom without repeated rows");
+
+  await send(
+    page,
+    "clear; for i in $(seq 1 240); do printf '[SHELL-BATCH-%03d] row\\n' \"$i\"; if ((i % 8 == 0)); then sleep .04; fi; done\r"
+  );
+  await waitForConsecutiveShellRows(page, "SHELL-BATCH", 240, 10_000);
+  report("real shell multi-row frames do not corrupt the bottom edge");
+
+  await send(
+    page,
+    "clear; for i in $(seq 1 2000); do printf '[SHELL-BURST-%04d] row\\n' \"$i\"; done\r"
+  );
+  await waitForConsecutiveShellRows(page, "SHELL-BURST", 2000, 10_000);
+  report("real shell unthrottled burst does not corrupt the bottom edge");
+
+  await send(
+    page,
+    "clear; for i in $(seq 1 160); do printf '[SHELL-WHEEL-%03d] row\\n' \"$i\"; sleep .01; done\r"
+  );
+  await waitForConsecutiveShellRows(page, "SHELL-WHEEL", 160, 10_000, true);
+  report("real shell bottom-edge output survives scrollback and return");
+
   const finalCommand =
     "clear; for i in 1 2 3 4 5 6 7 8; do printf '[S%03d] reference row\\n' \"$i\"; done\r";
   await send(page, finalCommand);
@@ -392,8 +435,12 @@ async function runSoak(page: Page, initial: Location, operations: number) {
       }
       default:
         await send(page, "\x1b2");
-        await Bun.sleep(20);
+        // Legacy Alt+digit is ESC-prefixed. Leave enough separation for the
+        // input parser's ESC ambiguity window, then prove we returned to the
+        // agent before subsequent soak keys can reach the shell.
+        await Bun.sleep(100);
         await send(page, "\x1b1");
+        location = await waitForReference(page, () => true, 3000);
         break;
     }
     if ((index + 1) % 25 === 0) {
@@ -651,6 +698,30 @@ async function waitForText(page: Page, needle: string, timeoutMs: number) {
   throw new Error(`timed out waiting for ${JSON.stringify(needle)}`);
 }
 
+async function waitForOutputSettled(page: Page, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let settledSince = 0;
+  while (Date.now() < deadline) {
+    const settled = await page.evaluate(() => {
+      const stats = (window as any).__outputStats?.();
+      return Boolean(stats && stats.outputEvents === stats.parsedWrites);
+    });
+    if (settled) {
+      settledSince ||= Date.now();
+      // Silvery's asynchronous DEC width-mode probes are scheduled shortly
+      // after the splash paint. Give all four queries time to reach xterm and
+      // their replies time to return before the test's first real keypress.
+      if (Date.now() - settledSince >= 250) {
+        return;
+      }
+    } else {
+      settledSince = 0;
+    }
+    await Bun.sleep(10);
+  }
+  throw new Error("outer terminal output did not settle");
+}
+
 async function waitForTextAbsent(
   page: Page,
   needle: string,
@@ -685,6 +756,94 @@ async function waitForPromptAfter(
   throw new Error(
     `timed out waiting for shell prompt after ${JSON.stringify(marker)}`
   );
+}
+
+async function waitForConsecutiveShellRows(
+  page: Page,
+  prefix: string,
+  finalRow: number,
+  timeoutMs: number,
+  exerciseScrollback = false
+) {
+  const marker = new RegExp(`\\[${prefix}-(\\d+)\\]`, "g");
+  const deadline = Date.now() + timeoutMs;
+  let scrolled = false;
+  while (Date.now() < deadline) {
+    const { grid, outputSettled, synchronizedOutputMode } =
+      await settledBufferGrid(page);
+    const values = grid.lines.flatMap((line) =>
+      [...line.matchAll(marker)].map((match) => Number(match[1]))
+    );
+    if (outputSettled && !synchronizedOutputMode) {
+      const unique = new Set(values);
+      if (unique.size !== values.length) {
+        throw new Error(
+          `${prefix} contains repeated visible rows: ${values.join(",")}`
+        );
+      }
+      for (let index = 1; index < values.length; index += 1) {
+        if (values[index] !== values[index - 1] + 1) {
+          throw new Error(
+            `${prefix} visible rows are displaced: ${values.join(",")}`
+          );
+        }
+      }
+    }
+    const latest = values.at(-1) ?? 0;
+    if (exerciseScrollback && !scrolled && latest >= 30) {
+      for (let index = 0; index < 4; index += 1) {
+        await wheel(page, 60, 12, "up");
+      }
+      await Bun.sleep(120);
+      // Exercise the user's actual path: scroll naturally back to the live
+      // bottom while output continues, without using a key to leave copy mode.
+      for (let index = 0; index < 12; index += 1) {
+        await wheel(page, 60, 12, "down");
+      }
+      scrolled = true;
+    }
+    const text = grid.lines.join("\n");
+    if (
+      outputSettled &&
+      !synchronizedOutputMode &&
+      latest === finalRow &&
+      text.lastIndexOf("[SHELL-PROMPT]") >
+        text.lastIndexOf(
+          `[${prefix}-${String(finalRow).padStart(
+            Math.max(3, String(finalRow).length),
+            "0"
+          )}]`
+        )
+    ) {
+      if (values.length < 8) {
+        throw new Error(
+          `${prefix} exposed only ${values.length} rows at the bottom edge`
+        );
+      }
+      return;
+    }
+    await Bun.sleep(10);
+  }
+  throw new Error(`${prefix} did not settle on row ${finalRow}`);
+}
+
+async function settledBufferGrid(page: Page): Promise<{
+  grid: Grid;
+  outputSettled: boolean;
+  synchronizedOutputMode: boolean;
+}> {
+  return page.evaluate(() => {
+    const stats = (window as any).__outputStats?.();
+    return {
+      grid: (window as any).__bufferGrid(),
+      outputSettled: Boolean(
+        stats && stats.outputEvents === stats.parsedWrites
+      ),
+      synchronizedOutputMode: Boolean(
+        (window as any).__synchronizedOutputMode?.()
+      ),
+    };
+  });
 }
 
 function killIsolatedTmux(homePath: string) {
@@ -746,10 +905,12 @@ function parseSize(value: string): [number, number] {
 function parseOptions(args: string[]) {
   const result = {
     appRoot: undefined as string | undefined,
+    chunkSeed: undefined as number | undefined,
     idleOnly: false,
     idleSamples: 1,
     keepArtifacts: false,
     label: undefined as string | undefined,
+    plainOnly: false,
     size: undefined as string | undefined,
     soak: 0,
     theme: undefined as string | undefined,
@@ -759,8 +920,12 @@ function parseOptions(args: string[]) {
       result.idleOnly = true;
     } else if (arg === "--keep-artifacts") {
       result.keepArtifacts = true;
+    } else if (arg === "--plain-only") {
+      result.plainOnly = true;
     } else if (arg.startsWith("--app-root=")) {
       result.appRoot = arg.slice("--app-root=".length);
+    } else if (arg.startsWith("--chunk-seed=")) {
+      result.chunkSeed = Number(arg.slice("--chunk-seed=".length));
     } else if (arg.startsWith("--idle-samples=")) {
       result.idleSamples = Number(arg.slice("--idle-samples=".length));
     } else if (arg.startsWith("--label=")) {
@@ -773,7 +938,13 @@ function parseOptions(args: string[]) {
       result.theme = arg.slice("--theme=".length);
     }
   }
-  if (!(result.idleSamples > 0 && result.soak >= 0)) {
+  if (
+    !(
+      result.idleSamples > 0 &&
+      result.soak >= 0 &&
+      (result.chunkSeed === undefined || Number.isInteger(result.chunkSeed))
+    )
+  ) {
     throw new Error(
       "idle samples must be positive and soak must be non-negative"
     );

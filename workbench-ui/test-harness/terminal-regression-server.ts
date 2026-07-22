@@ -8,7 +8,11 @@ const port = Number(Bun.env.WORKBENCH_E2E_PORT ?? "4187");
 const initialCols = Number(Bun.env.WORKBENCH_E2E_COLS ?? "120");
 const initialRows = Number(Bun.env.WORKBENCH_E2E_ROWS ?? "40");
 const tracePath = Bun.env.WORKBENCH_E2E_TRACE;
+const chunkSeed = parseOptionalInteger(Bun.env.WORKBENCH_E2E_CHUNK_SEED);
+const chunkPrefix = "\0WORKBENCH_CHUNK_OUTPUT";
 const resizePrefix = "\0WORKBENCH_RESIZE ";
+let randomState = chunkSeed ?? 0;
+let chunkOutput = false;
 
 interface ClientProcess {
   child: ReturnType<typeof Bun.spawn>;
@@ -60,7 +64,7 @@ const server = Bun.serve({
           });
           const text = client.decoder.decode(bytes, { stream: true });
           if (text) {
-            socket.send(text);
+            sendOutput(socket, text);
           }
         },
       });
@@ -132,6 +136,11 @@ const server = Bun.serve({
         client.pty.resize(cols, rows);
         return;
       }
+      if (bytes === chunkPrefix) {
+        chunkOutput = true;
+        appendTrace({ event: "chunk-output", seed: chunkSeed });
+        return;
+      }
       appendTrace({
         bytes: Buffer.from(bytes).toString("base64"),
         event: "input",
@@ -182,4 +191,38 @@ function appendTrace(entry: Record<string, unknown>) {
     tracePath,
     `${JSON.stringify({ at: performance.now(), ...entry })}\n`
   );
+}
+
+function sendOutput(socket: ServerWebSocket<unknown>, output: string) {
+  if (chunkSeed === undefined || !chunkOutput) {
+    socket.send(output);
+    return;
+  }
+  // PTYs, SSH, and terminal emulators may split writes anywhere, including in
+  // the middle of a CSI sequence. Seeded short WebSocket messages preserve the
+  // bytes and ordering while making that transport behavior deterministic.
+  let offset = 0;
+  while (offset < output.length) {
+    const length = 1 + Math.floor(nextRandom() * 12);
+    let end = Math.min(output.length, offset + length);
+    const finalCodeUnit = output.charCodeAt(end - 1);
+    if (finalCodeUnit >= 0xd8_00 && finalCodeUnit <= 0xdb_ff) {
+      end += 1;
+    }
+    socket.send(output.slice(offset, end));
+    offset = end;
+  }
+}
+
+function nextRandom() {
+  randomState = (Math.imul(randomState, 1_664_525) + 1_013_904_223) >>> 0;
+  return randomState / 4_294_967_296;
+}
+
+function parseOptionalInteger(value: string | undefined) {
+  if (!value) {
+    return;
+  }
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : undefined;
 }

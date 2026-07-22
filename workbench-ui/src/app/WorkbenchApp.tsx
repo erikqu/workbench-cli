@@ -5,6 +5,7 @@ import chokidar, { type FSWatcher } from "chokidar";
 import { useEffect, useState } from "react";
 import { ThemeProvider } from "silvery";
 import { run } from "silvery/runtime";
+import { tracedStdout } from "../terminal/terminal-trace";
 
 type RunHandle = Awaited<ReturnType<typeof run>>;
 
@@ -137,9 +138,10 @@ export class ReactWorkbenchApp {
 
     process.once("SIGTERM", () => this.shutdown(0));
     process.once("SIGINT", () => this.shutdown(0));
+    const stdout = tracedStdout(process.stdout);
     this.instance = await run(<WorkbenchRoot app={this} />, {
       stdin: process.stdin,
-      stdout: process.stdout,
+      stdout,
       cols: process.stdout.columns ?? 120,
       rows: process.stdout.rows ?? 36,
       mode: "fullscreen",
