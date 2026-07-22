@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { shellQuote, TerminalPanel } from "./terminal-panel";
@@ -22,6 +29,27 @@ afterAll(() => {
 });
 
 describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
+  test("starts a new pane in its requested workspace directory", async () => {
+    const workspace = join(suiteRoot, "workspace 'quoted'");
+    mkdirSync(workspace);
+    const socketPath = join(suiteRoot, "cwd.sock");
+    const cwdPath = join(suiteRoot, "pane-cwd.txt");
+    const persist = { name: "cwd_test", socketPath };
+    const command = `pwd -P > ${shellQuote(cwdPath)}; sleep 30`;
+    const panel = new TerminalPanel(workspace, 80, 24, { command, persist });
+
+    try {
+      panel.start();
+      await waitForFile(cwdPath);
+      expect(readFileSync(cwdPath, "utf8").trim()).toBe(
+        realpathSync(workspace)
+      );
+    } finally {
+      panel.kill();
+      killServer(socketPath);
+    }
+  });
+
   test("a new owner detaches the previous client", async () => {
     const socketPath = join(suiteRoot, "owner.sock");
     const persist = { name: "owner_test", socketPath };

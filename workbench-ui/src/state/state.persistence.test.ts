@@ -52,4 +52,14 @@ describe("persisted session identity", () => {
 
     expect(restored.activeMainTab).toBe("term:terminal-stable");
   });
+
+  test("restores terminals in their owning workspace directory", () => {
+    const saved = persisted("term:terminal-stable");
+    saved.cwd = "/workspace/project";
+    saved.terminals[0].cwd = "/stale/terminal/directory";
+
+    const restored = restoreSession(saved, []);
+
+    expect(restored.terminals[0]?.cwd).toBe("/workspace/project");
+  });
 });

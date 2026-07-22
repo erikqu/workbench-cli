@@ -159,7 +159,10 @@ export function restoreSession(
   session.terminals = persistedTerminals.map((entry, index) => ({
     id:
       entry.id ?? (index === 0 ? session.terminals[0].id : crypto.randomUUID()),
-    cwd: entry.cwd ?? session.cwd,
+    // A terminal belongs to its workspace. Older persisted state may carry a
+    // stale per-terminal cwd, so normalize it instead of reopening outside the
+    // workspace after a relaunch or hot reload.
+    cwd: session.cwd,
     name: entry.name ?? `Terminal ${index + 1}`,
     tmux:
       entry.tmux ??

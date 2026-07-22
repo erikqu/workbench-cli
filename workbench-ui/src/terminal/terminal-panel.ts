@@ -371,6 +371,10 @@ export class TerminalPanel implements TerminalReadable {
         `tmux -S ${shellQuote(persist.socketPath)} -f ${shellQuote(ensureTmuxConf())} new-session -A -D`,
         `-s ${shellQuote(persist.name)}`,
         `-x ${cols} -y ${rows}`,
+        // The private tmux server is shared by every workspace. Pass the pane
+        // start directory explicitly so tmux never inherits another client's
+        // cwd when it creates this session.
+        `-c ${shellQuote(this.cwd)}`,
         envFlags,
         shellQuote(inner),
       ]
