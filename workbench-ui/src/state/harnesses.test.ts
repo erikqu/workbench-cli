@@ -48,10 +48,16 @@ describe("Codex resumed history compatibility", () => {
       "codex resume --last -c tui.terminal_resize_reflow_max_rows=0"
     );
     expect(affected).toContain(
-      "|| codex --dangerously-bypass-approvals-and-sandbox"
+      "|| codex -c tui.animations=false --dangerously-bypass-approvals-and-sandbox"
     );
 
     const repaired = codexCommand("codex-cli 0.145.0-alpha.12").command;
     expect(repaired).not.toContain("terminal_resize_reflow_max_rows");
+  });
+
+  test("disables animated status redraws for embedded Codex panes", () => {
+    const command = codexCommand("codex-cli 0.144.6").command;
+
+    expect(command.match(/-c tui\.animations=false/g)).toHaveLength(2);
   });
 });

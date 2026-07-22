@@ -143,6 +143,10 @@ with text already present in the agent composer.
   primary-buffer pane, xterm parks `viewportY` above `baseY`; without snapping
   back on input, later agent output makes the prompt appear to drift downward
   off the visible pane.
+- The embedded `<Terminal onMouse>` exclusively owns wheel routing. Silvery
+  wheel events bubble, so adding `onWheel` handlers to its parent pane or grid
+  sends every physical gesture to tmux/the harness more than once and can
+  corrupt an agent's inline redraw history while it is streaming.
 - **Quick-switch (`Workbench.handleKey`)**: `Option/Alt+1..9` jumps to that tab in
   the active session; `Option/Alt+Shift+1..9` jumps to that session;
   `Option/Alt+Space` cycles forward through sessions (wraps). `key.meta`

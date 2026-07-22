@@ -17,6 +17,7 @@ const DEFAULT_HARNESS_ID = "codex";
 const DEFAULT_HARNESS_PREFERENCE = ["codex", "cursor", "claude"];
 const CODEX_HISTORY_REPLAY_OVERRIDE =
   "-c tui.terminal_resize_reflow_max_rows=0";
+const CODEX_STABLE_STATUS_OVERRIDE = "-c tui.animations=false";
 
 interface ParsedCodexVersion {
   alpha?: number;
@@ -68,7 +69,10 @@ export function codexCommand(versionOutput: string): HarnessCommand {
     ? ` ${CODEX_HISTORY_REPLAY_OVERRIDE}`
     : "";
   return {
-    command: `codex resume --last${replayOverride} --dangerously-bypass-approvals-and-sandbox || codex --dangerously-bypass-approvals-and-sandbox`,
+    // Animated status frames produce heavy inline redraw traffic. Nested
+    // terminals and multiplexers can preserve those transient rows in history
+    // after scrolling, so Workbench uses Codex's stable non-animated status.
+    command: `codex resume --last${replayOverride} ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox || codex ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox`,
   };
 }
 

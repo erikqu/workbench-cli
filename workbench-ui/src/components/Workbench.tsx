@@ -475,19 +475,6 @@ function HarnessView({
         actions.focus("harness");
         event.stopPropagation();
       }}
-      onWheel={(event) => {
-        if (
-          !view.harnessPanel?.sendMouseWheel(
-            event.x,
-            event.y,
-            event.deltaY > 0 ? "down" : "up"
-          )
-        ) {
-          actions.scrollHarness(event.deltaY > 0 ? 3 : -3);
-        }
-        event.preventDefault();
-        event.stopPropagation();
-      }}
     >
       <Box
         flexDirection="row"
@@ -543,19 +530,6 @@ function TerminalView({
         actions.focus("terminal");
         event.stopPropagation();
       }}
-      onWheel={(event) => {
-        if (
-          !view.terminalPanel?.sendMouseWheel(
-            event.x,
-            event.y,
-            event.deltaY > 0 ? "down" : "up"
-          )
-        ) {
-          actions.scrollTerminal(event.deltaY > 0 ? 3 : -3);
-        }
-        event.preventDefault();
-        event.stopPropagation();
-      }}
     >
       <Text
         color={view.state.focus === "terminal" ? colors.accent : colors.dim}
@@ -587,25 +561,7 @@ function TerminalGrid({
   scroll(lines: number): void;
 }) {
   return (
-    <Box
-      flexGrow={1}
-      minHeight={1}
-      minWidth={1}
-      onWheel={(event) => {
-        if (
-          !panel.sendMouseWheel(
-            event.x,
-            event.y,
-            event.deltaY > 0 ? "down" : "up"
-          )
-        ) {
-          scroll(event.deltaY > 0 ? 3 : -3);
-        }
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-      overflow="hidden"
-    >
+    <Box flexGrow={1} minHeight={1} minWidth={1} overflow="hidden">
       <MeasuredTerminalGrid
         focused={focused}
         panel={panel}

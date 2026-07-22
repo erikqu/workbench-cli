@@ -239,16 +239,14 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   );
   report("composer remains editable during feedback");
 
-  await send(page, "\x1b[5~");
+  await wheel(page, location.x + 5, location.y + 5, "up");
   location = await waitForReference(
     page,
-    (fixture) => fixture.state.scrollOffset > 0,
+    (fixture) => fixture.state.scrollOffset === 3,
     5000
   );
-  report("agent history scrolls up");
-  for (let index = 0; index < 8; index += 1) {
-    await send(page, "\x1b[6~");
-  }
+  report("one wheel gesture produces one agent scroll step");
+  await wheel(page, location.x + 5, location.y + 5, "down");
   location = await waitForReference(
     page,
     (fixture) => fixture.state.scrollOffset === 0,
@@ -319,6 +317,9 @@ async function runPlainShellScenario(page: Page) {
   report("real shell character input and backspace");
 
   await paste(page, "printf '[SHELL-PASTE] ok'");
+  // A real user cannot press Enter in the same sub-millisecond timeslice as a
+  // paste. Let the bracketed-paste end marker reach the inner shell first.
+  await Bun.sleep(20);
   await send(page, "\r");
   await waitForPromptAfter(page, "[SHELL-PASTE] ok", 5000);
   report("real shell bracketed paste");
@@ -391,6 +392,7 @@ async function runSoak(page: Page, initial: Location, operations: number) {
       }
       default:
         await send(page, "\x1b2");
+        await Bun.sleep(20);
         await send(page, "\x1b1");
         break;
     }
