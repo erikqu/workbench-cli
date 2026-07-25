@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Resolve this script through any symlinks (e.g. ~/.local/bin/workbench-cli).
+INVOKED_SOURCE="${BASH_SOURCE[0]}"
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
   DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
@@ -17,6 +18,52 @@ BIN_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 # Package root holds the workbench-ui workbench.
 PKG_DIR="$(cd -P "$BIN_DIR/.." && pwd)"
 UI_DIR="$PKG_DIR/workbench-ui"
+
+update_help() {
+  cat <<'EOF'
+Usage: workbench-cli update
+
+Update this Workbench CLI installation and reinstall its dependencies.
+The short `work update` form works too.
+EOF
+}
+
+if [[ "${1:-}" == "update" ]]; then
+  shift
+  if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    update_help
+    exit 0
+  fi
+  if (( $# > 0 )); then
+    echo "workbench-cli update does not accept arguments." >&2
+    update_help >&2
+    exit 2
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    echo "workbench-cli update requires git on PATH." >&2
+    exit 1
+  fi
+  if [[ ! -f "$PKG_DIR/install.sh" || ! -d "$PKG_DIR/.git" ]]; then
+    echo "This Workbench installation cannot update itself: $PKG_DIR is not a source checkout." >&2
+    echo "Reinstall with: curl -fsSL https://ehq.so/install | bash" >&2
+    exit 1
+  fi
+  if [[ -n "$(git -C "$PKG_DIR" status --porcelain --untracked-files=normal)" ]]; then
+    echo "Refusing to update because $PKG_DIR has local changes." >&2
+    echo "Commit, stash, or remove those changes, then run workbench-cli update again." >&2
+    exit 1
+  fi
+
+  update_bin_dir="${WORKBENCH_CLI_BIN:-$HOME/.local/bin}"
+  if [[ -L "$INVOKED_SOURCE" ]]; then
+    update_bin_dir="$(cd -P "$(dirname "$INVOKED_SOURCE")" && pwd)"
+  fi
+  echo "Updating Workbench CLI in $PKG_DIR ..."
+  exec env \
+    WORKBENCH_CLI_HOME="$PKG_DIR" \
+    WORKBENCH_CLI_BIN="$update_bin_dir" \
+    bash "$PKG_DIR/install.sh"
+fi
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "workbench-cli requires bun on PATH." >&2

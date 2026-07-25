@@ -66,6 +66,16 @@ The installer sets up Bun if needed, checks out the source into
 `~/.local/share/workbench-cli`, installs dependencies, and links
 `workbench-cli` and `work` into `~/.local/bin`.
 
+Update an existing installation with either command:
+
+```bash
+workbench-cli update
+work update
+```
+
+The updater preserves the installation and symlink locations used by the
+current launcher. It refuses to overwrite a checkout with local changes.
+
 ## Run
 
 Open Ghostty, then run:

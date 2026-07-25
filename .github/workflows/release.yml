@@ -32,6 +32,10 @@ jobs:
         working-directory: workbench-ui
         run: bun test
 
+      - name: Test launcher update command
+        working-directory: workbench-ui
+        run: bun test src/launcher.test.ts
+
       - name: Package source tarball
         run: |
           tar -czf "workbench-cli-${GITHUB_REF_NAME}.tar.gz" \

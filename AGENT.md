@@ -42,6 +42,13 @@ DA1 fence) for cell aspect + graphics support → spoof `TERM` to
 (exported from `app/WorkbenchApp.tsx`). Probe + TERM spoof are skipped when
 `WORKBENCH_UI_SCREENSHOT=1`.
 
+`workbench-cli update` (and `work update`) is handled entirely by the Bash
+launcher before Bun or the UI starts. It reruns the checked-in installer for
+the launcher-resolved package root, preserves the invoked symlink directory,
+and refuses dirty source checkouts. Keep update dispatch ahead of Bun/UI
+validation so it can repair an installation whose runtime dependencies are
+missing or outdated.
+
 ### Build / check / run (from `workbench-ui/`)
 
 ```bash
