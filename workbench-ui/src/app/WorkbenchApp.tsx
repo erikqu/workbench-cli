@@ -50,8 +50,8 @@ import {
   buildExplorerEntries,
   createExplorerIgnore,
   describeEntry,
+  ensureWorkspaceDirectory,
   expandPathInput,
-  isExistingDirectory,
   toggleDirectory,
 } from "../text/file-tree";
 import {
@@ -712,7 +712,18 @@ export class ReactWorkbenchApp {
   private createAgent(rawPath: string) {
     const base = this.activeSession().cwd;
     const resolved = expandPathInput(rawPath, base);
-    const cwd = isExistingDirectory(resolved) ? resolved : base;
+    try {
+      ensureWorkspaceDirectory(resolved);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      emitToast({
+        title: "Workspace could not be created",
+        description: reason,
+        variant: "error",
+      });
+      return;
+    }
+    const cwd = resolved;
     const session = createSession(cwd, this.state.sessions);
     this.state.sessions.push(session);
     this.state.activeSessionId = session.id;

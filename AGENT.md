@@ -101,6 +101,10 @@ with text already present in the agent composer.
 - Persistent IDs are not cosmetic: `activeMainTab` references them. Never save
   an active tab ID without saving the matching harness/terminal ID.
 - `shutdown()` (SIGINT/SIGTERM/Ctrl+Q) detaches panels, never kills them.
+- New-workspace paths may be missing. `createAgent()` resolves shell-style path
+  input and creates the directory tree recursively before adding the session;
+  creation failures keep the dialog open and surface an error instead of
+  silently falling back to the active workspace.
 
 ## Overlay and close-control behavior
 

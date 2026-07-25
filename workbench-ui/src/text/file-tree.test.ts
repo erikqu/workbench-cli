@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildExplorerEntries, createExplorerIgnore } from "./file-tree";
+import {
+  buildExplorerEntries,
+  createExplorerIgnore,
+  ensureWorkspaceDirectory,
+  isExistingDirectory,
+} from "./file-tree";
 
 const tempRoots: string[] = [];
 
@@ -46,5 +51,30 @@ describe("buildExplorerEntries", () => {
     expect(
       createExplorerIgnore(root, { respectGitignore: false })(metrics)
     ).toBe(false);
+  });
+});
+
+describe("ensureWorkspaceDirectory", () => {
+  test("creates a missing nested workspace path", () => {
+    const root = createTempRoot();
+    const workspace = join(root, "projects", "new-workspace");
+
+    ensureWorkspaceDirectory(workspace);
+
+    expect(isExistingDirectory(workspace)).toBe(true);
+  });
+
+  test("accepts an existing workspace directory", () => {
+    const root = createTempRoot();
+
+    expect(() => ensureWorkspaceDirectory(root)).not.toThrow();
+  });
+
+  test("rejects a workspace path occupied by a file", () => {
+    const root = createTempRoot();
+    const file = join(root, "not-a-directory");
+    writeFileSync(file, "content\n");
+
+    expect(() => ensureWorkspaceDirectory(file)).toThrow();
   });
 });

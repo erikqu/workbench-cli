@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import {
   basename,
@@ -138,6 +138,14 @@ export function isExistingDirectory(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+// New workspace input is allowed to point at a directory that does not exist
+// yet. Recursive creation also handles a newly entered tree such as
+// `~/projects/new/client`; mkdirSync remains a no-op for an existing directory
+// and throws when the path is a file or cannot be created.
+export function ensureWorkspaceDirectory(path: string): void {
+  mkdirSync(path, { recursive: true });
 }
 
 // Directory suggestions for a partially typed path. The value is split into
