@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -29,7 +30,7 @@ describe("workbench-cli update", () => {
 
     expect(result.exitCode).toBe(0);
     expect(readFileSync(fixture.capture, "utf8")).toBe(
-      `${fixture.packageRoot}\n${dirname(fixture.launcher)}\n`
+      `${realpathSync(fixture.packageRoot)}\n${realpathSync(dirname(fixture.launcher))}\n`
     );
   });
 

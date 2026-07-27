@@ -55,6 +55,31 @@ const automatedTerminal =
   process.env.WORKBENCH_UI_SCREENSHOT === "1" ||
   process.env.WORKBENCH_UI_E2E === "1";
 
+// Bun updates stdout.columns/rows on a PTY resize but, on macOS, does not
+// reliably emit the Node-compatible stdout "resize" event that Silvery
+// subscribes to (and some PTY paths also swallow SIGWINCH). Bridge the signal
+// for the fast path and cheaply poll the two integers as a fallback. This keeps
+// the outer layout and every nested PTY/tmux pane synchronized before Codex,
+// Claude, or a shell redraws a wrapped input line below stale pane bounds.
+if (process.stdout.isTTY) {
+  let columns = process.stdout.columns;
+  let rows = process.stdout.rows;
+  const publishResize = () => {
+    const nextColumns = process.stdout.columns;
+    const nextRows = process.stdout.rows;
+    if (nextColumns === columns && nextRows === rows) {
+      return;
+    }
+    columns = nextColumns;
+    rows = nextRows;
+    process.stdout.emit("resize");
+  };
+  process.on("SIGWINCH", () => {
+    process.stdout.emit("resize");
+  });
+  setInterval(publishResize, 50).unref();
+}
+
 // Actively probe the terminal before the renderer grabs stdin: cell geometry
 // (so images aren't stretched) and which graphics protocol it actually speaks.
 // Best effort — null on non-TTY / busy stdin; kitty stays the default anyway.

@@ -6,7 +6,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import {
@@ -45,7 +44,12 @@ const runLabel =
   options.label ??
   `${basename(appRoot)}-${initialCols}x${initialRows}-${Date.now()}`;
 const artifactDir = join(root, "artifacts", "terminal-regression", runLabel);
-const tempRoot = mkdtempSync(join(tmpdir(), "workbench-terminal-regression-"));
+// tmux's Unix socket path is capped at roughly 100 bytes. On macOS tmpdir()
+// expands under /var/folders/... and the isolated HOME plus
+// /.workbench/tmux-ui.sock can exceed that before the rendering fixture starts.
+// Keep the test root deliberately short so the suite exercises the terminal,
+// not a platform-specific socket-path failure.
+const tempRoot = mkdtempSync("/tmp/wbtr-");
 const home = join(tempRoot, "home");
 const agentStatePath = join(tempRoot, "simulated-agent-state.json");
 const tracePath = join(artifactDir, "ansi-trace.ndjson");
@@ -117,6 +121,9 @@ try {
   await waitForOutputSettled(page, 5000);
   await send(page, "\x1b");
   let location = await waitForReference(page, () => true, 12_000);
+  // A clean painted frame can precede the nested tmux client's input attach by
+  // a few milliseconds. Match human interaction timing before the first key.
+  await Bun.sleep(50);
   report(`initial reference frame (${location.fixture.term || "TERM unset"})`);
   if (options.chunkSeed !== undefined) {
     await send(page, "\0WORKBENCH_CHUNK_OUTPUT");
@@ -202,6 +209,10 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
       fixture.pid !== originalAgentPid && fixture.state.composer === "",
     8000
   );
+  // The first clean frame can arrive just before tmux finishes attaching the
+  // replacement pane's input side. Avoid donating the first test character to
+  // that handoff; real users naturally take longer than one event-loop turn.
+  await Bun.sleep(50);
   report("re-selecting the active harness restarts its pane in place");
 
   const sessionRow = await findCell(page, "1 workbench-ui");
@@ -229,6 +240,21 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   await send(page, "\x1b");
   location = await waitForReference(page, () => true, 5000);
   report("right-click tab menu exposes directional close actions");
+
+  const longDraft = "long composer input ".repeat(24).trim();
+  await paste(page, longDraft);
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === longDraft,
+    5000
+  );
+  report("long wrapped composer remains visible inside the pane");
+  await send(page, "\x1b");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "",
+    5000
+  );
 
   await typeCharacters(page, "first prompt");
   location = await waitForReference(
