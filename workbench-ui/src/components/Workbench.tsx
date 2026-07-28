@@ -9,6 +9,7 @@ import {
   Text,
   useBoxRectDangerously,
   useInput,
+  useRawKeyEvent,
   useSelection,
   useSelectionActions,
   useWindowSize,
@@ -64,14 +65,25 @@ export function Workbench({
   const selection = useSelection();
   const selectionActions = useSelectionActions();
   const harnessSelection = useRef(false);
-  const harnessSelectionConsumed = useRef(false);
-  useEffect(() => {
-    if (!selection?.range) {
-      harnessSelectionConsumed.current = false;
-    } else if (!harnessSelectionConsumed.current) {
-      harnessSelection.current = true;
+  const observedSelectionRange = useRef(selection?.range);
+  const rawSelectionCopy = useRef(false);
+  if (selection?.range !== observedSelectionRange.current) {
+    observedSelectionRange.current = selection?.range;
+    harnessSelection.current = Boolean(selection?.range);
+  }
+  useRawKeyEvent(({ input, key }) => {
+    rawSelectionCopy.current = false;
+    if (
+      view.state.focus === "harness" &&
+      terminalClipboardShortcut(input, key, harnessSelection.current) === "copy"
+    ) {
+      // Raw-key observers run before Silvery clears its selection for ordinary
+      // key dispatch. Copy while the range is still available, then tell the
+      // regular input handler to consume this Ctrl+C instead of forwarding it.
+      rawSelectionCopy.current = true;
+      selectionActions.copy?.();
     }
-  }, [selection?.range]);
+  });
   useInput(
     (input, key) => {
       if ((tabContextMenu || sessionContextMenu) && key.escape) {
@@ -83,22 +95,22 @@ export function Workbench({
         const clipboard = terminalClipboardShortcut(
           input,
           key,
-          harnessSelection.current
+          rawSelectionCopy.current || harnessSelection.current
         );
         if (clipboard === "copy") {
+          rawSelectionCopy.current = false;
           harnessSelection.current = false;
-          harnessSelectionConsumed.current = true;
           selectionActions.copy?.();
           return;
         }
         if (clipboard === "paste") {
+          rawSelectionCopy.current = false;
           harnessSelection.current = false;
-          harnessSelectionConsumed.current = true;
           requestClipboardPaste();
           return;
         }
+        rawSelectionCopy.current = false;
         harnessSelection.current = false;
-        harnessSelectionConsumed.current = true;
       }
       handleKey(input, key, view, actions);
     },
@@ -225,6 +237,10 @@ export function Workbench({
                       actions={actions}
                       selectionChanged={(selected) => {
                         harnessSelection.current = selected;
+                        if (!selected) {
+                          rawSelectionCopy.current = false;
+                          selectionActions.clear?.();
+                        }
                       }}
                       view={view}
                     />

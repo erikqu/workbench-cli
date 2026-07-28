@@ -23,6 +23,7 @@ import {
   UL,
   useBoxRectDangerously,
   useInput,
+  useWindowSize,
 } from "silvery";
 import { cacheRemoteImage } from "../../media/image";
 import { mermaidAvailable, renderMermaidToPng } from "../../media/mermaid";
@@ -380,10 +381,12 @@ export function MarkdownViewer({
       borderStyle="single"
       flexDirection="column"
       flexGrow={1}
+      minWidth={1}
       onMouseDown={(event) => {
         actions.focus("editor");
         event.stopPropagation();
       }}
+      overflow="hidden"
       padding={1}
     >
       <Box
@@ -392,14 +395,20 @@ export function MarkdownViewer({
         flexShrink={0}
         height={1}
         justifyContent="space-between"
+        minWidth={1}
+        overflow="hidden"
       >
-        <Text color={colors.dim}>{rel}</Text>
+        <Box flexGrow={1} minWidth={1} overflow="hidden">
+          <Text color={colors.dim} wrap={false}>
+            {rel}
+          </Text>
+        </Box>
         <MarkdownViewTabs
           mode={mode}
           onSelect={(next) => actions.setMarkdownView(tab.path, next)}
         />
       </Box>
-      <Box flexGrow={1} minWidth={1}>
+      <Box flexGrow={1} minWidth={1} overflow="hidden">
         {mode === "preview" ? (
           <MarkdownList
             baseDir={dirname(tab.path)}
@@ -503,9 +512,12 @@ function MarkdownList({
 }) {
   const listRef = useRef<ListViewHandle>(null);
   const rect = useBoxRectDangerously();
-  const height = Math.max(1, Math.floor(rect.height));
-  const viewportWidth = Math.max(1, Math.floor(rect.width));
-  const width = Math.max(10, viewportWidth - 1);
+  const windowSize = useWindowSize();
+  const { height, width: viewportWidth } = markdownViewportSize(
+    rect,
+    windowSize
+  );
+  const width = Math.max(1, viewportWidth - 1);
   const pageRows = Math.max(1, height - 1);
 
   useInput((_input, key) => {
@@ -530,12 +542,14 @@ function MarkdownList({
   return (
     <Box
       flexGrow={1}
+      minHeight={1}
       minWidth={1}
       onWheel={(event) => {
         listRef.current?.scrollBy(event.deltaY > 0 ? 3 : -3);
         event.preventDefault();
         event.stopPropagation();
       }}
+      overflow="hidden"
     >
       <ListView
         active={false}
@@ -567,11 +581,25 @@ function MarkdownList({
               width={width}
             />
           ) : block.type === "table" ? (
-            <Box flexDirection="column" flexShrink={0}>
-              <TableBlock block={block} keyPrefix={`tbl${index}`} />
+            <Box
+              flexDirection="column"
+              flexShrink={0}
+              overflow="hidden"
+              width={width}
+            >
+              <TableBlock
+                block={block}
+                keyPrefix={`tbl${index}`}
+                width={width}
+              />
             </Box>
           ) : (
-            <Box flexDirection="column" flexShrink={0}>
+            <Box
+              flexDirection="column"
+              flexShrink={0}
+              overflow="hidden"
+              width={width}
+            >
               {renderMarkdownLines(block.lines, `t${index}`)}
             </Box>
           )
@@ -581,6 +609,20 @@ function MarkdownList({
       />
     </Box>
   );
+}
+
+export function markdownViewportSize(
+  rect: { x: number; y: number; width: number; height: number },
+  windowSize: { columns: number; rows: number }
+): { width: number; height: number } {
+  const x = Math.max(0, Math.floor(rect.x));
+  const y = Math.max(0, Math.floor(rect.y));
+  const visibleWidth = Math.max(1, Math.floor(windowSize.columns) - x);
+  const visibleHeight = Math.max(1, Math.floor(windowSize.rows) - y);
+  return {
+    width: Math.max(1, Math.min(Math.floor(rect.width), visibleWidth)),
+    height: Math.max(1, Math.min(Math.floor(rect.height), visibleHeight)),
+  };
 }
 
 // A ```mermaid block: rendered to a PNG and shown via the image pipeline, with a
@@ -745,30 +787,33 @@ async function resolveMarkdownImage(
 function TableBlock({
   block,
   keyPrefix,
+  width,
 }: {
   block: Extract<MarkdownBlock, { type: "table" }>;
   keyPrefix: string;
+  width: number;
 }) {
   const cols = block.header.length;
-  const gap = 2;
-  const widths = Array.from({ length: cols }, (_, c) => {
+  const naturalWidths = Array.from({ length: cols }, (_, c) => {
     let w = visibleLength(block.header[c] ?? "");
     for (const row of block.rows) {
       w = Math.max(w, visibleLength(row[c] ?? ""));
     }
     return Math.max(1, w);
   });
+  const { gap, widths } = fitTableColumns(naturalWidths, width);
   const justify = (align: TableAlign) =>
     align === "right" ? "flex-end" : align === "center" ? "center" : undefined;
 
   return (
-    <Box flexDirection="column" flexShrink={0}>
-      <Box flexDirection="row" flexShrink={0}>
+    <Box flexDirection="column" flexShrink={0} overflow="hidden" width={width}>
+      <Box flexDirection="row" flexShrink={0} overflow="hidden" width={width}>
         {block.header.map((cell, c) => (
           <Box
             flexShrink={0}
             justifyContent={justify(block.aligns[c])}
             key={c}
+            overflow="hidden"
             width={widths[c] + gap}
           >
             <Text color={colors.accent} wrap={false}>
@@ -777,7 +822,7 @@ function TableBlock({
           </Box>
         ))}
       </Box>
-      <Box flexDirection="row" flexShrink={0}>
+      <Box flexDirection="row" flexShrink={0} overflow="hidden" width={width}>
         {widths.map((w, c) => (
           <Box flexShrink={0} key={c} width={w + gap}>
             <Text color={colors.border} wrap={false}>
@@ -787,12 +832,19 @@ function TableBlock({
         ))}
       </Box>
       {block.rows.map((row, r) => (
-        <Box flexDirection="row" flexShrink={0} key={r}>
+        <Box
+          flexDirection="row"
+          flexShrink={0}
+          key={r}
+          overflow="hidden"
+          width={width}
+        >
           {widths.map((w, c) => (
             <Box
               flexShrink={0}
               justifyContent={justify(block.aligns[c])}
               key={c}
+              overflow="hidden"
               width={w + gap}
             >
               <Text color={colors.text} wrap={false}>
@@ -804,4 +856,52 @@ function TableBlock({
       ))}
     </Box>
   );
+}
+
+export function fitTableColumns(
+  naturalWidths: number[],
+  availableWidth: number
+): { gap: number; widths: number[] } {
+  if (naturalWidths.length === 0) {
+    return { gap: 0, widths: [] };
+  }
+  const available = Math.max(1, Math.floor(availableWidth));
+  if (available < naturalWidths.length) {
+    return {
+      gap: 0,
+      widths: naturalWidths.map((_, index) => (index < available ? 1 : 0)),
+    };
+  }
+  const gap = available >= naturalWidths.length * 2 ? 1 : 0;
+  const contentBudget = Math.max(
+    naturalWidths.length,
+    available - gap * naturalWidths.length
+  );
+  const widths = naturalWidths.map((width) => Math.max(1, Math.floor(width)));
+  let remaining = contentBudget;
+  let open = widths.map((_, index) => index);
+  const fitted = Array.from({ length: widths.length }, () => 1);
+
+  while (open.length > 0) {
+    const share = Math.max(1, Math.floor(remaining / open.length));
+    const satisfied = open.filter((index) => widths[index] <= share);
+    if (satisfied.length === 0) {
+      for (const index of open) {
+        fitted[index] = share;
+      }
+      remaining -= share * open.length;
+      for (let i = 0; i < remaining; i++) {
+        fitted[open[i % open.length]] += 1;
+      }
+      break;
+    }
+    for (const index of satisfied) {
+      fitted[index] = widths[index];
+      remaining -= widths[index];
+    }
+    const satisfiedSet = new Set(satisfied);
+    open = open.filter((index) => !satisfiedSet.has(index));
+  }
+
+  return { gap, widths: fitted };
 }

@@ -306,6 +306,10 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   }
   report("Ctrl+C copies a harness selection");
 
+  // Keep this click outside Silvery's double-click window. Otherwise it
+  // intentionally selects a word, and the following Ctrl+C should copy rather
+  // than exercise the no-selection interrupt path.
+  await Bun.sleep(500);
   await send(page, `\x1b[<0;${location.x + 3};${location.y + 3}M`);
   await send(page, `\x1b[<0;${location.x + 3};${location.y + 3}m`);
   await send(page, "\x03");

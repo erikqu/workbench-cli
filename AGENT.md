@@ -162,7 +162,10 @@ with text already present in the agent composer.
   not only an ancestor `onMouseDown`; selection handling can consume the event
   before it bubbles. In a focused harness, Ctrl+C copies an active Silvery
   selection but remains PTY interrupt with no selection, while Ctrl+V requests
-  the host clipboard through OSC 52 and uses the existing paste path.
+  the host clipboard through OSC 52 and uses the existing paste path. Copy an
+  active selection from a raw-key observer because Silvery clears the range
+  before ordinary input dispatch; use the ordinary handler only to consume the
+  chord so it is not also forwarded to the PTY.
 - **Quick-switch (`Workbench.handleKey`)**: `Option/Alt+1..9` jumps to that tab in
   the active session; `Option/Alt+Shift+1..9` jumps to that session;
   `Option/Alt+Space` cycles forward through sessions (wraps). `key.meta`
