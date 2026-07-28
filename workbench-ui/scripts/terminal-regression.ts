@@ -264,6 +264,67 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   );
   report("character-by-character composer input");
 
+  // Move focus to the workspace side pane, then click inside the embedded
+  // harness grid. The terminal's own mouse boundary must restore harness focus
+  // before the next key is routed.
+  await send(page, `\x1b[<0;${location.x};${location.y + 2}M`);
+  await send(page, `\x1b[<0;${location.x};${location.y + 2}m`);
+  await send(page, `\x1b[<0;${location.x + 3};${location.y + 3}M`);
+  await send(page, `\x1b[<0;${location.x + 3};${location.y + 3}m`);
+  await typeCharacters(page, " click", 4);
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "first prompt click",
+    5000
+  );
+  report("clicking the harness grid focuses it for keyboard input");
+
+  const clipboardBefore = await clipboardState(page);
+  await drag(page, location.x + 1, location.y, location.x + "[META]".length);
+  await waitForClipboardWrite(page, clipboardBefore.writes + 1, 3000);
+  const afterSelection = await clipboardState(page);
+  if (!afterSelection.text.includes("META")) {
+    throw new Error(
+      `Harness selection copied unexpected text: ${JSON.stringify(afterSelection)}`
+    );
+  }
+  const beforeCopy = readFixture();
+  if (!beforeCopy) {
+    throw new Error("Simulated agent state disappeared before Ctrl+C");
+  }
+  const interruptsBeforeCopy = beforeCopy.state.controlCCount;
+  await send(page, "\x03");
+  await Bun.sleep(50);
+  const afterCopy = readFixture();
+  if (!afterCopy) {
+    throw new Error("Simulated agent state disappeared after Ctrl+C");
+  }
+  if (afterCopy.state.controlCCount !== interruptsBeforeCopy) {
+    throw new Error(
+      "Ctrl+C interrupted the harness instead of copying its selection"
+    );
+  }
+  report("Ctrl+C copies a harness selection");
+
+  await send(page, `\x1b[<0;${location.x + 3};${location.y + 3}M`);
+  await send(page, `\x1b[<0;${location.x + 3};${location.y + 3}m`);
+  await send(page, "\x03");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.controlCCount === interruptsBeforeCopy + 1,
+    3000
+  );
+  report("Ctrl+C remains a harness interrupt without a selection");
+
+  await page.evaluate(() => (window as any).__setClipboard(" pasted"));
+  await send(page, "\x16");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "first prompt click pasted",
+    5000
+  );
+  report("Ctrl+V pastes the host clipboard into the harness composer");
+
   await send(page, "\r");
   location = await waitForReference(
     page,
@@ -637,6 +698,24 @@ function readFixture(): FixtureEnvelope | undefined {
 
 async function bufferGrid(page: Page): Promise<Grid> {
   return page.evaluate(() => (window as any).__bufferGrid());
+}
+
+async function clipboardState(
+  page: Page
+): Promise<{ text: string; writes: number }> {
+  return page.evaluate(() => (window as any).__clipboardState());
+}
+
+async function waitForClipboardWrite(
+  page: Page,
+  writes: number,
+  timeoutMs: number
+) {
+  await page.waitForFunction(
+    (expected) => (window as any).__clipboardState().writes >= expected,
+    writes,
+    { timeout: timeoutMs }
+  );
 }
 
 async function safeGrid(page: Page): Promise<Grid | undefined> {

@@ -5,6 +5,7 @@ export interface SimulatedResponseRow {
 
 export interface SimulatedAgentState {
   composer: string;
+  controlCCount: number;
   generation: number;
   responses: SimulatedResponseRow[];
   scrollOffset: number;
@@ -26,6 +27,7 @@ const FIXED_ROWS = 2 + COMPOSER_ROWS;
 export function initialSimulatedAgentState(): SimulatedAgentState {
   return {
     composer: "",
+    controlCCount: 0,
     generation: 0,
     responses: [],
     scrollOffset: 0,

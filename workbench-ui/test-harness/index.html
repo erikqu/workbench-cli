@@ -55,6 +55,8 @@
 
     term.open(document.getElementById("terminal"));
     const socket = new WebSocket(`ws://${location.host}/pty`);
+    let hostClipboard = "";
+    let clipboardWrites = 0;
     let outputBytes = 0;
     let outputEvents = 0;
     let parsedWrites = 0;
@@ -73,6 +75,19 @@
     socket.addEventListener("close", () => {
       window.__workbenchSocketClosed = true;
     });
+    term.parser.registerOscHandler(52, (data) => {
+      if (data === "c;?") {
+        const encoded = btoa(unescape(encodeURIComponent(hostClipboard)));
+        socket.send(`\x1b]52;c;${encoded}\x07`);
+        return true;
+      }
+      if (data.startsWith("c;")) {
+        hostClipboard = decodeURIComponent(escape(atob(data.slice(2))));
+        clipboardWrites += 1;
+        return true;
+      }
+      return false;
+    });
     term.onData((data) => socket.send(data));
     // Test hooks: send raw bytes to the workbench PTY and read back the
     // rendered terminal buffer so the screenshot script can assert on it.
@@ -84,6 +99,13 @@
       socket.send(`\0WORKBENCH_RESIZE ${cols} ${rows}`);
     };
     window.__outputStats = () => ({ outputBytes, outputEvents, parsedWrites });
+    window.__clipboardState = () => ({
+      text: hostClipboard,
+      writes: clipboardWrites,
+    });
+    window.__setClipboard = (text) => {
+      hostClipboard = text;
+    };
     window.__bufferText = () => {
       const buffer = term.buffer.active;
       const lines = [];

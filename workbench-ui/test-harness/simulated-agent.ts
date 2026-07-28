@@ -84,6 +84,9 @@ function consumeInput() {
     inputBuffer = inputBuffer.slice(1);
     if (char === "\r" || char === "\n") {
       submitPrompt();
+    } else if (char === "\x03") {
+      state.controlCCount += 1;
+      requestRender();
     } else if (char === "\x7f" || char === "\b") {
       state.composer = state.composer.slice(0, -1);
       state.scrollOffset = 0;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   AnchoredOverlay,
   Box,
@@ -9,6 +9,8 @@ import {
   Text,
   useBoxRectDangerously,
   useInput,
+  useSelection,
+  useSelectionActions,
   useWindowSize,
 } from "silvery";
 import { harnessSpec } from "../state/harnesses";
@@ -18,6 +20,10 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
+import {
+  requestClipboardPaste,
+  terminalClipboardShortcut,
+} from "../terminal/clipboard";
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { COLLAPSED_SESSIONS_SIDEBAR_WIDTH } from "../ui/pane-layout";
 import { colors } from "../ui/theme";
@@ -55,12 +61,44 @@ export function Workbench({
     useState<TabContextMenuState | null>(null);
   const [sessionContextMenu, setSessionContextMenu] =
     useState<SessionContextMenuState | null>(null);
+  const selection = useSelection();
+  const selectionActions = useSelectionActions();
+  const harnessSelection = useRef(false);
+  const harnessSelectionConsumed = useRef(false);
+  useEffect(() => {
+    if (!selection?.range) {
+      harnessSelectionConsumed.current = false;
+    } else if (!harnessSelectionConsumed.current) {
+      harnessSelection.current = true;
+    }
+  }, [selection?.range]);
   useInput(
     (input, key) => {
       if ((tabContextMenu || sessionContextMenu) && key.escape) {
         setTabContextMenu(null);
         setSessionContextMenu(null);
         return;
+      }
+      if (view.state.focus === "harness") {
+        const clipboard = terminalClipboardShortcut(
+          input,
+          key,
+          harnessSelection.current
+        );
+        if (clipboard === "copy") {
+          harnessSelection.current = false;
+          harnessSelectionConsumed.current = true;
+          selectionActions.copy?.();
+          return;
+        }
+        if (clipboard === "paste") {
+          harnessSelection.current = false;
+          harnessSelectionConsumed.current = true;
+          requestClipboardPaste();
+          return;
+        }
+        harnessSelection.current = false;
+        harnessSelectionConsumed.current = true;
       }
       handleKey(input, key, view, actions);
     },
@@ -183,7 +221,13 @@ export function Workbench({
                 >
                   <WorkspaceSidePane actions={actions} view={view} />
                   {harnessTab ? (
-                    <HarnessView actions={actions} view={view} />
+                    <HarnessView
+                      actions={actions}
+                      selectionChanged={(selected) => {
+                        harnessSelection.current = selected;
+                      }}
+                      view={view}
+                    />
                   ) : changesTab ? (
                     <DiffDetailView actions={actions} view={view} />
                   ) : (
@@ -448,9 +492,11 @@ export function isThemeCycleKey(input: string, key: Key): boolean {
 function HarnessView({
   view,
   actions,
+  selectionChanged,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  selectionChanged(selected: boolean): void;
 }) {
   const activeHarness = view.session.harnesses.find(
     (harness) => `harness:${harness.id}` === view.session.activeMainTab
@@ -498,10 +544,12 @@ function HarnessView({
       </Box>
       {view.harnessPanel ? (
         <TerminalGrid
+          focus={() => actions.focus("harness")}
           focused={view.state.focus === "harness"}
           panel={view.harnessPanel}
           resize={actions.resizeHarness}
           scroll={actions.scrollHarness}
+          selectionChanged={selectionChanged}
         />
       ) : null}
     </Box>
@@ -539,6 +587,7 @@ function TerminalView({
       </Text>
       {view.terminalPanel ? (
         <TerminalGrid
+          focus={() => actions.focus("terminal")}
           focused={view.state.focus === "terminal"}
           panel={view.terminalPanel}
           resize={actions.resizeTerminal}
@@ -551,22 +600,28 @@ function TerminalView({
 
 function TerminalGrid({
   panel,
+  focus,
   focused,
+  selectionChanged,
   resize,
   scroll,
 }: {
   panel: NonNullable<WorkbenchViewModel["harnessPanel"]>;
+  focus(): void;
   focused: boolean;
+  selectionChanged?(selected: boolean): void;
   resize(cols: number, rows: number): void;
   scroll(lines: number): void;
 }) {
   return (
     <Box flexGrow={1} minHeight={1} minWidth={1} overflow="hidden">
       <MeasuredTerminalGrid
+        focus={focus}
         focused={focused}
         panel={panel}
         resize={resize}
         scroll={scroll}
+        selectionChanged={selectionChanged}
       />
     </Box>
   );
@@ -574,12 +629,16 @@ function TerminalGrid({
 
 function MeasuredTerminalGrid({
   panel,
+  focus,
   focused,
+  selectionChanged,
   resize,
   scroll,
 }: {
   panel: NonNullable<WorkbenchViewModel["harnessPanel"]>;
+  focus(): void;
   focused: boolean;
+  selectionChanged?(selected: boolean): void;
   resize(cols: number, rows: number): void;
   scroll(lines: number): void;
 }) {
@@ -607,6 +666,10 @@ function MeasuredTerminalGrid({
   }, [cols, rows, panel, resize]);
 
   const onMouse = (event: TerminalMouseEvent) => {
+    if (event.type === "press" && event.button === "left") {
+      selectionChanged?.(false);
+      focus();
+    }
     if (event.type === "wheel") {
       const direction =
         event.button === "wheelUp"
