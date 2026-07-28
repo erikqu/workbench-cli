@@ -5,6 +5,22 @@
     <title>Workbench Screenshot</title>
     <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css">
     <style>
+    @font-face {
+      font-family: "Workbench JetBrains Mono";
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+      src: url("/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2")
+        format("woff2");
+    }
+    @font-face {
+      font-family: "Workbench JetBrains Mono";
+      font-style: normal;
+      font-weight: 700;
+      font-display: block;
+      src: url("/node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2")
+        format("woff2");
+    }
     html,
     body,
     #terminal {
@@ -31,8 +47,8 @@
     document.getElementById("terminal").style.background =
       terminalTheme.background;
     const fontFamily =
-      option("fontFamily") ??
-      "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace";
+      option("fontFamily") ?? "'Workbench JetBrains Mono', monospace";
+    await document.fonts.load('400 15px "Workbench JetBrains Mono"');
 
     const initialCols = numericOption("cols", 180);
     const initialRows = numericOption("rows", 40);
@@ -99,6 +115,9 @@
       socket.send(`\0WORKBENCH_RESIZE ${cols} ${rows}`);
     };
     window.__outputStats = () => ({ outputBytes, outputEvents, parsedWrites });
+    window.__terminalFontFamily = () => term.options.fontFamily;
+    window.__terminalFontLoaded = () =>
+      document.fonts.check('400 15px "Workbench JetBrains Mono"');
     window.__clipboardState = () => ({
       text: hostClipboard,
       writes: clipboardWrites,

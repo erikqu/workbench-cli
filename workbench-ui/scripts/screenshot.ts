@@ -51,6 +51,17 @@ try {
   // Give the active session's workbench chat PTY time to spawn and draw.
   await page.waitForTimeout(2500);
 
+  report(
+    "screenshot terminal prefers JetBrains Mono",
+    await page.evaluate(
+      () =>
+        (window as any).__terminalFontLoaded() &&
+        (window as any)
+          .__terminalFontFamily()
+          .startsWith("'Workbench JetBrains Mono'")
+    )
+  );
+
   // 1. The default harness tab should render and remain live. Some harnesses
   // do not echo typed text immediately, so input fidelity is covered by the
   // terminal tab check below.
@@ -157,27 +168,6 @@ try {
     report("README.md tab located", false);
   }
 
-  // 3b-2. Wide pipe tables must preserve the editor's right border instead of
-  // expanding their natural column widths beyond the terminal window.
-  const wideTableCell = await findCell(page, "wide-table.md", 26, 56);
-  if (wideTableCell) {
-    await click(page, wideTableCell.col + 2, wideTableCell.row + 1);
-    const tableVisible = await waitForText(page, "Wide table bounds", 4000);
-    const tableHeading = await findCell(page, "Wide table bounds", 56);
-    const lines = (await bufferText(page)).split("\n");
-    const tableRowsBounded = tableHeading
-      ? lines
-          .slice(tableHeading.row, tableHeading.row + 6)
-          .every((line) => line[179] === "│")
-      : false;
-    report(
-      "wide markdown tables stay inside the preview border",
-      tableVisible && tableRowsBounded
-    );
-  } else {
-    report("wide-table.md fixture located", false);
-  }
-
   // 3c. The image tab decodes and renders as colored half-blocks (no "(binary file)").
   const imgTab = await findCell(page, "sample.png");
   if (imgTab) {
@@ -233,6 +223,17 @@ try {
     const diagramDrawn =
       buffer.includes("\u2580") && !buffer.includes("graph TD");
     report("mermaid block renders as a diagram image", diagramDrawn);
+    const tableHeading = await findCell(page, "Wide table bounds", 56);
+    const lines = buffer.split("\n");
+    const tableRowsBounded = tableHeading
+      ? lines
+          .slice(tableHeading.row, tableHeading.row + 5)
+          .every((line) => line[179] === "│")
+      : false;
+    report(
+      "wide markdown tables stay inside the preview border",
+      tableRowsBounded
+    );
   } else {
     report("diagram.md tab located", false);
   }

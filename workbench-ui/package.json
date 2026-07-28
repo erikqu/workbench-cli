@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@xterm/headless": "^6.0.0",
     "chokidar": "^5.0.0",
     "ignore": "^7.0.5",
@@ -33,6 +34,6 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true
 }
