@@ -157,6 +157,27 @@ try {
     report("README.md tab located", false);
   }
 
+  // 3b-2. Wide pipe tables must preserve the editor's right border instead of
+  // expanding their natural column widths beyond the terminal window.
+  const wideTableCell = await findCell(page, "wide-table.md", 26, 56);
+  if (wideTableCell) {
+    await click(page, wideTableCell.col + 2, wideTableCell.row + 1);
+    const tableVisible = await waitForText(page, "Wide table bounds", 4000);
+    const tableHeading = await findCell(page, "Wide table bounds", 56);
+    const lines = (await bufferText(page)).split("\n");
+    const tableRowsBounded = tableHeading
+      ? lines
+          .slice(tableHeading.row, tableHeading.row + 6)
+          .every((line) => line[179] === "│")
+      : false;
+    report(
+      "wide markdown tables stay inside the preview border",
+      tableVisible && tableRowsBounded
+    );
+  } else {
+    report("wide-table.md fixture located", false);
+  }
+
   // 3c. The image tab decodes and renders as colored half-blocks (no "(binary file)").
   const imgTab = await findCell(page, "sample.png");
   if (imgTab) {
