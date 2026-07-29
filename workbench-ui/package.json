@@ -26,7 +26,7 @@
     "start": "bun src/index.ts",
     "dev": "bun scripts/hot-runner.ts",
     "screenshot": "bun scripts/screenshot.ts",
-    "test:terminal": "bun scripts/terminal-regression.ts",
+    "test:terminal": "bun scripts/terminal-regression.ts && bun scripts/terminal-regression.ts --inline --chunk-seed=1",
     "test:terminal:red": "bun scripts/terminal-regression.ts --idle-only --idle-samples=10 --keep-artifacts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
@@ -34,6 +34,6 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true
 }

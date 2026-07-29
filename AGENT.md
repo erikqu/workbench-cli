@@ -154,10 +154,17 @@ with text already present in the agent composer.
   primary-buffer pane, xterm parks `viewportY` above `baseY`; without snapping
   back on input, later agent output makes the prompt appear to drift downward
   off the visible pane.
-- The embedded `<Terminal onMouse>` exclusively owns wheel routing. Silvery
-  wheel events bubble, so adding `onWheel` handlers to its parent pane or grid
-  sends every physical gesture to tmux/the harness more than once and can
-  corrupt an agent's inline redraw history while it is streaming.
+- The `FocusedTerminal` wrapper Box's `onWheel` exclusively owns wheel routing
+  (its handler stops propagation). Silvery's runtime coalesces same-direction
+  wheel bursts into ONE event whose `deltaY` accumulates the step count, and
+  the `<Terminal onMouse>` callback only exposes a direction — so wheel must be
+  handled where the raw `SilveryWheelEvent` magnitude is available and
+  forwarded as `sendMouseWheel(..., steps)`. Collapsing a burst to one report
+  strands tmux copy-mode panes in scrollback (up and down streams shrink
+  unevenly, the pane never scrolls back to the bottom to auto-exit copy mode,
+  and the composer disappears). Wheel events bubble: never add another
+  `onWheel` handler on an ancestor pane or grid, and keep `onMouse` ignoring
+  wheel, or gestures reach tmux/the harness more than once.
 - Focus harness/terminal panes from the embedded terminal's `onMouse` callback,
   not only an ancestor `onMouseDown`; selection handling can consume the event
   before it bubbles. In a focused harness, Ctrl+C copies an active Silvery
@@ -189,6 +196,13 @@ with text already present in the agent composer.
   burst, scroll up and naturally back down while output continues, and run with
   seeded ANSI fragmentation (`--chunk-seed=N`). Keep `convertEol: false` in the
   outer xterm fixture so it has real-terminal LF semantics.
+- `bun run test:terminal` runs two passes: the default alt-screen fixture and
+  `--inline`, where the simulated agent renders Claude-Code-style (primary
+  buffer, no mouse tracking, Ink-style bottom-block repaint, history in tmux
+  scrollback) so wheel gestures exercise tmux copy-mode enter/exit. The inline
+  pass must include zero-delay wheel bursts in BOTH directions across several
+  cycles — that is the shape that reproduced the stranded-in-scrollback
+  composer bug — and needs `--chunk-seed` to keep timing adversarial.
 - If the deterministic fixture stays green, stop before applying a speculative
   fix. Relaunch with `workbench-cli --terminal-trace` and reproduce once. The
   trace is written to `~/.workbench/terminal-trace.ndjson`; it contains only

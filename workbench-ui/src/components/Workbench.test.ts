@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseKey } from "silvery";
-import { isThemeCycleKey, terminalGridSize } from "./Workbench";
+import { isThemeCycleKey, terminalGridSize, wheelGesture } from "./Workbench";
 
 function parsed(input: string) {
   return parseKey(input);
@@ -24,6 +24,31 @@ describe("isThemeCycleKey", () => {
   test("does not match plain Tab", () => {
     const [input, key] = parsed("\t");
     expect(isThemeCycleKey(input, key)).toBe(false);
+  });
+});
+
+describe("wheelGesture", () => {
+  test("maps a single wheel report to one step", () => {
+    expect(wheelGesture(-1)).toEqual({ direction: "up", steps: 1 });
+    expect(wheelGesture(1)).toEqual({ direction: "down", steps: 1 });
+  });
+
+  test("preserves the coalesced magnitude of a wheel burst", () => {
+    // Silvery merges same-direction wheel bursts into one event whose deltaY
+    // sums the reports. Collapsing it to one step strands tmux copy-mode
+    // panes in scrollback because up and down streams shrink unevenly.
+    expect(wheelGesture(-12)).toEqual({ direction: "up", steps: 12 });
+    expect(wheelGesture(40)).toEqual({ direction: "down", steps: 40 });
+  });
+
+  test("ignores empty or malformed deltas", () => {
+    expect(wheelGesture(0)).toBeUndefined();
+    expect(wheelGesture(Number.NaN)).toBeUndefined();
+    expect(wheelGesture(Number.POSITIVE_INFINITY)).toBeUndefined();
+  });
+
+  test("never rounds a fractional delta down to zero steps", () => {
+    expect(wheelGesture(-0.2)).toEqual({ direction: "up", steps: 1 });
   });
 });
 

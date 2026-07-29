@@ -578,15 +578,28 @@ export class TerminalPanel implements TerminalReadable {
     return true;
   }
 
-  sendMouseWheel(col: number, row: number, direction: "up" | "down"): boolean {
+  // Forward a wheel gesture as `count` SGR reports in a single PTY write.
+  // Silvery coalesces same-direction wheel bursts into one event whose delta
+  // carries the accumulated step count; emitting one report per event would
+  // silently shrink fast flicks. tmux copy-mode then never scrolls back far
+  // enough to exit at the bottom, leaving the pane parked in scrollback with
+  // the composer out of view.
+  sendMouseWheel(
+    col: number,
+    row: number,
+    direction: "up" | "down",
+    count = 1
+  ): boolean {
     if (!this.hasMouseTracking()) {
       return false;
     }
+    const steps = Math.max(1, Math.floor(count));
     terminalTrace("panel-wheel", {
       col,
       direction,
       panel: this.traceId,
       row,
+      steps,
     });
     if (!this.child) {
       this.start();
@@ -598,9 +611,8 @@ export class TerminalPanel implements TerminalReadable {
       this.tmuxCopyModePossible = true;
     }
     const button = direction === "up" ? 64 : 65;
-    this.writeToChild(
-      `\x1b[<${button};${Math.max(1, Math.floor(col) + 1)};${Math.max(1, Math.floor(row) + 1)}M`
-    );
+    const report = `\x1b[<${button};${Math.max(1, Math.floor(col) + 1)};${Math.max(1, Math.floor(row) + 1)}M`;
+    this.writeToChild(report.repeat(steps));
     return true;
   }
 

@@ -5,6 +5,7 @@ import {
   Button,
   type Key,
   Screen,
+  type SilveryWheelEvent,
   type TerminalMouseEvent,
   Text,
   useBoxRectDangerously,
@@ -686,20 +687,27 @@ function MeasuredTerminalGrid({
       selectionChanged?.(false);
       focus();
     }
-    if (event.type === "wheel") {
-      const direction =
-        event.button === "wheelUp"
-          ? "up"
-          : event.button === "wheelDown"
-            ? "down"
-            : undefined;
-      if (!direction) {
-        return;
-      }
-      if (!panel.sendMouseWheel(event.x, event.y, direction)) {
-        scroll(direction === "up" ? -3 : 3);
-      }
+    // Wheel events are deliberately NOT handled here: the Terminal onMouse
+    // callback only exposes a direction, while silvery's runtime coalesces
+    // same-direction wheel bursts into one event whose deltaY accumulates the
+    // step count. The wrapper Box's onWheel below receives that magnitude.
+  };
+
+  // Single wheel owner for this pane. Wheel events bubble, so any additional
+  // onWheel handler on an ancestor pane or grid would double-send gestures to
+  // tmux/the harness; this handler stops propagation to enforce that.
+  const onWheel = (event: SilveryWheelEvent) => {
+    const gesture = wheelGesture(event.deltaY);
+    if (!gesture) {
+      return;
     }
+    const col = Math.max(0, Math.floor(event.x - rect.x));
+    const row = Math.max(0, Math.floor(event.y - rect.y));
+    if (!panel.sendMouseWheel(col, row, gesture.direction, gesture.steps)) {
+      scroll((gesture.direction === "up" ? -3 : 3) * gesture.steps);
+    }
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   return (
@@ -707,12 +715,32 @@ function MeasuredTerminalGrid({
       cols={cols}
       focused={focused}
       onMouse={onMouse}
+      onWheel={onWheel}
       revision={revision}
       rows={rows}
       selectable
       terminal={panel}
     />
   );
+}
+
+// Translate a wheel event's deltaY into a direction plus how many wheel steps
+// it represents. Silvery's runtime coalesces same-direction wheel bursts into
+// one event whose deltaY is the sum of the per-report deltas (each report is
+// +-1), so the absolute value is the number of physical wheel ticks. Dropping
+// it to one step per event loses most of a fast flick, which strands tmux
+// copy-mode panes in scrollback because the pane scrolls up further than any
+// later wheel-down stream can recover.
+export function wheelGesture(
+  deltaY: number
+): { direction: "up" | "down"; steps: number } | undefined {
+  if (!Number.isFinite(deltaY) || deltaY === 0) {
+    return;
+  }
+  return {
+    direction: deltaY < 0 ? "up" : "down",
+    steps: Math.max(1, Math.round(Math.abs(deltaY))),
+  };
 }
 
 export function terminalGridSize(

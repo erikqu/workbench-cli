@@ -24,6 +24,9 @@ export const SIMULATED_HISTORY_ROWS = 120;
 const COMPOSER_ROWS = 4;
 const FIXED_ROWS = 2 + COMPOSER_ROWS;
 
+// Rows in the inline agent's repainted bottom block: [META], status, composer.
+export const INLINE_BLOCK_ROWS = FIXED_ROWS;
+
 export function initialSimulatedAgentState(): SimulatedAgentState {
   return {
     composer: "",
@@ -86,6 +89,53 @@ export function renderSimulatedAgentFrame(
       visible: true,
     },
   };
+}
+
+// The inline agent (Claude-Code-style primary-buffer TUI) never scrolls its
+// own conversation: history flows into the host/tmux scrollback and only the
+// bottom block is repainted in place. The reference frame is that block; the
+// conversation tail above it is validated separately via
+// simulatedConversationRows().
+export function renderSimulatedInlineBlock(
+  state: SimulatedAgentState,
+  cols: number
+): SimulatedAgentFrame {
+  const width = Math.max(1, Math.floor(cols));
+  const meta = fixtureRow(
+    "[META]",
+    `generation=${state.generation} inline size=${width}`,
+    width
+  );
+  const status = state.working
+    ? fixtureRow(
+        "[WORK]",
+        `Working (${Math.floor(state.workingTick / 5)}s) tick=${state.workingTick}`,
+        width
+      )
+    : fixtureRow("[READY]", "Ready for input", width);
+  const composer = composerRows(state.composer, width);
+  return {
+    lines: [meta, status, ...composer.lines],
+    cursor: {
+      x: composer.cursorX,
+      y: 2 + composer.cursorRow,
+      visible: true,
+    },
+  };
+}
+
+// Full conversation (fixed history + streamed responses) as fixture rows, so
+// tests can compare the rows the inline agent has emitted above its block.
+export function simulatedConversationRows(
+  state: SimulatedAgentState,
+  cols: number
+): string[] {
+  const width = Math.max(1, Math.floor(cols));
+  return historyRows(width).concat(
+    state.responses.map((row) =>
+      fixtureRow(`[R${pad(row.id)}]`, row.text, width)
+    )
+  );
 }
 
 function historyRows(width: number): string[] {

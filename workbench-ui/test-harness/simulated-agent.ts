@@ -4,11 +4,18 @@ import { renameSync, writeFileSync } from "node:fs";
 import {
   initialSimulatedAgentState,
   renderSimulatedAgentFrame,
+  renderSimulatedInlineBlock,
   type SimulatedAgentState,
+  simulatedConversationRows,
 } from "./simulated-agent-model";
 
 const statePath = Bun.env.WORKBENCH_E2E_AGENT_STATE;
 const chunkSeed = Number(Bun.env.WORKBENCH_E2E_CHUNK_SEED ?? "17");
+// Inline mode mimics Claude-Code-style agents: primary buffer (no alternate
+// screen), no mouse tracking, conversation flowing into the host scrollback,
+// and an Ink-style bottom block erased and repainted in place. Scrolling a
+// pane like this is owned by tmux copy-mode, not by the agent.
+const inline = Bun.env.WORKBENCH_E2E_AGENT_INLINE === "1";
 const state = initialSimulatedAgentState();
 
 let cols = terminalDimension("columns", "COLUMNS", 80);
@@ -22,10 +29,18 @@ let statusTimer: ReturnType<typeof setInterval> | undefined;
 let responseTimer: ReturnType<typeof setInterval> | undefined;
 let finishTimer: ReturnType<typeof setTimeout> | undefined;
 
+let printedConversationRows = 0;
+let blockCursorRow = 0;
+let blockPainted = false;
+
 process.stdin.setRawMode?.(true);
 process.stdin.resume();
 process.stdin.setEncoding("utf8");
-process.stdout.write("\x1b[?1049h\x1b[?2004h\x1b[?1000h\x1b[?1006h\x1b[?25l");
+process.stdout.write(
+  inline
+    ? "\x1b[?2004h\x1b[?25l"
+    : "\x1b[?1049h\x1b[?2004h\x1b[?1000h\x1b[?1006h\x1b[?25l"
+);
 
 process.stdin.on("data", (data: string) => {
   inputBuffer += data;
@@ -36,6 +51,12 @@ process.on("SIGWINCH", () => {
   cols = terminalDimension("columns", "COLUMNS", cols);
   rows = terminalDimension("rows", "LINES", rows);
   state.scrollOffset = Math.min(state.scrollOffset, maxScrollOffset());
+  if (inline) {
+    // Old-width rows above the block would rewrap unpredictably. Start the
+    // inline transcript over so the fixture stays byte-deterministic.
+    printedConversationRows = 0;
+    blockPainted = false;
+  }
   requestRender();
 });
 
@@ -112,6 +133,10 @@ function isIncompleteEscape(value: string): boolean {
 }
 
 function scroll(delta: number) {
+  if (inline) {
+    // Inline agents own no scroll state; tmux copy-mode does the scrolling.
+    return;
+  }
   state.scrollOffset = Math.max(
     0,
     Math.min(maxScrollOffset(), state.scrollOffset + delta)
@@ -195,6 +220,10 @@ async function renderLoop() {
   while (renderRequested) {
     renderRequested = false;
     const snapshot = structuredClone(state) as SimulatedAgentState;
+    if (inline) {
+      await renderInlineFrame(snapshot);
+      continue;
+    }
     const frame = renderSimulatedAgentFrame(snapshot, cols, rows);
     const body = frame.lines.join("\r\n");
     const cursorRow = Math.max(1, frame.cursor.y + 1);
@@ -212,6 +241,43 @@ async function renderLoop() {
     writeState(snapshot, frame.cursor);
   }
   rendering = false;
+}
+
+// Ink-style repaint: return to the block's first row, erase to the end of the
+// screen, append any newly completed conversation rows (pushing older rows
+// into the pane's natural scrollback), then repaint the block and park the
+// cursor inside the composer. Nothing above the block is ever rewritten.
+async function renderInlineFrame(snapshot: SimulatedAgentState) {
+  const conversation = simulatedConversationRows(snapshot, cols);
+  const fresh = conversation.slice(printedConversationRows);
+  const block = renderSimulatedInlineBlock(snapshot, cols);
+  let ansi = "\x1b[?2026h\x1b[?25l";
+  if (blockPainted) {
+    ansi +=
+      blockCursorRow > 0 ? `\x1b[${blockCursorRow}A\r\x1b[0J` : "\r\x1b[0J";
+  } else {
+    // First paint (or a resize restart): wipe the screen and pane history so
+    // the transcript above the block is exactly the conversation rows.
+    ansi += "\x1b[2J\x1b[3J\x1b[H";
+  }
+  for (const row of fresh) {
+    ansi += `${row}\r\n`;
+  }
+  ansi += block.lines.join("\r\n");
+  const cursorUp = block.lines.length - 1 - block.cursor.y;
+  if (cursorUp > 0) {
+    ansi += `\x1b[${cursorUp}A`;
+  }
+  ansi += "\r";
+  if (block.cursor.x > 0) {
+    ansi += `\x1b[${block.cursor.x}C`;
+  }
+  ansi += "\x1b[?25h\x1b[?2026l";
+  printedConversationRows = conversation.length;
+  blockCursorRow = block.cursor.y;
+  blockPainted = true;
+  await writeChunked(ansi, chunkSeed + snapshot.generation);
+  writeState(snapshot, block.cursor);
 }
 
 async function writeChunked(value: string, seed: number) {
@@ -288,6 +354,10 @@ function clearRunTimers() {
 
 function shutdown(code: number) {
   clearRunTimers();
-  process.stdout.write("\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l");
+  process.stdout.write(
+    inline
+      ? "\x1b[?2004l\x1b[?25h"
+      : "\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l"
+  );
   process.exit(code);
 }

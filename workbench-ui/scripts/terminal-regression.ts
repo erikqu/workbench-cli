@@ -10,8 +10,10 @@ import { basename, join, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import {
   renderSimulatedAgentFrame,
+  renderSimulatedInlineBlock,
   type SimulatedAgentFrame,
   type SimulatedAgentState,
+  simulatedConversationRows,
 } from "../test-harness/simulated-agent-model";
 
 interface FixtureEnvelope {
@@ -42,7 +44,7 @@ const appRoot = resolve(options.appRoot ?? root);
 const [initialCols, initialRows] = parseSize(options.size ?? "120x40");
 const runLabel =
   options.label ??
-  `${basename(appRoot)}-${initialCols}x${initialRows}-${Date.now()}`;
+  `${basename(appRoot)}${options.inline ? "-inline" : ""}-${initialCols}x${initialRows}-${Date.now()}`;
 const artifactDir = join(root, "artifacts", "terminal-regression", runLabel);
 // tmux's Unix socket path is capped at roughly 100 bytes. On macOS tmpdir()
 // expands under /var/folders/... and the isolated HOME plus
@@ -56,6 +58,11 @@ const tracePath = join(artifactDir, "ansi-trace.ndjson");
 const metadataPath = join(artifactDir, "failure.json");
 const screenshotPath = join(artifactDir, "failure.png");
 const port = 20_000 + ((process.pid * 31 + Date.now()) % 20_000);
+// Rows above the inline agent's bottom block must be the exact tail of the
+// conversation it printed: no duplicated, missing, or displaced rows after
+// tmux copy-mode scrollback churn. Twelve rows is deep enough to cover a
+// streamed response burst while staying inside the pane at every tested size.
+const INLINE_TAIL_ROWS = 12;
 
 mkdirSync(home, { recursive: true });
 mkdirSync(artifactDir, { recursive: true });
@@ -67,6 +74,7 @@ const server = Bun.spawn(
     env: {
       ...Bun.env,
       HOME: home,
+      WORKBENCH_E2E_AGENT_INLINE: options.inline ? "1" : "",
       WORKBENCH_E2E_AGENT_STATE: agentStatePath,
       WORKBENCH_E2E_APP_ROOT: appRoot,
       WORKBENCH_E2E_CHUNK_SEED:
@@ -130,6 +138,9 @@ try {
   }
 
   if (options.idleOnly) {
+    await assertIdleWindows(page, options.idleSamples);
+  } else if (options.inline) {
+    await runInlineAgentScenario(page, location);
     await assertIdleWindows(page, options.idleSamples);
   } else if (options.plainOnly) {
     await runPlainShellScenario(page);
@@ -360,6 +371,27 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   );
   report("agent history returns to the live composer");
 
+  // The user-reported corruption shape: scroll a conversation up and down
+  // multiple times in a row. Each cycle overscrolls past the top clamp and
+  // past the bottom clamp so wheel events keep arriving while the fixture is
+  // already pinned, like a human flicking a wheel.
+  for (let cycle = 0; cycle < 5; cycle += 1) {
+    for (let step = 0; step < 10; step += 1) {
+      await wheel(page, location.x + 5, location.y + 5, "up");
+      await Bun.sleep(8);
+    }
+    for (let step = 0; step < 14; step += 1) {
+      await wheel(page, location.x + 5, location.y + 5, "down");
+      await Bun.sleep(8);
+    }
+  }
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.scrollOffset === 0,
+    8000
+  );
+  report("repeated scroll cycles settle back on a clean composer");
+
   await send(page, "X\x7f");
   await paste(page, "\nsecond composer line");
   location = await waitForReference(
@@ -406,6 +438,93 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
     8000
   );
   report("second submitted prompt survives feedback and resize");
+  return location;
+}
+
+// Claude-Code-shaped agents render inline on the primary buffer without mouse
+// tracking, so wheel gestures make tmux enter and leave copy-mode with a full
+// pane redraw each time. This is the reported real-world corruption shape:
+// scroll a conversation up and down several times and the input box breaks.
+async function runInlineAgentScenario(page: Page, initial: Location) {
+  let location = initial;
+  const wheelAt = () => ({
+    x: location.x + 5,
+    y: Math.max(2, location.y - 5),
+  });
+  // delayMs 0 models flick/momentum scrolling, where the terminal delivers a
+  // burst of SGR wheel reports in a single read; a small delay models slow
+  // deliberate ticks. Users mix both, so the cycles below do too.
+  const wheelCycles = async (
+    cycles: number,
+    up: number,
+    down: number,
+    delayMs: number
+  ) => {
+    for (let cycle = 0; cycle < cycles; cycle += 1) {
+      for (let step = 0; step < up; step += 1) {
+        const at = wheelAt();
+        await wheel(page, at.x, at.y, "up");
+        if (delayMs > 0) {
+          await Bun.sleep(delayMs);
+        }
+      }
+      await Bun.sleep(60);
+      for (let step = 0; step < down; step += 1) {
+        const at = wheelAt();
+        await wheel(page, at.x, at.y, "down");
+        if (delayMs > 0) {
+          await Bun.sleep(delayMs);
+        }
+      }
+      await Bun.sleep(60);
+    }
+  };
+
+  await typeCharacters(page, "inline prompt");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "inline prompt",
+    5000
+  );
+  report("inline agent composer input");
+
+  await wheelCycles(5, 8, 12, 8);
+  await wheelCycles(6, 30, 40, 0);
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "inline prompt",
+    8000
+  );
+  report("idle copy-mode scroll cycles settle on a clean inline frame");
+
+  await send(page, "\r");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.working && fixture.state.submittedPrompts === 1,
+    5000
+  );
+  await wheelCycles(3, 8, 14, 8);
+  await wheelCycles(3, 24, 32, 0);
+  location = await waitForReference(
+    page,
+    (fixture) => !fixture.state.working,
+    10_000
+  );
+  report("copy-mode scroll cycles during streaming settle cleanly");
+
+  for (let step = 0; step < 6; step += 1) {
+    const at = wheelAt();
+    await wheel(page, at.x, at.y, "up");
+    await Bun.sleep(8);
+  }
+  await Bun.sleep(100);
+  await typeCharacters(page, "back at bottom");
+  location = await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "back at bottom",
+    5000
+  );
+  report("typing while scrolled up returns to a live inline composer");
   return location;
 }
 
@@ -474,6 +593,21 @@ async function runPlainShellScenario(page: Page) {
   );
   await waitForConsecutiveShellRows(page, "SHELL-WHEEL", 160, 10_000, true);
   report("real shell bottom-edge output survives scrollback and return");
+
+  // Repeated tmux copy-mode enter/exit cycles over an idle prompt: the
+  // user-reported "scroll up and down multiple times" path for panes whose
+  // program does not track the mouse, where tmux owns the scrollback.
+  for (let cycle = 0; cycle < 5; cycle += 1) {
+    for (let step = 0; step < 6; step += 1) {
+      await wheel(page, 60, 12, "up");
+      await Bun.sleep(8);
+    }
+    for (let step = 0; step < 12; step += 1) {
+      await wheel(page, 60, 12, "down");
+      await Bun.sleep(8);
+    }
+  }
+  report("repeated idle copy-mode scroll cycles");
 
   const finalCommand =
     "clear; for i in 1 2 3 4 5 6 7 8; do printf '[S%03d] reference row\\n' \"$i\"; done\r";
@@ -605,11 +739,9 @@ async function waitForReference(
       await Bun.sleep(10);
       continue;
     }
-    const frame = renderSimulatedAgentFrame(
-      fixture.state,
-      fixture.cols,
-      fixture.rows
-    );
+    const frame = options.inline
+      ? renderSimulatedInlineBlock(fixture.state, fixture.cols)
+      : renderSimulatedAgentFrame(fixture.state, fixture.cols, fixture.rows);
     const grid = await bufferGrid(page);
     const found = locateFrame(grid, frame);
     if (found.ok) {
@@ -637,6 +769,9 @@ async function waitForReference(
         continue;
       }
       validateMarkers(grid, fixture);
+      if (options.inline) {
+        validateInlineTail(grid, fixture, found.x, found.y);
+      }
       return { fixture, frame, x: found.x, y: found.y };
     }
     mismatch = found.reason;
@@ -671,6 +806,25 @@ function locateFrame(
     ok: false,
     reason: `missing reference meta row ${JSON.stringify(meta)}`,
   };
+}
+
+function validateInlineTail(
+  grid: Grid,
+  fixture: FixtureEnvelope,
+  x: number,
+  y: number
+) {
+  const conversation = simulatedConversationRows(fixture.state, fixture.cols);
+  const depth = Math.min(INLINE_TAIL_ROWS, conversation.length, y);
+  for (let offset = 1; offset <= depth; offset += 1) {
+    const expected = conversation[conversation.length - offset] ?? "";
+    const actual = grid.lines[y - offset]?.slice(x, x + expected.length);
+    if (actual !== expected) {
+      throw new Error(
+        `inline tail row ${offset} above the block differs at outer ${x},${y - offset}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`
+      );
+    }
+  }
 }
 
 function validateMarkers(grid: Grid, fixture: FixtureEnvelope) {
@@ -1017,6 +1171,7 @@ function parseOptions(args: string[]) {
     chunkSeed: undefined as number | undefined,
     idleOnly: false,
     idleSamples: 1,
+    inline: false,
     keepArtifacts: false,
     label: undefined as string | undefined,
     plainOnly: false,
@@ -1027,6 +1182,8 @@ function parseOptions(args: string[]) {
   for (const arg of args) {
     if (arg === "--idle-only") {
       result.idleOnly = true;
+    } else if (arg === "--inline") {
+      result.inline = true;
     } else if (arg === "--keep-artifacts") {
       result.keepArtifacts = true;
     } else if (arg === "--plain-only") {

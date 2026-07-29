@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   Box,
+  type SilveryWheelEvent,
   Terminal,
   type TerminalCell,
   type TerminalProps,
@@ -9,6 +10,14 @@ import {
 
 interface FocusedTerminalProps extends Omit<TerminalProps, "cursor"> {
   focused: boolean;
+  // Wheel gestures are handled here on the wrapper Box, NOT via the inner
+  // <Terminal onMouse> wheel events: silvery's runtime coalesces same-direction
+  // wheel bursts into one event whose deltaY accumulates the step count, and
+  // the Terminal component's onMouse callback only exposes the direction. This
+  // Box is the single wheel owner for the pane; the raw SilveryWheelEvent
+  // keeps the magnitude and the handler stops propagation so no ancestor can
+  // double-send the gesture.
+  onWheel?: (event: SilveryWheelEvent) => void;
 }
 
 // Workbench owns the focus semantics around the mirrored terminal. Silvery's
@@ -19,6 +28,7 @@ interface FocusedTerminalProps extends Omit<TerminalProps, "cursor"> {
 export function FocusedTerminal({
   cols: colsProp,
   focused,
+  onWheel,
   revision,
   rows: rowsProp,
   terminal,
@@ -70,6 +80,7 @@ export function FocusedTerminal({
       flexDirection="column"
       focused={focused}
       height={rows}
+      onWheel={onWheel}
       width={cols}
     >
       <Terminal

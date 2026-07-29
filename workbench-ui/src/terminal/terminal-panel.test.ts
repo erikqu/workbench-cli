@@ -204,6 +204,53 @@ describe("TerminalPanel input re-anchors the viewport", () => {
   });
 });
 
+describe("TerminalPanel.sendMouseWheel", () => {
+  function capturePty(panel: TerminalPanel) {
+    const writes: string[] = [];
+    (panel as unknown as { child: unknown }).child = {};
+    (panel as unknown as { pty: { write(data: string): void } }).pty = {
+      write(data) {
+        writes.push(data);
+      },
+    };
+    return writes;
+  }
+
+  test("returns false when the inner program is not tracking the mouse", () => {
+    const panel = new TerminalPanel("/tmp", 80, 24);
+    const writes = capturePty(panel);
+    expect(panel.sendMouseWheel(5, 5, "up")).toBe(false);
+    expect(writes).toEqual([]);
+  });
+
+  test("forwards one SGR report per step in a single write", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24);
+    const writes = capturePty(panel);
+    await feed(panel, "\x1b[?1000h\x1b[?1006h");
+
+    // Silvery coalesces a wheel burst into one event carrying the step count.
+    // Every step must reach the child, or tmux copy-mode scrolls up further
+    // than later wheel-down streams can recover and the pane strands in
+    // scrollback.
+    expect(panel.sendMouseWheel(4, 9, "up", 3)).toBe(true);
+    expect(writes).toEqual(["\x1b[<64;5;10M".repeat(3)]);
+
+    writes.length = 0;
+    expect(panel.sendMouseWheel(4, 9, "down", 5)).toBe(true);
+    expect(writes).toEqual(["\x1b[<65;5;10M".repeat(5)]);
+  });
+
+  test("defaults to a single step and clamps bad counts", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24);
+    const writes = capturePty(panel);
+    await feed(panel, "\x1b[?1000h\x1b[?1006h");
+
+    expect(panel.sendMouseWheel(0, 0, "up")).toBe(true);
+    expect(panel.sendMouseWheel(0, 0, "up", 0)).toBe(true);
+    expect(writes).toEqual(["\x1b[<64;1;1M", "\x1b[<64;1;1M"]);
+  });
+});
+
 describe("TerminalPanel resize generations", () => {
   test("coalesces a resize burst and sends only the newest size to the PTY", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24);
