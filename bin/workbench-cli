@@ -106,6 +106,32 @@ done
 
 entry="$UI_DIR/src/index.ts"
 if [[ "$hot" == "1" ]]; then
+  # Hot reload exists for developing workbench-cli itself, but the `work`
+  # symlink resolves to the installed checkout (~/.local/share/workbench-cli),
+  # whose hot runner would run and watch ITS OWN sources — edits in a dev
+  # checkout would neither run nor trigger reloads. When the current directory
+  # is inside a different workbench-cli source checkout, run and watch that
+  # checkout instead. Override the detection with WORKBENCH_CLI_HOT_ROOT.
+  hot_root="${WORKBENCH_CLI_HOT_ROOT:-}"
+  if [[ -z "$hot_root" ]]; then
+    probe_dir="$PWD"
+    while [[ "$probe_dir" != "/" ]]; do
+      if [[ -f "$probe_dir/workbench-ui/src/index.ts" && -f "$probe_dir/bin/workbench-cli" ]]; then
+        hot_root="$probe_dir"
+        break
+      fi
+      probe_dir="$(dirname "$probe_dir")"
+    done
+  fi
+  if [[ -n "$hot_root" && "$hot_root" != "$PKG_DIR" ]]; then
+    if [[ -d "$hot_root/workbench-ui/node_modules/silvery" ]]; then
+      echo "workbench-cli --hot: running source checkout $hot_root" >&2
+      UI_DIR="$hot_root/workbench-ui"
+    else
+      echo "workbench-cli --hot: found source checkout $hot_root but its dependencies are missing." >&2
+      echo "Run: cd $hot_root/workbench-ui && bun install    (falling back to $PKG_DIR)" >&2
+    fi
+  fi
   entry="$UI_DIR/scripts/hot-runner.ts"
 fi
 

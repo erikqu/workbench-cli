@@ -69,6 +69,16 @@ Opt-in. Enable with `WORKBENCH_CLI_HOT=1` or by passing `--hot` (aliases `--dev`
 `scripts/hot-runner.ts`, which owns a clean child-process restart on source
 changes.
 
+The installed `work` symlink resolves to the installed checkout
+(`~/.local/share/workbench-cli`), so in hot mode the launcher detects when the
+current directory sits inside a *different* workbench-cli source checkout and
+runs/watches that checkout instead — otherwise `work --hot` in a dev repo
+would run the installed sources and never reload on dev edits. Detection walks
+up from `$PWD` looking for `workbench-ui/src/index.ts` + `bin/workbench-cli`,
+requires the checkout's `node_modules` to be installed (warns and falls back
+otherwise), and can be overridden with `WORKBENCH_CLI_HOT_ROOT`. Pinned by
+`workbench-ui/scripts/launcher-hot-root.test.ts` (part of `bun test`).
+
 Do not replace the hot runner with native `bun --watch` or in-process
 `bun --hot`. Native watch can replace the program without completing its JS
 shutdown handlers; this has reproduced lost composer state and restarted coding
