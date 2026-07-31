@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 // `work --hot` resolves through the installed checkout's launcher, whose hot
@@ -35,7 +41,10 @@ function setup(root: string): { installed: string; stubPath: string } {
     '#!/usr/bin/env bash\nif [ "$#" -gt 0 ] && [ "$1" = "-e" ]; then exit 0; fi\necho "BUN-EXEC: $*"\n'
   );
   chmodSync(stub, 0o755);
-  return { installed, stubPath: stubDir };
+  return {
+    installed: realpathSync(installed),
+    stubPath: realpathSync(stubDir),
+  };
 }
 
 function devCheckout(root: string, withDeps: boolean): string {
@@ -49,7 +58,7 @@ function devCheckout(root: string, withDeps: boolean): string {
       recursive: true,
     });
   }
-  return dev;
+  return realpathSync(dev);
 }
 
 function runLauncher(
