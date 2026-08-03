@@ -20,6 +20,10 @@ export interface TerminalPanelOptions {
   // socket path under the app's own directory keeps this server fully separate
   // from the user's tmux (default server and any `-L` named servers).
   persist?: { socketPath: string; name: string };
+  // Some full-screen applications own transcript navigation but do not enable
+  // terminal mouse tracking. Route a wheel gesture to one application page key
+  // instead of letting the surrounding tmux client enter copy mode.
+  wheelNavigation?: "page";
 }
 
 let tmuxAvailable: boolean | undefined;
@@ -590,6 +594,19 @@ export class TerminalPanel implements TerminalReadable {
     direction: "up" | "down",
     count = 1
   ): boolean {
+    if (this.options.wheelNavigation === "page") {
+      terminalTrace("panel-wheel", {
+        direction,
+        navigation: "page",
+        panel: this.traceId,
+        steps: Math.max(1, Math.floor(count)),
+      });
+      if (!this.child) {
+        this.start();
+      }
+      this.writeToChild(direction === "up" ? "\x1b[5~" : "\x1b[6~");
+      return true;
+    }
     if (!this.hasMouseTracking()) {
       return false;
     }

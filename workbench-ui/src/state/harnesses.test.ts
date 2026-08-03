@@ -48,7 +48,7 @@ describe("Codex resumed history compatibility", () => {
       "codex resume --last -c tui.terminal_resize_reflow_max_rows=0"
     );
     expect(affected).toContain(
-      "|| codex -c tui.animations=false -c tui.alternate_screen=always --dangerously-bypass-approvals-and-sandbox"
+      "|| codex -c tui.animations=false --dangerously-bypass-approvals-and-sandbox"
     );
 
     const repaired = codexCommand("codex-cli 0.145.0-alpha.12").command;
@@ -62,8 +62,15 @@ describe("Codex resumed history compatibility", () => {
   });
 
   test("isolates Codex redraws from tmux scrollback", () => {
-    const command = codexCommand("codex-cli 0.144.6").command;
+    const spec = codexCommand("codex-cli 0.146.0") as ReturnType<
+      typeof codexCommand
+    > & { wheelNavigation?: string };
+    const command = spec.command;
 
-    expect(command.match(/-c tui\.alternate_screen=always/g)).toHaveLength(2);
+    // Codex 0.146 accepts this setting but does not emit an alternate-screen
+    // transition under tmux. Workbench must therefore keep wheel gestures out
+    // of tmux copy-mode and let Codex navigate its own transcript.
+    expect(spec.wheelNavigation).toBe("page");
+    expect(command).not.toContain("tui.alternate_screen=always");
   });
 });

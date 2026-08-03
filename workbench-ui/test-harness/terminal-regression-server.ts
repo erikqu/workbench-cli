@@ -80,10 +80,11 @@ const server = Bun.serve({
         SHELL: "/bin/bash",
         TERM: "xterm-256color",
         WORKBENCH_E2E_FIXTURE_ROOT: fixtureRoot,
+        WORKBENCH_E2E_AGENT_CODEX: Bun.env.WORKBENCH_E2E_AGENT_CODEX ?? "",
         WORKBENCH_LOG_FILTER: "off",
         WORKBENCH_UI_CWD: workspace,
         WORKBENCH_UI_E2E: "1",
-        WORKBENCH_UI_HARNESS_ID: "cursor",
+        WORKBENCH_UI_HARNESS_ID: Bun.env.WORKBENCH_E2E_HARNESS_ID ?? "cursor",
         WORKBENCH_UI_IMAGE_PROTOCOL: "halfblock",
       };
       delete childEnv.NO_COLOR;

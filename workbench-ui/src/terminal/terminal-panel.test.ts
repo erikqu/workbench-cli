@@ -249,6 +249,18 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(panel.sendMouseWheel(0, 0, "up", 0)).toBe(true);
     expect(writes).toEqual(["\x1b[<64;1;1M", "\x1b[<64;1;1M"]);
   });
+
+  test("routes application-owned scrolling around tmux copy mode", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "page",
+    });
+    const writes = capturePty(panel);
+    await feed(panel, "\x1b[?1000h\x1b[?1006h");
+
+    expect(panel.sendMouseWheel(4, 9, "up", 12)).toBe(true);
+    expect(panel.sendMouseWheel(4, 9, "down", 12)).toBe(true);
+    expect(writes).toEqual(["\x1b[5~", "\x1b[6~"]);
+  });
 });
 
 describe("TerminalPanel resize generations", () => {

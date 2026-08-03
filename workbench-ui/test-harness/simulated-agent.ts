@@ -16,6 +16,7 @@ const chunkSeed = Number(Bun.env.WORKBENCH_E2E_CHUNK_SEED ?? "17");
 // and an Ink-style bottom block erased and repainted in place. Scrolling a
 // pane like this is owned by tmux copy-mode, not by the agent.
 const inline = Bun.env.WORKBENCH_E2E_AGENT_INLINE === "1";
+const codexLike = Bun.env.WORKBENCH_E2E_AGENT_CODEX === "1";
 const state = initialSimulatedAgentState();
 
 let cols = terminalDimension("columns", "COLUMNS", 80);
@@ -84,6 +85,11 @@ function consumeInput() {
     const pageKey = /^\x1b\[(5|6)~/.exec(inputBuffer);
     if (pageKey) {
       inputBuffer = inputBuffer.slice(pageKey[0].length);
+      if (pageKey[1] === "5") {
+        state.pageUpCount += 1;
+      } else {
+        state.pageDownCount += 1;
+      }
       scroll(
         pageKey[1] === "5" ? Math.max(1, rows - 8) : -Math.max(1, rows - 8)
       );
@@ -135,6 +141,16 @@ function isIncompleteEscape(value: string): boolean {
 function scroll(delta: number) {
   if (inline) {
     // Inline agents own no scroll state; tmux copy-mode does the scrolling.
+    if (codexLike) {
+      // Codex receives PageUp/PageDown from Workbench. Record that the key
+      // reached the application without manufacturing another terminal frame;
+      // the inline fixture has no separate transcript viewport to redraw.
+      const snapshot = structuredClone(state) as SimulatedAgentState;
+      const cursor = renderSimulatedInlineBlock(snapshot, cols).cursor;
+      writeState(snapshot, cursor);
+    } else {
+      requestRender();
+    }
     return;
   }
   state.scrollOffset = Math.max(
@@ -251,16 +267,37 @@ async function renderInlineFrame(snapshot: SimulatedAgentState) {
   const conversation = simulatedConversationRows(snapshot, cols);
   const fresh = conversation.slice(printedConversationRows);
   const block = renderSimulatedInlineBlock(snapshot, cols);
+  let conversationToPaint = fresh;
   let ansi = "\x1b[?2026h\x1b[?25l";
   if (blockPainted) {
-    ansi +=
-      blockCursorRow > 0 ? `\x1b[${blockCursorRow}A\r\x1b[0J` : "\r\x1b[0J";
+    if (codexLike) {
+      // Codex's inline transcript keeps differential footer redraws in the
+      // primary-buffer history. Keep the live viewport clean while retaining
+      // those stale blocks above it so the Workbench test detects tmux
+      // copy-mode exposing duplicated composers after a wheel gesture.
+      const rowsBelowCursor = block.lines.length - 1 - blockCursorRow;
+      if (rowsBelowCursor > 0) {
+        ansi += `\x1b[${rowsBelowCursor}B`;
+      }
+      ansi += "\r\n".repeat(block.lines.length);
+      // A full differential redraw restores one clean live viewport, but ED2
+      // deliberately leaves the primary-buffer scrollback intact. Scrolling
+      // through tmux would therefore reveal the stale footer copies above;
+      // application-owned page navigation never enters that history.
+      ansi += "\x1b[2J\x1b[H";
+      conversationToPaint = conversation.slice(
+        -Math.max(0, rows - block.lines.length)
+      );
+    } else {
+      ansi +=
+        blockCursorRow > 0 ? `\x1b[${blockCursorRow}A\r\x1b[0J` : "\r\x1b[0J";
+    }
   } else {
     // First paint (or a resize restart): wipe the screen and pane history so
     // the transcript above the block is exactly the conversation rows.
     ansi += "\x1b[2J\x1b[3J\x1b[H";
   }
-  for (const row of fresh) {
+  for (const row of conversationToPaint) {
     ansi += `${row}\r\n`;
   }
   ansi += block.lines.join("\r\n");

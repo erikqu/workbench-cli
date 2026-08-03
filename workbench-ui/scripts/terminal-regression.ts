@@ -75,6 +75,7 @@ const server = Bun.spawn(
       ...Bun.env,
       HOME: home,
       WORKBENCH_E2E_AGENT_INLINE: options.inline ? "1" : "",
+      WORKBENCH_E2E_AGENT_CODEX: options.codex ? "1" : "",
       WORKBENCH_E2E_AGENT_STATE: agentStatePath,
       WORKBENCH_E2E_APP_ROOT: appRoot,
       WORKBENCH_E2E_CHUNK_SEED:
@@ -83,6 +84,7 @@ const server = Bun.spawn(
       WORKBENCH_E2E_PORT: String(port),
       WORKBENCH_E2E_ROWS: String(initialRows),
       WORKBENCH_E2E_TRACE: tracePath,
+      WORKBENCH_E2E_HARNESS_ID: options.codex ? "codex" : "cursor",
       WORKBENCH_UI_THEME: options.theme ?? Bun.env.WORKBENCH_UI_THEME ?? "dark",
     },
     stderr: "pipe",
@@ -488,14 +490,52 @@ async function runInlineAgentScenario(page: Page, initial: Location) {
   );
   report("inline agent composer input");
 
+  if (options.codex) {
+    for (let step = 0; step < 80; step += 1) {
+      const at = wheelAt();
+      await wheel(page, at.x, at.y, "up");
+    }
+    await Bun.sleep(200);
+    const scrolledGrid = await bufferGrid(page);
+    const scrolledText = scrolledGrid.lines.join("\n");
+    for (const marker of ["[META]", "[CMP0]", "[CMP1]", "[CMP2]", "[CMP3]"]) {
+      const count = scrolledText.split(marker).length - 1;
+      if (count !== 1) {
+        throw new Error(
+          `Codex wheel scroll corrupted ${marker}: expected 1 visible marker, found ${count}`
+        );
+      }
+    }
+    for (let step = 0; step < 12; step += 1) {
+      const at = wheelAt();
+      await wheel(page, at.x, at.y, "down");
+    }
+    location = await waitForReference(
+      page,
+      (fixture) =>
+        fixture.state.composer === "inline prompt" &&
+        fixture.state.pageUpCount > 0 &&
+        fixture.state.pageDownCount > 0,
+      5000
+    );
+    report("Codex scroll never exposes stale composer redraws");
+  }
+
   await wheelCycles(5, 8, 12, 8);
   await wheelCycles(6, 30, 40, 0);
   location = await waitForReference(
     page,
-    (fixture) => fixture.state.composer === "inline prompt",
+    (fixture) =>
+      fixture.state.composer === "inline prompt" &&
+      (!options.codex ||
+        (fixture.state.pageUpCount > 0 && fixture.state.pageDownCount > 0)),
     8000
   );
-  report("idle copy-mode scroll cycles settle on a clean inline frame");
+  report(
+    options.codex
+      ? "Codex wheel navigation keeps duplicated redraws out of the viewport"
+      : "idle copy-mode scroll cycles settle on a clean inline frame"
+  );
 
   await send(page, "\r");
   location = await waitForReference(
@@ -815,7 +855,19 @@ function validateInlineTail(
   y: number
 ) {
   const conversation = simulatedConversationRows(fixture.state, fixture.cols);
-  const depth = Math.min(INLINE_TAIL_ROWS, conversation.length, y);
+  let headerY = -1;
+  for (let row = y - 1; row >= 0; row -= 1) {
+    if (grid.lines[row]?.slice(x).startsWith(" CLI:")) {
+      headerY = row;
+      break;
+    }
+  }
+  const visibleConversationRows = Math.max(0, y - headerY - 1);
+  const depth = Math.min(
+    INLINE_TAIL_ROWS,
+    conversation.length,
+    visibleConversationRows
+  );
   for (let offset = 1; offset <= depth; offset += 1) {
     const expected = conversation[conversation.length - offset] ?? "";
     const actual = grid.lines[y - offset]?.slice(x, x + expected.length);
@@ -1169,6 +1221,7 @@ function parseOptions(args: string[]) {
   const result = {
     appRoot: undefined as string | undefined,
     chunkSeed: undefined as number | undefined,
+    codex: false,
     idleOnly: false,
     idleSamples: 1,
     inline: false,
@@ -1182,6 +1235,8 @@ function parseOptions(args: string[]) {
   for (const arg of args) {
     if (arg === "--idle-only") {
       result.idleOnly = true;
+    } else if (arg === "--codex") {
+      result.codex = true;
     } else if (arg === "--inline") {
       result.inline = true;
     } else if (arg === "--keep-artifacts") {

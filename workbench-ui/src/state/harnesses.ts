@@ -1,6 +1,7 @@
 export interface HarnessCommand {
   command: string;
   env?: Record<string, string>;
+  wheelNavigation?: "page";
 }
 
 export interface HarnessSpec {
@@ -18,7 +19,6 @@ const DEFAULT_HARNESS_PREFERENCE = ["codex", "cursor", "claude"];
 const CODEX_HISTORY_REPLAY_OVERRIDE =
   "-c tui.terminal_resize_reflow_max_rows=0";
 const CODEX_STABLE_STATUS_OVERRIDE = "-c tui.animations=false";
-const CODEX_ALTERNATE_SCREEN_OVERRIDE = "-c tui.alternate_screen=always";
 
 interface ParsedCodexVersion {
   alpha?: number;
@@ -70,12 +70,12 @@ export function codexCommand(versionOutput: string): HarnessCommand {
     ? ` ${CODEX_HISTORY_REPLAY_OVERRIDE}`
     : "";
   return {
-    // Animated status frames produce heavy redraw traffic, and Codex's automatic
-    // screen choice can fall back to inline rendering under a nested Linux tmux
-    // client. That preserves every transient footer redraw in scrollback until
-    // the composer leaves the viewport. Use a stable status and an isolated
-    // alternate screen for both resume and fresh-session paths.
-    command: `codex resume --last${replayOverride} ${CODEX_STABLE_STATUS_OVERRIDE} ${CODEX_ALTERNATE_SCREEN_OVERRIDE} --dangerously-bypass-approvals-and-sandbox || codex ${CODEX_STABLE_STATUS_OVERRIDE} ${CODEX_ALTERNATE_SCREEN_OVERRIDE} --dangerously-bypass-approvals-and-sandbox`,
+    // Codex 0.146 accepts tui.alternate_screen=always but still renders inline
+    // under tmux. Sending wheel reports to tmux therefore exposes transient
+    // footer redraws in copy-mode history. Keep scrolling inside Codex instead:
+    // Workbench translates each wheel gesture to PageUp/PageDown.
+    command: `codex resume --last${replayOverride} ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox || codex ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox`,
+    wheelNavigation: "page",
   };
 }
 
