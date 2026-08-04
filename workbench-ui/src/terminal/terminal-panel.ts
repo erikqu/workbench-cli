@@ -20,10 +20,9 @@ export interface TerminalPanelOptions {
   // socket path under the app's own directory keeps this server fully separate
   // from the user's tmux (default server and any `-L` named servers).
   persist?: { socketPath: string; name: string };
-  // Some full-screen applications own transcript navigation but do not enable
-  // terminal mouse tracking. Route a wheel gesture to one application page key
-  // instead of letting the surrounding tmux client enter copy mode.
-  wheelNavigation?: "page";
+  // Some inline applications leave transient redraws in tmux history. Route
+  // wheel gestures through their native transcript overlay instead.
+  wheelNavigation?: "transcript";
 }
 
 let tmuxAvailable: boolean | undefined;
@@ -209,6 +208,7 @@ const PALETTE_256 = (() => {
 let revisionCounter = 0;
 let tracePanelCounter = 0;
 const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
+const TRANSCRIPT_WHEEL_SETTLE_MS = 100;
 
 export class TerminalPanel implements TerminalReadable {
   private readonly traceId = ++tracePanelCounter;
@@ -221,6 +221,11 @@ export class TerminalPanel implements TerminalReadable {
   private listeners = new Set<() => void>();
   private followOutput = true;
   private tmuxCopyModePossible = false;
+  private transcriptWheelOpen = false;
+  private transcriptWheelClosing = false;
+  private transcriptWheelMovingDown = false;
+  private pendingTranscriptInput = "";
+  private transcriptWheelSettle?: ReturnType<typeof setTimeout>;
   private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
   private resizeGeneration = 0;
   private resizeScheduled = false;
@@ -266,6 +271,21 @@ export class TerminalPanel implements TerminalReadable {
         return;
       }
       this.clearSynchronizedOutputRecovery();
+      if (this.transcriptWheelClosing && !this.transcriptVisible()) {
+        this.transcriptWheelClosing = false;
+        const pendingInput = this.pendingTranscriptInput;
+        this.pendingTranscriptInput = "";
+        if (pendingInput) {
+          this.writeToChild(pendingInput);
+        }
+      }
+      if (
+        this.transcriptWheelOpen &&
+        this.transcriptWheelMovingDown &&
+        this.transcriptAtBottom()
+      ) {
+        this.scheduleTranscriptWheelClose(false);
+      }
       this.publishFrame();
     });
   }
@@ -507,6 +527,9 @@ export class TerminalPanel implements TerminalReadable {
     }
     this.snapToBottomIfScrolled();
     this.exitTmuxCopyModeIfNeeded();
+    if (this.exitWheelTranscript(data)) {
+      return;
+    }
     this.writeToChild(data);
   }
 
@@ -525,7 +548,11 @@ export class TerminalPanel implements TerminalReadable {
     }
     this.snapToBottomIfScrolled();
     this.exitTmuxCopyModeIfNeeded();
-    this.writeToChild(this.formatPaste(text));
+    const formatted = this.formatPaste(text);
+    if (this.exitWheelTranscript(formatted)) {
+      return;
+    }
+    this.writeToChild(formatted);
   }
 
   // Re-anchor the viewport to the bottom on user input. Without this, scrolling
@@ -572,6 +599,23 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   sendViewportKey(data: string): boolean {
+    if (
+      this.options.wheelNavigation === "transcript" &&
+      (this.transcriptWheelOpen || this.transcriptWheelClosing)
+    ) {
+      if (!this.child) {
+        this.start();
+      }
+      if (
+        this.transcriptWheelOpen &&
+        /^(?:\x1b\[[ABHF]|\x1b\[[56]~)$/.test(data)
+      ) {
+        this.writeToChild(data);
+      } else {
+        this.exitWheelTranscript(data);
+      }
+      return true;
+    }
     if (!(this.usesAlternateBuffer() || this.hasMouseTracking())) {
       return false;
     }
@@ -594,17 +638,43 @@ export class TerminalPanel implements TerminalReadable {
     direction: "up" | "down",
     count = 1
   ): boolean {
-    if (this.options.wheelNavigation === "page") {
+    if (this.options.wheelNavigation === "transcript") {
+      if (this.transcriptWheelClosing) {
+        return true;
+      }
+      const lines = Math.max(1, Math.floor(count)) * 3;
+      let data = "";
+      if (direction === "up") {
+        this.transcriptWheelMovingDown = false;
+        this.clearTranscriptWheelSettle();
+        if (!(this.transcriptWheelOpen || this.transcriptVisible())) {
+          data += "\x14";
+        }
+        this.transcriptWheelOpen = true;
+        data += "\x1b[A".repeat(lines);
+      } else if (this.transcriptWheelOpen) {
+        this.transcriptWheelMovingDown = true;
+        if (this.transcriptAtBottom()) {
+          this.scheduleTranscriptWheelClose(true);
+        } else {
+          data = "\x1b[B".repeat(lines);
+          this.scheduleTranscriptWheelClose(true);
+        }
+      }
       terminalTrace("panel-wheel", {
         direction,
-        navigation: "page",
+        navigation: "transcript",
         panel: this.traceId,
+        transcriptOpen: this.transcriptWheelOpen,
         steps: Math.max(1, Math.floor(count)),
       });
+      if (!data) {
+        return true;
+      }
       if (!this.child) {
         this.start();
       }
-      this.writeToChild(direction === "up" ? "\x1b[5~" : "\x1b[6~");
+      this.writeToChild(data);
       return true;
     }
     if (!this.hasMouseTracking()) {
@@ -658,6 +728,98 @@ export class TerminalPanel implements TerminalReadable {
     } catch {
       // The session may have exited between the wheel and the next input.
     }
+  }
+
+  // A wheel-opened Codex transcript must close before composer input. Consume
+  // Escape as "close transcript" and let an explicit Ctrl+T close it directly;
+  // ordinary typing closes the overlay first, then reaches the composer.
+  private exitWheelTranscript(data?: string): boolean {
+    if (this.transcriptWheelClosing) {
+      if (data && data !== "\x1b" && data !== "\x14") {
+        this.pendingTranscriptInput += data;
+      }
+      return true;
+    }
+    if (!this.transcriptWheelOpen) {
+      return false;
+    }
+    this.transcriptWheelOpen = false;
+    this.transcriptWheelClosing = true;
+    this.transcriptWheelMovingDown = false;
+    this.clearTranscriptWheelSettle();
+    if (data === "\x14") {
+      this.writeToChild(data);
+      return true;
+    }
+    this.writeToChild("\x14");
+    if (data && data !== "\x1b") {
+      this.pendingTranscriptInput += data;
+    }
+    return true;
+  }
+
+  private closeWheelTranscript() {
+    this.transcriptWheelOpen = false;
+    this.transcriptWheelClosing = true;
+    this.transcriptWheelMovingDown = false;
+    this.clearTranscriptWheelSettle();
+    this.writeToChild("\x14");
+  }
+
+  private scheduleTranscriptWheelClose(reset: boolean) {
+    if (reset) {
+      this.clearTranscriptWheelSettle();
+    } else if (this.transcriptWheelSettle) {
+      return;
+    }
+    this.transcriptWheelSettle = setTimeout(() => {
+      this.transcriptWheelSettle = undefined;
+      if (
+        this.transcriptWheelOpen &&
+        this.transcriptWheelMovingDown &&
+        this.transcriptAtBottom()
+      ) {
+        this.closeWheelTranscript();
+      }
+    }, TRANSCRIPT_WHEEL_SETTLE_MS);
+    this.transcriptWheelSettle.unref?.();
+  }
+
+  private clearTranscriptWheelSettle() {
+    if (!this.transcriptWheelSettle) {
+      return;
+    }
+    clearTimeout(this.transcriptWheelSettle);
+    this.transcriptWheelSettle = undefined;
+  }
+
+  private transcriptVisible(): boolean {
+    const buffer = this.terminal.buffer.active;
+    for (let row = 0; row < this.terminal.rows; row += 1) {
+      if (
+        buffer
+          .getLine(buffer.baseY + row)
+          ?.translateToString(true)
+          .includes("T R A N S C R I P T")
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private transcriptAtBottom(): boolean {
+    const buffer = this.terminal.buffer.active;
+    for (let row = 0; row < this.terminal.rows; row += 1) {
+      if (
+        /(?:^|\s)100%(?:\s|$)/.test(
+          buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? ""
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private writeToChild(data: string) {

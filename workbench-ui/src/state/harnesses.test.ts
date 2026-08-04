@@ -69,8 +69,8 @@ describe("Codex resumed history compatibility", () => {
 
     // Codex 0.146 accepts this setting but does not emit an alternate-screen
     // transition under tmux. Workbench must therefore keep wheel gestures out
-    // of tmux copy-mode and let Codex navigate its own transcript.
-    expect(spec.wheelNavigation).toBe("page");
+    // of tmux copy-mode and use Codex's native transcript pager.
+    expect(spec.wheelNavigation).toBe("transcript");
     expect(command).not.toContain("tui.alternate_screen=always");
   });
 });

@@ -1,7 +1,7 @@
 export interface HarnessCommand {
   command: string;
   env?: Record<string, string>;
-  wheelNavigation?: "page";
+  wheelNavigation?: "transcript";
 }
 
 export interface HarnessSpec {
@@ -72,10 +72,10 @@ export function codexCommand(versionOutput: string): HarnessCommand {
   return {
     // Codex 0.146 accepts tui.alternate_screen=always but still renders inline
     // under tmux. Sending wheel reports to tmux therefore exposes transient
-    // footer redraws in copy-mode history. Keep scrolling inside Codex instead:
-    // Workbench translates each wheel gesture to PageUp/PageDown.
+    // footer redraws in copy-mode history. Use Codex's native transcript pager
+    // instead of entering tmux copy mode.
     command: `codex resume --last${replayOverride} ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox || codex ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox`,
-    wheelNavigation: "page",
+    wheelNavigation: "transcript",
   };
 }
 

@@ -178,9 +178,12 @@ with text already present in the agent composer.
 - Codex is the deliberate exception to tmux-owned wheel scrolling. Current
   Codex accepts `tui.alternate_screen=always` but can still render inline under
   tmux, leaving differential composer/status redraws in pane history. Its
-  `HarnessCommand` sets `wheelNavigation: "page"`, so each coalesced wheel
-  gesture becomes one PageUp/PageDown key handled by Codex and never enters
-  tmux copy mode. Keep ordinary shell and other harness wheel behavior intact.
+  `HarnessCommand` sets `wheelNavigation: "transcript"`, so wheel-up opens
+  Codex's native Ctrl+T transcript pager and sends row-level Up/Down keys;
+  balanced wheel-down closes the pager and returns to the composer. Do not map
+  wheel input directly to PageUp/PageDown (the main composer does not scroll),
+  and do not enter tmux copy mode. Keep ordinary shell and other harness wheel
+  behavior intact.
 - Focus harness/terminal panes from the embedded terminal's `onMouse` callback,
   not only an ancestor `onMouseDown`; selection handling can consume the event
   before it bubbles. In a focused harness, Ctrl+C copies an active Silvery
@@ -222,8 +225,10 @@ with text already present in the agent composer.
   composer bug — and needs `--chunk-seed` to keep timing adversarial. The Codex
   pass preserves stale differential footer blocks in primary-buffer history
   while keeping the live viewport clean; it must prove that wheel navigation
-  sends PageUp/PageDown and never exposes duplicated, missing, or displaced
-  composer markers through tmux copy mode.
+  uses the native transcript and never exposes duplicated, missing, or displaced
+  composer markers through tmux copy mode. It must also prove that wheel-up
+  actually leaves the live composer for conversation history and wheel-down
+  returns to exactly one composer; a stationary composer is broken scrolling.
 - If the deterministic fixture stays green, stop before applying a speculative
   fix. Relaunch with `workbench-cli --terminal-trace` and reproduce once. The
   trace is written to `~/.workbench/terminal-trace.ndjson`; it contains only

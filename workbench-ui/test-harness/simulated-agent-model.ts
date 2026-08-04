@@ -7,11 +7,11 @@ export interface SimulatedAgentState {
   composer: string;
   controlCCount: number;
   generation: number;
-  pageDownCount: number;
-  pageUpCount: number;
   responses: SimulatedResponseRow[];
   scrollOffset: number;
   submittedPrompts: number;
+  transcriptOffset: number;
+  transcriptOpen: boolean;
   working: boolean;
   workingTick: number;
 }
@@ -34,11 +34,11 @@ export function initialSimulatedAgentState(): SimulatedAgentState {
     composer: "",
     controlCCount: 0,
     generation: 0,
-    pageDownCount: 0,
-    pageUpCount: 0,
     responses: [],
     scrollOffset: 0,
     submittedPrompts: 0,
+    transcriptOffset: 0,
+    transcriptOpen: false,
     working: false,
     workingTick: 0,
   };

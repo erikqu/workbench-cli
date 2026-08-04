@@ -250,16 +250,31 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(writes).toEqual(["\x1b[<64;1;1M", "\x1b[<64;1;1M"]);
   });
 
-  test("routes application-owned scrolling around tmux copy mode", async () => {
+  test("routes wheel scrolling through an application's transcript", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24, {
-      wheelNavigation: "page",
+      wheelNavigation: "transcript",
     });
     const writes = capturePty(panel);
     await feed(panel, "\x1b[?1000h\x1b[?1006h");
 
-    expect(panel.sendMouseWheel(4, 9, "up", 12)).toBe(true);
-    expect(panel.sendMouseWheel(4, 9, "down", 12)).toBe(true);
-    expect(writes).toEqual(["\x1b[5~", "\x1b[6~"]);
+    expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 100% ");
+    expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    await Bun.sleep(150);
+    expect(writes).toEqual([
+      `\x14${"\x1b[A".repeat(6)}`,
+      "\x1b[B".repeat(3),
+      "\x14",
+    ]);
+
+    await feed(panel, "\x1b[?1049l");
+    expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    expect(panel.sendViewportKey("x")).toBe(true);
+    expect(writes.slice(-2)).toEqual([`\x14${"\x1b[A".repeat(3)}`, "\x14"]);
+    await feed(panel, "\x1b[?1049l");
+    expect(writes.at(-1)).toBe("x");
   });
 });
 

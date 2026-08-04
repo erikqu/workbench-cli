@@ -33,6 +33,7 @@ let finishTimer: ReturnType<typeof setTimeout> | undefined;
 let printedConversationRows = 0;
 let blockCursorRow = 0;
 let blockPainted = false;
+let transcriptPainted = false;
 
 process.stdin.setRawMode?.(true);
 process.stdin.resume();
@@ -69,6 +70,14 @@ requestRender();
 
 function consumeInput() {
   while (inputBuffer.length > 0) {
+    if (codexLike && inputBuffer.startsWith("\x14")) {
+      inputBuffer = inputBuffer.slice(1);
+      state.transcriptOpen = !state.transcriptOpen;
+      state.transcriptOffset = 0;
+      requestRender();
+      continue;
+    }
+
     if (inputBuffer.startsWith("\x1b[200~")) {
       const end = inputBuffer.indexOf("\x1b[201~", 6);
       if (end === -1) {
@@ -82,17 +91,32 @@ function consumeInput() {
       continue;
     }
 
+    // The outer terminal answers mode probes issued by Workbench. A real TUI
+    // consumes these protocol replies; keep the deterministic fixture from
+    // mistaking a deliberately split DECRPM response for composer text.
+    const modeReply = /^\x1b\[\?[0-9;]*\$y/.exec(inputBuffer);
+    if (modeReply) {
+      inputBuffer = inputBuffer.slice(modeReply[0].length);
+      continue;
+    }
+
     const pageKey = /^\x1b\[(5|6)~/.exec(inputBuffer);
     if (pageKey) {
       inputBuffer = inputBuffer.slice(pageKey[0].length);
-      if (pageKey[1] === "5") {
-        state.pageUpCount += 1;
-      } else {
-        state.pageDownCount += 1;
-      }
       scroll(
         pageKey[1] === "5" ? Math.max(1, rows - 8) : -Math.max(1, rows - 8)
       );
+      continue;
+    }
+
+    const transcriptArrow = /^\x1b\[([AB])/.exec(inputBuffer);
+    if (codexLike && state.transcriptOpen && transcriptArrow) {
+      inputBuffer = inputBuffer.slice(transcriptArrow[0].length);
+      state.transcriptOffset = Math.max(
+        0,
+        state.transcriptOffset + (transcriptArrow[1] === "A" ? 1 : -1)
+      );
+      requestRender();
       continue;
     }
 
@@ -134,23 +158,25 @@ function isIncompleteEscape(value: string): boolean {
   if (value === "\x1b") {
     return false;
   }
-  const known = ["\x1b[200~", "\x1b[201~", "\x1b[5~", "\x1b[6~", "\x1b[<"];
+  if (/^\x1b\[\?[0-9;]*\$?$/.test(value)) {
+    return true;
+  }
+  const known = [
+    "\x1b[200~",
+    "\x1b[201~",
+    "\x1b[5~",
+    "\x1b[6~",
+    "\x1b[A",
+    "\x1b[B",
+    "\x1b[<",
+  ];
   return known.some((sequence) => sequence.startsWith(value));
 }
 
 function scroll(delta: number) {
   if (inline) {
     // Inline agents own no scroll state; tmux copy-mode does the scrolling.
-    if (codexLike) {
-      // Codex receives PageUp/PageDown from Workbench. Record that the key
-      // reached the application without manufacturing another terminal frame;
-      // the inline fixture has no separate transcript viewport to redraw.
-      const snapshot = structuredClone(state) as SimulatedAgentState;
-      const cursor = renderSimulatedInlineBlock(snapshot, cols).cursor;
-      writeState(snapshot, cursor);
-    } else {
-      requestRender();
-    }
+    requestRender();
     return;
   }
   state.scrollOffset = Math.max(
@@ -267,8 +293,31 @@ async function renderInlineFrame(snapshot: SimulatedAgentState) {
   const conversation = simulatedConversationRows(snapshot, cols);
   const fresh = conversation.slice(printedConversationRows);
   const block = renderSimulatedInlineBlock(snapshot, cols);
+  if (codexLike && snapshot.transcriptOpen) {
+    const contentRows = Math.max(1, rows - 2);
+    const maxOffset = Math.max(0, conversation.length - contentRows);
+    const offset = Math.min(snapshot.transcriptOffset, maxOffset);
+    const end = conversation.length - offset;
+    const visible = conversation.slice(Math.max(0, end - contentRows), end);
+    const percent =
+      maxOffset === 0
+        ? 100
+        : Math.round(((maxOffset - offset) / maxOffset) * 100);
+    const ansi =
+      "\x1b[?2026h\x1b[?25l" +
+      (transcriptPainted ? "" : "\x1b[?1049h") +
+      "\x1b[2J\x1b[HT R A N S C R I P T\r\n" +
+      visible.join("\r\n") +
+      `\r\n ${percent}% ` +
+      "\x1b[?2026l";
+    transcriptPainted = true;
+    await writeChunked(ansi, chunkSeed + snapshot.generation);
+    writeState(snapshot, { x: 0, y: 0, visible: false });
+    return;
+  }
   let conversationToPaint = fresh;
-  let ansi = "\x1b[?2026h\x1b[?25l";
+  let ansi = "\x1b[?2026h\x1b[?25l" + (transcriptPainted ? "\x1b[?1049l" : "");
+  transcriptPainted = false;
   if (blockPainted) {
     if (codexLike) {
       // Codex's inline transcript keeps differential footer redraws in the
@@ -283,7 +332,7 @@ async function renderInlineFrame(snapshot: SimulatedAgentState) {
       // A full differential redraw restores one clean live viewport, but ED2
       // deliberately leaves the primary-buffer scrollback intact. Scrolling
       // through tmux would therefore reveal the stale footer copies above;
-      // application-owned page navigation never enters that history.
+      // application-owned transcript navigation never enters that history.
       ansi += "\x1b[2J\x1b[H";
       conversationToPaint = conversation.slice(
         -Math.max(0, rows - block.lines.length)

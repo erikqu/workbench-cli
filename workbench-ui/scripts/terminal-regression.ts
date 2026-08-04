@@ -495,40 +495,52 @@ async function runInlineAgentScenario(page: Page, initial: Location) {
       const at = wheelAt();
       await wheel(page, at.x, at.y, "up");
     }
-    await Bun.sleep(200);
-    const scrolledGrid = await bufferGrid(page);
+    const scrolledGrid = await waitForTranscriptGrid(page, 5000);
     const scrolledText = scrolledGrid.lines.join("\n");
     for (const marker of ["[META]", "[CMP0]", "[CMP1]", "[CMP2]", "[CMP3]"]) {
       const count = scrolledText.split(marker).length - 1;
-      if (count !== 1) {
+      if (count !== 0) {
         throw new Error(
-          `Codex wheel scroll corrupted ${marker}: expected 1 visible marker, found ${count}`
+          `Codex wheel-up did not leave the live composer: expected 0 ${marker} markers, found ${count}`
         );
       }
     }
-    for (let step = 0; step < 12; step += 1) {
+    const visibleHistoryMarkers = scrolledText.match(/\[H\d{3}\]/g) ?? [];
+    if (new Set(visibleHistoryMarkers).size < 3) {
+      throw new Error(
+        `Codex wheel-up exposed only ${visibleHistoryMarkers.length} conversation markers`
+      );
+    }
+    if (new Set(visibleHistoryMarkers).size !== visibleHistoryMarkers.length) {
+      throw new Error("Codex wheel-up duplicated conversation history markers");
+    }
+    for (let step = 0; step < 80; step += 1) {
+      const at = wheelAt();
+      await wheel(page, at.x, at.y, "down");
+    }
+    await Bun.sleep(200);
+    {
       const at = wheelAt();
       await wheel(page, at.x, at.y, "down");
     }
     location = await waitForReference(
       page,
-      (fixture) =>
-        fixture.state.composer === "inline prompt" &&
-        fixture.state.pageUpCount > 0 &&
-        fixture.state.pageDownCount > 0,
+      (fixture) => fixture.state.composer === "inline prompt",
       5000
     );
-    report("Codex scroll never exposes stale composer redraws");
+    report("Codex wheel scroll reveals history and returns to one composer");
   }
 
   await wheelCycles(5, 8, 12, 8);
   await wheelCycles(6, 30, 40, 0);
+  if (options.codex) {
+    await Bun.sleep(200);
+    const at = wheelAt();
+    await wheel(page, at.x, at.y, "down");
+  }
   location = await waitForReference(
     page,
-    (fixture) =>
-      fixture.state.composer === "inline prompt" &&
-      (!options.codex ||
-        (fixture.state.pageUpCount > 0 && fixture.state.pageDownCount > 0)),
+    (fixture) => fixture.state.composer === "inline prompt",
     8000
   );
   report(
@@ -908,6 +920,20 @@ function readFixture(): FixtureEnvelope | undefined {
 
 async function bufferGrid(page: Page): Promise<Grid> {
   return page.evaluate(() => (window as any).__bufferGrid());
+}
+
+async function waitForTranscriptGrid(page: Page, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const grid = await bufferGrid(page);
+    const text = grid.lines.join("\n");
+    const markers = text.match(/\[H\d{3}\]/g) ?? [];
+    if (text.includes("T R A N S C R I P T") && new Set(markers).size >= 3) {
+      return grid;
+    }
+    await Bun.sleep(25);
+  }
+  throw new Error("timed out waiting for a settled Codex transcript frame");
 }
 
 async function clipboardState(
