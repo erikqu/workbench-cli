@@ -9,9 +9,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shellQuote, TerminalPanel } from "./terminal-panel";
+import {
+  restartServerIfPermissionStale,
+  shellQuote,
+  TerminalPanel,
+} from "./terminal-panel";
 
 const hasTmux = Bun.which("tmux") !== null;
+const hasSandboxExec =
+  process.platform === "darwin" && Bun.which("sandbox-exec") !== null;
 const suiteRoot = mkdtempSync(join(tmpdir(), "workbench-tmux-integration-"));
 const originalHome = Bun.env.HOME;
 
@@ -155,7 +161,114 @@ describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
       killServer(socketPath);
     }
   });
+  test("leaves a healthy server alone when checking permissions", async () => {
+    const socketPath = join(suiteRoot, "healthy.sock");
+    const workspace = join(suiteRoot, "healthy-workspace");
+    mkdirSync(workspace);
+    const created = Bun.spawnSync(
+      [
+        "tmux",
+        "-S",
+        socketPath,
+        "-f",
+        "/dev/null",
+        "new-session",
+        "-d",
+        "-s",
+        "healthy_seed",
+        "sleep 30",
+      ],
+      { stderr: "ignore", stdout: "ignore" }
+    );
+    expect(created.exitCode).toBe(0);
+
+    try {
+      expect(restartServerIfPermissionStale(socketPath, workspace)).toBe(false);
+      const seed = Bun.spawnSync(
+        ["tmux", "-S", socketPath, "has-session", "-t", "healthy_seed"],
+        { stderr: "ignore", stdout: "ignore" }
+      );
+      expect(seed.exitCode).toBe(0);
+    } finally {
+      killServer(socketPath);
+    }
+  });
 });
+
+// End-to-end reproduction of the macOS folder-privacy (TCC) failure: a
+// persistent tmux server whose grant went stale is denied access to the pane's
+// workspace, so every agent it spawns there dies instantly with EPERM and the
+// pane shows "[exited]". sandbox-exec stands in for TCC by starting the server
+// with the workspace directory unreadable. A new panel pointed at that
+// workspace must replace the stale server and run its command in a fresh one.
+describe.skipIf(!(hasTmux && hasSandboxExec))(
+  "TerminalPanel stale-permission server recovery",
+  () => {
+    test("restarts a server that cannot read the pane workspace", async () => {
+      const socketPath = join(suiteRoot, "stale.sock");
+      const workspace = join(suiteRoot, "denied-workspace");
+      mkdirSync(workspace);
+      const profile = `(version 1)(allow default)(deny file-read* (subpath ${JSON.stringify(
+        realpathSync(workspace)
+      )}))`;
+      const created = Bun.spawnSync(
+        [
+          "sandbox-exec",
+          "-p",
+          profile,
+          "tmux",
+          "-S",
+          socketPath,
+          "-f",
+          "/dev/null",
+          "new-session",
+          "-d",
+          "-s",
+          "stale_seed",
+          "sleep 300",
+        ],
+        { stderr: "pipe", stdout: "ignore" }
+      );
+      expect(created.exitCode).toBe(0);
+      // The simulated TCC denial is real: the server cannot list the
+      // workspace even though this test process can.
+      const denied = Bun.spawnSync(
+        [
+          "tmux",
+          "-S",
+          socketPath,
+          "run-shell",
+          `ls ${shellQuote(workspace)} >/dev/null 2>&1`,
+        ],
+        { stderr: "ignore", stdout: "ignore" }
+      );
+      expect(denied.exitCode).not.toBe(0);
+
+      const provePath = join(workspace, "pane-alive.txt");
+      const command = `ls . && pwd -P > ${shellQuote(provePath)}; sleep 30`;
+      const panel = new TerminalPanel(workspace, 80, 24, {
+        command,
+        persist: { name: "recovered_session", socketPath },
+      });
+      try {
+        panel.start();
+        await waitForFile(provePath);
+        expect(readFileSync(provePath, "utf8").trim()).toBe(
+          realpathSync(workspace)
+        );
+        // The stale server (and its seed session) was replaced, not reused.
+        const seed = Bun.spawnSync(
+          ["tmux", "-S", socketPath, "has-session", "-t", "stale_seed"],
+          { stderr: "ignore", stdout: "ignore" }
+        );
+        expect(seed.exitCode).not.toBe(0);
+      } finally {
+        panel.kill();
+        killServer(socketPath);
+      }
+    });
+  }
+);
 
 async function waitForClients(
   socketPath: string,

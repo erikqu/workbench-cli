@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IBufferCell } from "@xterm/headless";
 import { Terminal } from "@xterm/headless";
@@ -9,6 +9,7 @@ import type {
   TerminalReadable,
 } from "silvery";
 import { colors } from "../ui/theme";
+import { emitToast } from "../ui/toast";
 import { terminalTrace, terminalTraceEnabled } from "./terminal-trace";
 
 export interface TerminalPanelOptions {
@@ -93,6 +94,79 @@ function ensureTmuxConf(): string {
     tmuxConfPath = path;
   }
   return tmuxConfPath;
+}
+
+// macOS folder privacy (TCC) authorizes the private tmux server, not the
+// panes it forks. The server outlives the terminal app that spawned it, and
+// once that attribution goes stale (terminal restarted or updated, permission
+// revoked, OS upgrade) every NEW pane is denied access to protected folders
+// like ~/Documents: getcwd/readdir fail with EPERM, the agent CLI crashes on
+// startup, and the pane shows "[exited]". Panes spawned while the grant was
+// valid keep running, which makes the breakage look random. Ask the server to
+// list the pane's cwd before creating a session there; when the server is
+// denied a directory this process can read, kill it so the next new-session
+// forks a fresh server attributed to the current app. Losing the old sessions
+// is the designed trade-off: harness commands resume their previous
+// conversation (`claude --continue`, `codex resume --last`).
+const trustedServerDirs = new Set<string>();
+
+export function restartServerIfPermissionStale(
+  socketPath: string,
+  cwd: string
+): boolean {
+  if (process.platform !== "darwin") {
+    return false;
+  }
+  const key = `${socketPath}\0${cwd}`;
+  if (trustedServerDirs.has(key)) {
+    return false;
+  }
+  const serverRunning =
+    Bun.spawnSync(["tmux", "-S", socketPath, "has-session"], {
+      stderr: "ignore",
+      stdout: "ignore",
+    }).exitCode === 0;
+  if (!serverRunning) {
+    // The session we are about to create forks a fresh server as our own
+    // child, so it inherits the current app's (valid) attribution.
+    trustedServerDirs.add(key);
+    return false;
+  }
+  const serverCanRead =
+    Bun.spawnSync(
+      [
+        "tmux",
+        "-S",
+        socketPath,
+        "run-shell",
+        `ls ${shellQuote(cwd)} >/dev/null 2>&1`,
+      ],
+      { stderr: "ignore", stdout: "ignore" }
+    ).exitCode === 0;
+  if (serverCanRead) {
+    trustedServerDirs.add(key);
+    return false;
+  }
+  // Only blame the server when this process can read the directory itself;
+  // otherwise the workspace is genuinely inaccessible and a restart would
+  // destroy live sessions for nothing.
+  try {
+    readdirSync(cwd);
+  } catch {
+    trustedServerDirs.add(key);
+    return false;
+  }
+  Bun.spawnSync(["tmux", "-S", socketPath, "kill-server"], {
+    stderr: "ignore",
+    stdout: "ignore",
+  });
+  emitToast({
+    title: "Agent session server restarted",
+    description:
+      "Its macOS folder permissions went stale; agents resume their last conversation.",
+    variant: "info",
+  });
+  return true;
 }
 
 function configureExistingTmuxServer(socketPath: string) {
@@ -393,6 +467,7 @@ export class TerminalPanel implements TerminalReadable {
     }
     const persist = this.persist;
     if (persist) {
+      restartServerIfPermissionStale(persist.socketPath, this.cwd);
       configureExistingTmuxServer(persist.socketPath);
       // Run inside (or re-attach to) a persistent tmux session on a dedicated
       // socket. -A attaches if it exists, otherwise creates it and runs `inner`.
