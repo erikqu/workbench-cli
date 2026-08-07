@@ -1,0 +1,52 @@
+name: Publish installer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - install.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-installer
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out workbench-cli
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Check out website
+        uses: actions/checkout@v4
+        with:
+          repository: erikqu/erikqu.github.io
+          ref: master
+          path: site
+          ssh-key: ${{ secrets.EHQ_SITE_DEPLOY_KEY }}
+
+      - name: Publish install.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 0755 source/install.sh site/install
+          cd site
+
+          if git diff --quiet -- install; then
+            echo "The published installer is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add install
+          git commit -m "Sync install.sh from workbench-cli"
+          git push origin HEAD:master
