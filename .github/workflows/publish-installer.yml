@@ -21,12 +21,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out workbench-cli
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
 
       - name: Check out website
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: erikqu/erikqu.github.io
           ref: master
