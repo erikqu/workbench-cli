@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AnchoredOverlay,
   Badge,
@@ -225,12 +225,13 @@ function SessionListBody({
       renderItem={(session) => (
         <SessionRow
           actions={actions}
-          active={session.id === view.state.activeSessionId}
           canClose={sessions.length > 1}
           diff={view.diffs.get(session.cwd)}
           index={sessions.indexOf(session)}
           nameMaxWidth={nameMaxWidth}
           onContextMenuChange={onContextMenuChange}
+          running={view.runningSessionIds.has(session.id)}
+          selected={session.id === view.state.activeSessionId}
           session={session}
         />
       )}
@@ -267,10 +268,12 @@ function CollapsedSessionsRail({
     >
       <Text color={colors.accentAlt}>{">"}</Text>
       {shortcutSessions.map((session, index) => {
-        const active = session.id === view.state.activeSessionId;
+        const selected = session.id === view.state.activeSessionId;
+        const running = view.runningSessionIds.has(session.id);
         return (
           <Box
             anchorRef={`workbench-session-${session.id}`}
+            backgroundColor={selected ? colors.selected : colors.panel}
             key={session.id}
             onClick={(event) => {
               if (event.button !== 0) {
@@ -291,7 +294,16 @@ function CollapsedSessionsRail({
               event.stopPropagation();
             }}
           >
-            <Text color={active ? colors.accent : colors.dim}>
+            <Text
+              bold={selected || running}
+              color={
+                selected
+                  ? colors.onSelected
+                  : running
+                    ? colors.accentAlt
+                    : colors.dim
+              }
+            >
               {String(index + 1)}
             </Text>
           </Box>
@@ -351,7 +363,8 @@ function NewAgentRow({
 function SessionRow({
   session,
   index,
-  active,
+  running,
+  selected,
   canClose,
   diff,
   actions,
@@ -360,7 +373,8 @@ function SessionRow({
 }: {
   session: AgentSession;
   index: number;
-  active: boolean;
+  running: boolean;
+  selected: boolean;
   canClose: boolean;
   diff?: SessionDiff;
   actions: WorkbenchActions;
@@ -378,13 +392,17 @@ function SessionRow({
     event.stopPropagation();
   };
   const hasChanges = diff && diff.files.length > 0;
+  const diffWidth = hasChanges
+    ? String(diff.totalAdded).length + String(diff.totalDeleted).length + 5
+    : 0;
+  const flowWidth = Math.max(1, nameMaxWidth - diffWidth);
   // First 9 sessions get a dim index badge matching their Option+Shift+N shortcut.
   const hint = index < 9 ? String(index + 1) : undefined;
 
   return (
     <Box
       anchorRef={anchorId}
-      backgroundColor={active ? colors.selectedMuted : colors.panel}
+      backgroundColor={selected ? colors.selectedMuted : colors.panel}
       flexDirection="column"
       flexShrink={0}
       height={2}
@@ -403,11 +421,12 @@ function SessionRow({
         <Box flexDirection="row" flexGrow={1} minWidth={1}>
           {hint ? (
             <Text
-              color={active ? colors.accent : colors.dim}
+              color={selected ? colors.accent : colors.dim}
             >{`${hint} `}</Text>
           ) : null}
           <Text
-            color={active ? colors.accent : colors.text}
+            bold={selected || running}
+            color={selected ? colors.onSelected : colors.text}
             flexShrink={1}
             minWidth={1}
             wrap={false}
@@ -419,15 +438,92 @@ function SessionRow({
           <CloseButton onClose={() => actions.closeSession(session.id)} />
         ) : null}
       </Box>
-      {hasChanges ? (
-        <Box flexDirection="row" height={1} justifyContent="flex-end">
-          <Badge label={`+${diff.totalAdded}`} variant="success" />
-          <Text> </Text>
-          <Badge label={`-${diff.totalDeleted}`} variant="error" />
-        </Box>
-      ) : null}
+      <Box flexDirection="row" height={1} justifyContent="space-between">
+        {running ? <RunningSessionFlow width={flowWidth} /> : <Text> </Text>}
+        {hasChanges ? (
+          <Box flexDirection="row">
+            <Badge label={`+${diff.totalAdded}`} variant="success" />
+            <Text> </Text>
+            <Badge label={`-${diff.totalDeleted}`} variant="error" />
+          </Box>
+        ) : null}
+      </Box>
     </Box>
   );
+}
+
+const SESSION_FLOW_SEGMENT_WIDTH = 5;
+const SESSION_FLOW_INTERVAL_MS = 100;
+const SESSION_FLOW_STRENGTHS = [1, 0.72, 0.48, 0.28, 0.12] as const;
+
+function RunningSessionFlow({ width }: { width: number }) {
+  const [step, setStep] = useState(0);
+  const point = sessionFlowOffset(step, width, 1);
+
+  useEffect(() => {
+    const interval = setInterval(
+      () => setStep((value) => value + 1),
+      SESSION_FLOW_INTERVAL_MS
+    );
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <Box flexDirection="row" height={1}>
+      {sessionFlowStrengths(point, width).map((strength, index) => (
+        <Text
+          bold={strength === 1}
+          color={mixHexColors(colors.border, colors.accentAlt, strength)}
+          key={index}
+        >
+          {strength > 0 ? "━" : "─"}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
+export function sessionFlowStrengths(point: number, width: number): number[] {
+  const safeWidth = Math.max(0, Math.floor(width));
+  return Array.from({ length: safeWidth }, (_, index) => {
+    const distance = Math.abs(index - point);
+    return SESSION_FLOW_STRENGTHS[distance] ?? 0;
+  });
+}
+
+function mixHexColors(low: string, high: string, strength: number): string {
+  const parse = (value: string) =>
+    /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i
+      .exec(value)
+      ?.slice(1)
+      .map((part) => Number.parseInt(part, 16));
+  const lowRgb = parse(low);
+  const highRgb = parse(high);
+  if (!(lowRgb && highRgb)) {
+    return strength >= 0.5 ? high : low;
+  }
+  const channel = (index: number) =>
+    Math.round(lowRgb[index] + (highRgb[index] - lowRgb[index]) * strength)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${channel(0)}${channel(1)}${channel(2)}`;
+}
+
+export function sessionFlowOffset(
+  step: number,
+  width: number,
+  segmentWidth = SESSION_FLOW_SEGMENT_WIDTH
+): number {
+  const travel = Math.max(
+    0,
+    Math.floor(width) - Math.max(1, Math.floor(segmentWidth))
+  );
+  if (travel === 0) {
+    return 0;
+  }
+  const cycle = travel * 2;
+  const phase = ((Math.floor(step) % cycle) + cycle) % cycle;
+  return phase <= travel ? phase : cycle - phase;
 }
 
 export interface SessionContextMenuState {

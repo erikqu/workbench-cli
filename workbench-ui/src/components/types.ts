@@ -68,6 +68,9 @@ export interface WorkbenchViewModel {
   harnessPanel?: TerminalPanel;
   harnessSpecs: HarnessSpec[];
   mainTabOptions: TabSelectOption[];
+  // Sessions whose coding harness is currently working, including
+  // detached/background tmux sessions that do not own the selected pane.
+  runningSessionIds: ReadonlySet<string>;
   // The active session; its tab set drives the tab strip and main content.
   session: AgentSession;
   state: AppState;

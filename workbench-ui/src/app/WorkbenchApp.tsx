@@ -40,6 +40,11 @@ import {
 } from "../state/types";
 import { TerminalPanel } from "../terminal/terminal-panel";
 import {
+  captureTmuxPane,
+  harnessAppearsRunning,
+  recentTmuxActivity,
+} from "../terminal/tmux-activity";
+import {
   computeFilePatch,
   computeSessionDiff,
   diffSignature,
@@ -83,6 +88,7 @@ const TMUX_SOCKET_PATH = join(
 // Minimum gap between full-app repaints (~60fps) used by the leading-edge render
 // throttle. Low enough to feel instant, high enough to coalesce bursts.
 const RENDER_INTERVAL_MS = 16;
+const HARNESS_ACTIVITY_POLL_MS = 750;
 const HARNESS_COLOR_ENV = {
   CLICOLOR: "1",
   CLICOLOR_FORCE: "1",
@@ -116,6 +122,8 @@ export class ReactWorkbenchApp {
   private diffTimer?: ReturnType<typeof setTimeout>;
   private diffTick?: () => void;
   private diffRunning = false;
+  private runningSessionIds = new Set<string>();
+  private harnessActivityTimer?: ReturnType<typeof setTimeout>;
   private readonly workbenchActions: WorkbenchActions;
   private shuttingDown = false;
   private viewListener?: () => void;
@@ -135,6 +143,7 @@ export class ReactWorkbenchApp {
     this.rebuildExplorer();
     this.syncExplorerWatcher();
     this.startDiffPolling();
+    this.startHarnessActivityPolling();
 
     process.once("SIGTERM", () => this.shutdown(0));
     process.once("SIGINT", () => this.shutdown(0));
@@ -342,6 +351,7 @@ export class ReactWorkbenchApp {
       session,
       explorerOptions: this.explorerOptions,
       mainTabOptions: this.mainTabOptions(),
+      runningSessionIds: this.runningSessionIds,
       harnessSpecs,
       harnessPanel,
       terminalPanel,
@@ -370,6 +380,46 @@ export class ReactWorkbenchApp {
     void tick();
   }
 
+  private startHarnessActivityPolling() {
+    if (Bun.env.WORKBENCH_UI_SCREENSHOT === "1") {
+      return;
+    }
+    const tick = async () => {
+      if (this.shuttingDown) {
+        return;
+      }
+      const sessions = [...this.state.sessions];
+      const activeTmux = await recentTmuxActivity(TMUX_SOCKET_PATH);
+      const statuses = await Promise.all(
+        sessions.map(async (session) => {
+          const harnessStatuses = await Promise.all(
+            session.harnesses.map(async (harness) =>
+              harnessAppearsRunning(
+                harness.harnessId,
+                await captureTmuxPane(TMUX_SOCKET_PATH, harness.tmux),
+                activeTmux.has(harness.tmux)
+              )
+            )
+          );
+          return [session.id, harnessStatuses.some(Boolean)] as const;
+        })
+      );
+      if (this.shuttingDown) {
+        return;
+      }
+      const next = new Set(
+        statuses.filter(([, running]) => running).map(([id]) => id)
+      );
+      if (!setsEqual(next, this.runningSessionIds)) {
+        this.runningSessionIds = next;
+        this.render();
+      }
+      this.harnessActivityTimer = setTimeout(tick, HARNESS_ACTIVITY_POLL_MS);
+      this.harnessActivityTimer.unref?.();
+    };
+    void tick();
+  }
+
   // Poll quickly only while the Changes view is open (so it feels live as an
   // agent edits files); otherwise the diffs just back badges/side summaries, so
   // a slow cadence is plenty and keeps constant git/subprocess churn down.
@@ -379,6 +429,9 @@ export class ReactWorkbenchApp {
     }
     if (this.diffTimer) {
       clearTimeout(this.diffTimer);
+    }
+    if (this.harnessActivityTimer) {
+      clearTimeout(this.harnessActivityTimer);
     }
     const onChanges = isChangesTab(this.activeSession().activeMainTab);
     this.diffTimer = setTimeout(tick, onChanges ? 2000 : 10_000);
@@ -1021,6 +1074,12 @@ export class ReactWorkbenchApp {
   private estimateRows() {
     return Math.max(8, (process.stdout.rows ?? 30) - 4);
   }
+}
+
+function setsEqual<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
+  return (
+    left.size === right.size && [...left].every((value) => right.has(value))
+  );
 }
 
 function WorkbenchRoot({ app }: { app: ReactWorkbenchApp }) {
