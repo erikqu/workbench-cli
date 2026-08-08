@@ -523,6 +523,11 @@ function HarnessView({
       view.session.harnesses[0]?.harnessId ??
       "workbench"
   );
+  const restart = () => {
+    if (activeHarness) {
+      actions.addHarness(activeHarness.harnessId);
+    }
+  };
   return (
     <Box
       backgroundColor={colors.editor}
@@ -549,14 +554,9 @@ function HarnessView({
         <Text
           color={view.state.focus === "harness" ? colors.accent : colors.dim}
         >{`CLI: ${activeSpec.label}`}</Text>
-        <Box
-          flexDirection="row"
-          onClick={(event) => {
-            actions.openNewHarness();
-            event.stopPropagation();
-          }}
-        >
-          <Text color={colors.accentAlt}>switch ...</Text>
+        <Box flexDirection="row">
+          <RestartHarnessButton onRestart={restart} />
+          <SwitchHarnessButton onSwitch={actions.openNewHarness} />
         </Box>
       </Box>
       {view.harnessPanel ? (
@@ -569,6 +569,65 @@ function HarnessView({
           selectionChanged={selectionChanged}
         />
       ) : null}
+    </Box>
+  );
+}
+
+function RestartHarnessButton({ onRestart }: { onRestart(): void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Box
+      alignItems="center"
+      backgroundColor={hovered ? colors.selected : undefined}
+      focusable={false}
+      height={1}
+      justifyContent="center"
+      mouseCursor="pointer"
+      onClick={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        onRestart();
+        event.stopPropagation();
+      }}
+      onMouseEnter={() => {
+        setHovered(true);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+      }}
+      width={3}
+    >
+      <Text bold color={hovered ? colors.onSelected : colors.accentAlt}>
+        ↻
+      </Text>
+    </Box>
+  );
+}
+
+function SwitchHarnessButton({ onSwitch }: { onSwitch(): void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Box
+      backgroundColor={hovered ? colors.selected : undefined}
+      flexDirection="row"
+      mouseCursor="pointer"
+      onClick={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        onSwitch();
+        event.stopPropagation();
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <Text
+        bold={hovered}
+        color={hovered ? colors.onSelected : colors.accentAlt}
+      >
+        switch ...
+      </Text>
     </Box>
   );
 }

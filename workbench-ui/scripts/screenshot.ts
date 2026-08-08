@@ -67,6 +67,10 @@ try {
   // terminal tab check below.
   const harnessVisible = await waitForText(page, defaultHarnessLabel, 8000);
   report("default harness pane renders", harnessVisible);
+  report(
+    "harness restart control renders beside switch",
+    await waitForText(page, "↻ switch ...", 2000)
+  );
   await page.screenshot({ path: join(screenshotDir, "workbench.png") });
 
   // 1b. Both vertical pane borders are draggable. Move each six columns right,
