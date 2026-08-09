@@ -141,6 +141,7 @@
       for (let i = 0; i < term.rows; i++) {
         lines.push(
           (buffer.getLine(buffer.viewportY + i)?.translateToString(false) ?? "")
+            .replaceAll("\uFE0E", "")
             .slice(0, term.cols)
             .padEnd(term.cols, " ")
         );

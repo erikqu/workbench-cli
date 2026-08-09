@@ -146,7 +146,9 @@ function historyRows(width: number): string[] {
   return Array.from({ length: SIMULATED_HISTORY_ROWS }, (_, index) =>
     fixtureRow(
       `[H${pad(index + 1)}]`,
-      `existing conversation row ${pad(index + 1)}`,
+      index === 99
+        ? "⚠ narrow warning glyph must not wrap the outer terminal"
+        : `existing conversation row ${pad(index + 1)}`,
       width
     )
   );

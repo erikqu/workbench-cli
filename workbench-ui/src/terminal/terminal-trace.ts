@@ -75,10 +75,14 @@ export function terminalTrace(
 }
 
 export function terminalTraceRowId(fingerprint: string): number {
-  let id = rowIds.get(fingerprint);
+  // U+FE0E pins an emoji-capable glyph to the one-cell text presentation
+  // already recorded by xterm. It is zero-width and visually inert, so do not
+  // treat the normalized outer row as different from its source row.
+  const visualFingerprint = fingerprint.replaceAll("\uFE0E", "");
+  let id = rowIds.get(visualFingerprint);
   if (id === undefined) {
     id = ++nextRowId;
-    rowIds.set(fingerprint, id);
+    rowIds.set(visualFingerprint, id);
   }
   return id;
 }

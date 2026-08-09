@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   Box,
+  graphemeWidth,
   type SilveryWheelEvent,
   Terminal,
   type TerminalCell,
@@ -41,7 +42,7 @@ export function FocusedTerminal({
     [focused, revision, terminal]
   );
   const mirrored = useMemo<TerminalReadable>(() => {
-    const lines = terminal.getLines();
+    const lines = normalizeTerminalWidths(terminal.getLines());
     if (
       focused &&
       cursor &&
@@ -93,6 +94,50 @@ export function FocusedTerminal({
       />
     </Box>
   );
+}
+
+const TEXT_PRESENTATION = "\uFE0E";
+
+// xterm is the authority for the width of every PTY cell. Silvery normally
+// upgrades emoji-capable symbols (for example U+26A0 WARNING SIGN) to emoji
+// presentation while laying out <Text>, which turns xterm's one-cell glyph
+// into two cells. A full terminal row then wraps and displaces every row below
+// it. Pin only those mismatched narrow glyphs to text presentation so the
+// outer layout preserves the exact grid width reported by xterm.
+function normalizeTerminalWidths(
+  lines: readonly (readonly TerminalCell[])[]
+): readonly (readonly TerminalCell[])[] {
+  let normalizedLines: TerminalCell[][] | undefined;
+  for (let rowIndex = 0; rowIndex < lines.length; rowIndex += 1) {
+    const row = lines[rowIndex];
+    if (!row) {
+      continue;
+    }
+    let normalizedRow: TerminalCell[] | undefined;
+    for (let col = 0; col < row.length; col += 1) {
+      const cell = row[col];
+      if (
+        !cell ||
+        cell.wide ||
+        cell.continuation ||
+        !cell.char ||
+        graphemeWidth(cell.char) <= 1
+      ) {
+        continue;
+      }
+      normalizedRow ??= row.slice();
+      normalizedRow[col] = {
+        ...cell,
+        char: `${cell.char.replaceAll("\uFE0F", "").replaceAll(TEXT_PRESENTATION, "")}${TEXT_PRESENTATION}`,
+      };
+    }
+    if (!normalizedRow) {
+      continue;
+    }
+    normalizedLines ??= lines.map((source) => source.slice());
+    normalizedLines[rowIndex] = normalizedRow;
+  }
+  return normalizedLines ?? lines;
 }
 
 function paintCursor(cell: TerminalCell): TerminalCell {

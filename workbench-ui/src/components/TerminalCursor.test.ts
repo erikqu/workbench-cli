@@ -56,3 +56,47 @@ test("focused mirrored terminals paint their requested cursor", async () => {
   expect([buffer.cursorX, buffer.cursorY]).toEqual([2, 1]);
   expect(Boolean(buffer.getLine(1)?.getCell(2)?.isInverse())).toBe(true);
 });
+
+test("narrow terminal glyphs cannot wrap following rows", async () => {
+  const cells = (text: string) =>
+    Array.from(text, (char) => ({ ...blankCell, char }));
+  const terminal = {
+    cols: 4,
+    rows: 2,
+    getCursor: () => ({ x: 0, y: 0, visible: false }),
+    getLines: () => [cells("⚠abc"), cells("NEXT")],
+  };
+  let output = "";
+  const handle = await run(
+    createElement(FocusedTerminal, { focused: false, terminal }),
+    {
+      cols: terminal.cols,
+      input: false,
+      mode: "fullscreen",
+      rows: terminal.rows,
+      writable: {
+        write(data) {
+          output += data;
+        },
+      },
+    }
+  );
+
+  await Bun.sleep(25);
+  handle.unmount();
+
+  const rendered = new HeadlessTerminal({
+    allowProposedApi: true,
+    cols: terminal.cols,
+    rows: terminal.rows,
+  });
+  await new Promise<void>((resolve) => rendered.write(output, resolve));
+
+  expect(
+    rendered.buffer.active
+      .getLine(0)
+      ?.translateToString()
+      .replaceAll("\uFE0E", "")
+  ).toBe("⚠abc");
+  expect(rendered.buffer.active.getLine(1)?.translateToString()).toBe("NEXT");
+});
