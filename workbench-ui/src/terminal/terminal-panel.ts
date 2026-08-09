@@ -10,7 +10,12 @@ import type {
 } from "silvery";
 import { colors } from "../ui/theme";
 import { emitToast } from "../ui/toast";
-import { terminalTrace, terminalTraceEnabled } from "./terminal-trace";
+import {
+  terminalTrace,
+  terminalTraceEnabled,
+  terminalTracePresentedPanel,
+  terminalTraceRowId,
+} from "./terminal-trace";
 
 export interface TerminalPanelOptions {
   command?: string;
@@ -286,8 +291,6 @@ const TRANSCRIPT_WHEEL_SETTLE_MS = 100;
 
 export class TerminalPanel implements TerminalReadable {
   private readonly traceId = ++tracePanelCounter;
-  private readonly traceRowIds = new Map<string, number>();
-  private nextTraceRowId = 0;
   private terminal: Terminal;
   private child?: ReturnType<typeof Bun.spawn>;
   private pty?: Bun.Terminal;
@@ -298,6 +301,7 @@ export class TerminalPanel implements TerminalReadable {
   private transcriptWheelOpen = false;
   private transcriptWheelClosing = false;
   private transcriptWheelMovingDown = false;
+  private transcriptWheelDebt = 0;
   private pendingTranscriptInput = "";
   private transcriptWheelSettle?: ReturnType<typeof setTimeout>;
   private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
@@ -714,13 +718,15 @@ export class TerminalPanel implements TerminalReadable {
     count = 1
   ): boolean {
     if (this.options.wheelNavigation === "transcript") {
+      const steps = Math.max(1, Math.floor(count));
       if (this.transcriptWheelClosing) {
         return true;
       }
-      const lines = Math.max(1, Math.floor(count)) * 3;
+      const lines = steps * 3;
       let data = "";
       if (direction === "up") {
         this.transcriptWheelMovingDown = false;
+        this.transcriptWheelDebt += steps;
         this.clearTranscriptWheelSettle();
         if (!(this.transcriptWheelOpen || this.transcriptVisible())) {
           data += "\x14";
@@ -729,7 +735,11 @@ export class TerminalPanel implements TerminalReadable {
         data += "\x1b[A".repeat(lines);
       } else if (this.transcriptWheelOpen) {
         this.transcriptWheelMovingDown = true;
-        if (this.transcriptAtBottom()) {
+        this.transcriptWheelDebt = Math.max(
+          0,
+          this.transcriptWheelDebt - steps
+        );
+        if (this.transcriptWheelDebt === 0 || this.transcriptAtBottom()) {
           this.scheduleTranscriptWheelClose(true);
         } else {
           data = "\x1b[B".repeat(lines);
@@ -741,7 +751,8 @@ export class TerminalPanel implements TerminalReadable {
         navigation: "transcript",
         panel: this.traceId,
         transcriptOpen: this.transcriptWheelOpen,
-        steps: Math.max(1, Math.floor(count)),
+        steps,
+        wheelDebt: this.transcriptWheelDebt,
       });
       if (!data) {
         return true;
@@ -821,6 +832,7 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptWheelOpen = false;
     this.transcriptWheelClosing = true;
     this.transcriptWheelMovingDown = false;
+    this.transcriptWheelDebt = 0;
     this.clearTranscriptWheelSettle();
     if (data === "\x14") {
       this.writeToChild(data);
@@ -837,6 +849,7 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptWheelOpen = false;
     this.transcriptWheelClosing = true;
     this.transcriptWheelMovingDown = false;
+    this.transcriptWheelDebt = 0;
     this.clearTranscriptWheelSettle();
     this.writeToChild("\x14");
   }
@@ -852,7 +865,7 @@ export class TerminalPanel implements TerminalReadable {
       if (
         this.transcriptWheelOpen &&
         this.transcriptWheelMovingDown &&
-        this.transcriptAtBottom()
+        (this.transcriptWheelDebt === 0 || this.transcriptAtBottom())
       ) {
         this.closeWheelTranscript();
       }
@@ -920,13 +933,10 @@ export class TerminalPanel implements TerminalReadable {
       const rowIds: number[] = [];
       for (let row = 0; row < this.terminal.rows; row += 1) {
         const fingerprint =
-          buffer.getLine(start + row)?.translateToString(false) ?? "";
-        let id = this.traceRowIds.get(fingerprint);
-        if (id === undefined) {
-          id = ++this.nextTraceRowId;
-          this.traceRowIds.set(fingerprint, id);
-        }
-        rowIds.push(id);
+          buffer
+            .getLine(start + row)
+            ?.translateToString(false, 0, this.terminal.cols) ?? "";
+        rowIds.push(terminalTraceRowId(fingerprint));
       }
       terminalTrace("panel-snapshot", {
         baseY: buffer.baseY,
@@ -935,6 +945,7 @@ export class TerminalPanel implements TerminalReadable {
         rowIds,
         viewportY: buffer.viewportY,
       });
+      terminalTracePresentedPanel(this.traceId, this.updateRevision, rowIds);
     }
     return rows;
   }

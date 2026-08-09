@@ -9,6 +9,7 @@ import {
   setGraphicsSupport,
 } from "./media/image-protocol";
 import { probeTerminal } from "./terminal/terminal-probe";
+import { terminalTrace } from "./terminal/terminal-trace";
 
 const args = process.argv.slice(2);
 let cwdArg: string | undefined;
@@ -86,6 +87,13 @@ if (process.stdout.isTTY) {
 if (!automatedTerminal) {
   try {
     const probe = await probeTerminal();
+    terminalTrace("host-geometry", {
+      hostColumns: probe?.cells?.cols ?? null,
+      hostRows: probe?.cells?.rows ?? null,
+      ptyColumns: process.stdout.columns ?? null,
+      ptyRows: process.stdout.rows ?? null,
+      terminalVersion: probe?.version ?? null,
+    });
     if (probe?.aspect && !process.env.WORKBENCH_UI_CELL_ASPECT) {
       setCellAspect(probe.aspect);
     }

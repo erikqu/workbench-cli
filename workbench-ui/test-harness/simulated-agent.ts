@@ -17,6 +17,13 @@ const chunkSeed = Number(Bun.env.WORKBENCH_E2E_CHUNK_SEED ?? "17");
 // pane like this is owned by tmux copy-mode, not by the agent.
 const inline = Bun.env.WORKBENCH_E2E_AGENT_INLINE === "1";
 const codexLike = Bun.env.WORKBENCH_E2E_AGENT_CODEX === "1";
+const stickyCodexTranscript =
+  Bun.env.WORKBENCH_E2E_CODEX_STICKY_TRANSCRIPT === "1";
+// The Ghostty-WASM verifier replays every incremental frame against a fresh
+// terminal and is intentionally expensive. Slow fixture feedback enough that
+// verification can settle each generation instead of measuring queue lag.
+const timingScale = Bun.env.SILVERY_STRICT_TERMINAL ? 6 : 1;
+const streamedResponseRows = Bun.env.SILVERY_STRICT_TERMINAL ? 5 : 20;
 const state = initialSimulatedAgentState();
 
 let cols = terminalDimension("columns", "COLUMNS", 80);
@@ -112,10 +119,21 @@ function consumeInput() {
     const transcriptArrow = /^\x1b\[([AB])/.exec(inputBuffer);
     if (codexLike && state.transcriptOpen && transcriptArrow) {
       inputBuffer = inputBuffer.slice(transcriptArrow[0].length);
-      state.transcriptOffset = Math.max(
-        0,
-        state.transcriptOffset + (transcriptArrow[1] === "A" ? 1 : -1)
-      );
+      if (transcriptArrow[1] === "A") {
+        state.transcriptOffset += 1;
+      } else {
+        // Resumed Codex transcripts can settle short of their rendered 100%
+        // edge even after receiving more down navigation than up navigation.
+        // Model that timing-dependent state deterministically: Workbench must
+        // honor net wheel intent instead of requiring an exact 100% frame.
+        const floor = stickyCodexTranscript
+          ? Math.max(1, Math.floor(maxTranscriptOffset() * 0.17))
+          : 0;
+        state.transcriptOffset = Math.max(
+          state.transcriptOffset > floor ? floor : state.transcriptOffset,
+          state.transcriptOffset - 1
+        );
+      }
       requestRender();
       continue;
     }
@@ -152,6 +170,13 @@ function consumeInput() {
       requestRender();
     }
   }
+}
+
+function maxTranscriptOffset() {
+  return Math.max(
+    0,
+    simulatedConversationRows(state, cols).length - Math.max(1, rows - 2)
+  );
 }
 
 function isIncompleteEscape(value: string): boolean {
@@ -212,7 +237,7 @@ function submitPrompt() {
     }
     state.workingTick += 1;
     requestRender();
-  }, 140);
+  }, 140 * timingScale);
   statusTimer.unref?.();
 
   let streamed = 0;
@@ -226,7 +251,7 @@ function submitPrompt() {
       text: `stream ${state.submittedPrompts}.${String(streamed).padStart(2, "0")} source=${rowBase + 1}`,
     });
     requestRender();
-    if (streamed < 20) {
+    if (streamed < streamedResponseRows) {
       return;
     }
     if (responseTimer) {
@@ -243,9 +268,9 @@ function submitPrompt() {
       }
       state.working = false;
       requestRender();
-    }, 300);
+    }, 300 * timingScale);
     finishTimer.unref?.();
-  }, 90);
+  }, 90 * timingScale);
   responseTimer.unref?.();
 }
 

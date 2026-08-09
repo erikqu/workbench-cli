@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -eu
+
+# CODEX_HOME is a disposable directory created by terminal-regression.ts, so
+# resume --last can exercise history replay without touching user sessions.
+exec "${WORKBENCH_E2E_REAL_CODEX:?}" "$@"

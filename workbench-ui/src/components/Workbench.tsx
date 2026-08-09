@@ -11,6 +11,7 @@ import {
   useBoxRectDangerously,
   useInput,
   useRawKeyEvent,
+  useScreenRect,
   useSelection,
   useSelectionActions,
   useWindowSize,
@@ -27,6 +28,7 @@ import {
   terminalClipboardShortcut,
 } from "../terminal/clipboard";
 import { terminalInputForKey } from "../terminal/terminal-panel";
+import { terminalTrace } from "../terminal/terminal-trace";
 import { COLLAPSED_SESSIONS_SIDEBAR_WIDTH } from "../ui/pane-layout";
 import { colors } from "../ui/theme";
 import { ToastHost } from "../ui/toast";
@@ -719,8 +721,38 @@ function MeasuredTerminalGrid({
   scroll(lines: number): void;
 }) {
   const rect = useBoxRectDangerously();
+  const screenRect = useScreenRect();
   const windowSize = useWindowSize();
   const { cols, rows } = terminalGridSize(rect, windowSize);
+  useEffect(() => {
+    terminalTrace("grid-layout", {
+      cols,
+      rectHeight: rect.height,
+      rectWidth: rect.width,
+      rectX: rect.x,
+      rectY: rect.y,
+      rows,
+      screenHeight: screenRect.height,
+      screenWidth: screenRect.width,
+      screenX: screenRect.x,
+      screenY: screenRect.y,
+      windowColumns: windowSize.columns,
+      windowRows: windowSize.rows,
+    });
+  }, [
+    cols,
+    rect.height,
+    rect.width,
+    rect.x,
+    rect.y,
+    rows,
+    screenRect.height,
+    screenRect.width,
+    screenRect.x,
+    screenRect.y,
+    windowSize.columns,
+    windowSize.rows,
+  ]);
   // Subscribe to the panel directly so terminal output repaints ONLY this
   // subtree. Previously every PTY frame bumped the whole-app view and re-ran the
   // entire Workbench render (sidebar, tabs, explorer, ...) just to redraw the

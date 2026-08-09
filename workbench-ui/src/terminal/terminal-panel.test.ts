@@ -276,6 +276,20 @@ describe("TerminalPanel.sendMouseWheel", () => {
     await feed(panel, "\x1b[?1049l");
     expect(writes.at(-1)).toBe("x");
   });
+
+  test("returns to the composer when net wheel intent reaches the live edge", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 4)).toBe(true);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 83% ");
+    expect(panel.sendMouseWheel(4, 9, "down", 4)).toBe(true);
+    await Bun.sleep(150);
+
+    expect(writes).toEqual([`\x14${"\x1b[A".repeat(12)}`, "\x14"]);
+  });
 });
 
 describe("TerminalPanel resize generations", () => {

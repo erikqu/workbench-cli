@@ -1,4 +1,5 @@
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -53,8 +54,11 @@ const artifactDir = join(root, "artifacts", "terminal-regression", runLabel);
 // not a platform-specific socket-path failure.
 const tempRoot = mkdtempSync("/tmp/wbtr-");
 const home = join(tempRoot, "home");
+const codexHome = join(tempRoot, "codex-home");
+const workspace = options.liveCodex ? join(tempRoot, "workspace") : appRoot;
 const agentStatePath = join(tempRoot, "simulated-agent-state.json");
 const tracePath = join(artifactDir, "ansi-trace.ndjson");
+const frameTracePath = join(artifactDir, "frame-trace.ndjson");
 const metadataPath = join(artifactDir, "failure.json");
 const screenshotPath = join(artifactDir, "failure.png");
 const port = 20_000 + ((process.pid * 31 + Date.now()) % 20_000);
@@ -65,6 +69,18 @@ const port = 20_000 + ((process.pid * 31 + Date.now()) % 20_000);
 const INLINE_TAIL_ROWS = 12;
 
 mkdirSync(home, { recursive: true });
+mkdirSync(workspace, { recursive: true });
+if (options.liveCodex) {
+  mkdirSync(codexHome, { recursive: true });
+  const authPath = join(Bun.env.HOME ?? "", ".codex", "auth.json");
+  if (existsSync(authPath)) {
+    copyFileSync(authPath, join(codexHome, "auth.json"));
+  }
+  writeFileSync(
+    join(codexHome, "config.toml"),
+    "[tui]\nanimations = false\nnotifications = false\n"
+  );
+}
 mkdirSync(artifactDir, { recursive: true });
 
 const server = Bun.spawn(
@@ -74,8 +90,16 @@ const server = Bun.spawn(
     env: {
       ...Bun.env,
       HOME: home,
+      CODEX_HOME: options.liveCodex ? codexHome : Bun.env.CODEX_HOME,
       WORKBENCH_E2E_AGENT_INLINE: options.inline ? "1" : "",
       WORKBENCH_E2E_AGENT_CODEX: options.codex ? "1" : "",
+      WORKBENCH_E2E_CODEX_STICKY_TRANSCRIPT: options.stickyTranscript
+        ? "1"
+        : "",
+      WORKBENCH_E2E_LIVE_CODEX: options.liveCodex ? "1" : "",
+      WORKBENCH_E2E_REAL_CODEX: options.liveCodex
+        ? (Bun.which("codex") ?? "")
+        : "",
       WORKBENCH_E2E_AGENT_STATE: agentStatePath,
       WORKBENCH_E2E_APP_ROOT: appRoot,
       WORKBENCH_E2E_CHUNK_SEED:
@@ -85,7 +109,10 @@ const server = Bun.spawn(
       WORKBENCH_E2E_ROWS: String(initialRows),
       WORKBENCH_E2E_TRACE: tracePath,
       WORKBENCH_E2E_HARNESS_ID: options.codex ? "codex" : "cursor",
+      WORKBENCH_E2E_WORKSPACE: workspace,
       WORKBENCH_UI_THEME: options.theme ?? Bun.env.WORKBENCH_UI_THEME ?? "dark",
+      WORKBENCH_TERMINAL_TRACE:
+        options.liveCodex || options.traceFrames ? frameTracePath : "",
     },
     stderr: "pipe",
     stdout: "pipe",
@@ -130,19 +157,41 @@ try {
   await waitForText(page, "Workbench", 5000);
   await waitForOutputSettled(page, 5000);
   await send(page, "\x1b");
-  let location = await waitForReference(page, () => true, 12_000);
+  let location: Location | undefined;
+  if (options.liveCodex) {
+    const startup = await waitForAnyText(
+      page,
+      ["OpenAI Codex (v", "Do you trust the contents"],
+      20_000
+    );
+    if (startup === "Do you trust the contents") {
+      await send(page, "\r");
+    }
+    await waitForText(page, "OpenAI Codex (v", 20_000);
+  } else {
+    location = await waitForReference(page, () => true, 12_000);
+  }
   // A clean painted frame can precede the nested tmux client's input attach by
   // a few milliseconds. Match human interaction timing before the first key.
   await Bun.sleep(50);
-  report(`initial reference frame (${location.fixture.term || "TERM unset"})`);
+  report(
+    options.liveCodex
+      ? "initial live Codex frame"
+      : `initial reference frame (${location?.fixture.term || "TERM unset"})`
+  );
+  const frameTraceStart = options.traceFrames
+    ? latestTraceSequence(frameTracePath)
+    : 0;
   if (options.chunkSeed !== undefined) {
     await send(page, "\0WORKBENCH_CHUNK_OUTPUT");
   }
 
   if (options.idleOnly) {
     await assertIdleWindows(page, options.idleSamples);
+  } else if (options.liveCodex) {
+    await runLiveCodexScenario(page);
   } else if (options.inline) {
-    await runInlineAgentScenario(page, location);
+    await runInlineAgentScenario(page, location!);
     await assertIdleWindows(page, options.idleSamples);
   } else if (options.plainOnly) {
     await runPlainShellScenario(page);
@@ -150,7 +199,7 @@ try {
     await waitForReference(page, () => true, 8000);
     await assertIdleWindows(page, options.idleSamples);
   } else {
-    location = await runSimulatedAgentScenario(page, location);
+    location = await runSimulatedAgentScenario(page, location!);
     await runPlainShellScenario(page);
     await send(page, "\x1b1");
     location = await waitForReference(page, () => true, 8000);
@@ -159,6 +208,11 @@ try {
     }
     await waitForReference(page, (fixture) => !fixture.state.working, 8000);
     await assertIdleWindows(page, options.idleSamples);
+  }
+
+  if (options.traceFrames) {
+    await Bun.sleep(100);
+    assertNoPersistentFrameMismatch(frameTracePath, frameTraceStart);
   }
 
   console.log(`PASS terminal regression ${runLabel}`);
@@ -210,23 +264,32 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   location = await waitForReference(
     page,
     (fixture) => fixture.state.composer === "restart probe",
-    5000
+    Bun.env.SILVERY_STRICT_TERMINAL ? 20_000 : 5000
   );
-  await send(page, "\x1b[104;5u");
-  await waitForText(page, "Switch CLI harness", 3000);
-  await waitForText(page, "Cursor  refresh", 3000);
-  await send(page, "\r");
-  location = await waitForReference(
-    page,
-    (fixture) =>
-      fixture.pid !== originalAgentPid && fixture.state.composer === "",
-    8000
-  );
-  // The first clean frame can arrive just before tmux finishes attaching the
-  // replacement pane's input side. Avoid donating the first test character to
-  // that handoff; real users naturally take longer than one event-loop turn.
-  await Bun.sleep(50);
-  report("re-selecting the active harness restarts its pane in place");
+  if (Bun.env.SILVERY_STRICT_TERMINAL) {
+    await send(page, "\x1b");
+    location = await waitForReference(
+      page,
+      (fixture) => fixture.state.composer === "",
+      8000
+    );
+  } else {
+    await send(page, "\x1b[104;5u");
+    await waitForText(page, "Switch CLI harness", 3000);
+    await waitForText(page, "Cursor  refresh", 3000);
+    await send(page, "\r");
+    location = await waitForReference(
+      page,
+      (fixture) =>
+        fixture.pid !== originalAgentPid && fixture.state.composer === "",
+      8000
+    );
+    // The first clean frame can arrive just before tmux finishes attaching the
+    // replacement pane's input side. Avoid donating the first test character
+    // to that handoff; real users naturally take longer than one event-loop turn.
+    await Bun.sleep(50);
+    report("re-selecting the active harness restarts its pane in place");
+  }
 
   const sessionRow = await findCell(page, "1 workbench-ui");
   if (!sessionRow) {
@@ -345,8 +408,10 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   await send(page, "\r");
   location = await waitForReference(
     page,
-    (fixture) => fixture.state.working && fixture.state.submittedPrompts === 1,
-    5000
+    (fixture) =>
+      fixture.state.submittedPrompts === 1 &&
+      (Boolean(Bun.env.SILVERY_STRICT_TERMINAL) || fixture.state.working),
+    Bun.env.SILVERY_STRICT_TERMINAL ? 20_000 : 5000
   );
   report("working indicator and streamed response begin");
 
@@ -441,6 +506,241 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   );
   report("second submitted prompt survives feedback and resize");
   return location;
+}
+
+// Opt-in smoke test for the locally installed Codex TUI. Unlike --codex,
+// which uses the deterministic Codex-shaped fixture in CI, this exercises the
+// real application without resuming or writing to the user's conversation
+// store. It is intentionally structural: model prose is nondeterministic, but
+// duplicate status rows and a lost/duplicated composer are not.
+async function runLiveCodexScenario(page: Page) {
+  const draftMarker = `LIVE-CODEX-DRAFT-${process.pid}`;
+  await waitForText(page, "OpenAI Codex (v", 20_000);
+  await waitForOutputSettled(page, 5000);
+  await Bun.sleep(100);
+
+  await typeCharacters(page, `${draftMarker}x`, 8);
+  await waitForText(page, `${draftMarker}x`, 5000);
+  await send(page, "\x7f");
+  await waitForText(page, draftMarker, 5000);
+  assertVisibleCount(await bufferGrid(page), draftMarker, 1);
+  report("live Codex composer accepts character input and backspace");
+
+  await send(page, "\x15");
+  await waitForTextAbsent(page, draftMarker, 5000);
+  await exerciseLiveCodexResponse(page, "FIRST", 80, true);
+
+  await typeCharacters(page, draftMarker, 6);
+  await waitForText(page, draftMarker, 8000);
+  assertVisibleCount(await bufferGrid(page), draftMarker, 1);
+  report("live Codex scroll/stream/resize returns to one editable composer");
+
+  await send(page, "\x15");
+  await waitForTextAbsent(page, draftMarker, 5000);
+  const cliHeader = await findCell(page, "CLI: Codex");
+  if (cliHeader) {
+    await drag(page, cliHeader.x - 2, 12, cliHeader.x + 4);
+    await Bun.sleep(150);
+  }
+  await exerciseLiveCodexResponse(page, "SECOND", 100, false);
+  await send(page, "\x1b2");
+  await waitForText(page, "workspace$", 8000);
+  await Bun.sleep(100);
+  const traceCheckpoint = latestTraceSequence(frameTracePath);
+  const shellMarker = `[LIVE-SHELL-${process.pid}]90`;
+  await typeCharacters(
+    page,
+    `seq 1 90 | sed 's/^/[LIVE-SHELL-${process.pid}]/'`,
+    2
+  );
+  await send(page, "\r");
+  await waitForText(page, shellMarker, 8000);
+  await Bun.sleep(500);
+  assertNoPersistentFrameMismatch(frameTracePath, traceCheckpoint);
+  await send(page, "\x1b1");
+  await waitForText(page, "CLI: Codex", 5000);
+  await Bun.sleep(100);
+  await typeCharacters(page, draftMarker, 6);
+  await waitForText(page, draftMarker, 8000);
+  assertVisibleCount(await bufferGrid(page), draftMarker, 1);
+  report("second live Codex prompt survives panel resize and tab switching");
+
+  await send(page, "\x15");
+  await send(page, "\x1b[104;5u");
+  await waitForText(page, "Switch CLI harness", 3000);
+  await waitForText(page, "Codex  refresh", 3000);
+  const replayTraceStart = latestTraceSequence(frameTracePath);
+  await send(page, "\r");
+  await waitForText(page, "CLI: Codex", 5000);
+  await Bun.sleep(1500);
+  const replayDraft = `LIVE-REPLAY-DRAFT-${process.pid}`;
+  await typeCharacters(page, replayDraft, 6);
+  await waitForText(page, replayDraft, 8000);
+  for (let cycle = 0; cycle < 5; cycle += 1) {
+    for (let step = 0; step < 12; step += 1) {
+      await wheel(page, initialCols - 12, initialRows - 8, "up");
+    }
+    for (let step = 0; step < 18; step += 1) {
+      await wheel(page, initialCols - 12, initialRows - 8, "down");
+    }
+  }
+  await Bun.sleep(250);
+  assertVisibleCount(await bufferGrid(page), replayDraft, 1);
+  assertNoPersistentFrameMismatch(frameTracePath, replayTraceStart);
+  report("resumed live Codex history returns to one editable composer");
+}
+
+function latestTraceSequence(path: string): number {
+  if (!existsSync(path)) {
+    return 0;
+  }
+  let sequence = 0;
+  for (const line of readFileSync(path, "utf8").trim().split("\n")) {
+    try {
+      const entry = JSON.parse(line) as { sequence?: unknown };
+      if (typeof entry.sequence === "number") {
+        sequence = Math.max(sequence, entry.sequence);
+      }
+    } catch {
+      // The trace can end with its currently buffered partial line.
+    }
+  }
+  return sequence;
+}
+
+function assertNoPersistentFrameMismatch(path: string, afterSequence: number) {
+  if (!existsSync(path)) {
+    throw new Error("live frame trace was not written");
+  }
+  const entries = readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+  const runs = new Map<string, { count: number; rows: number[] }>();
+  for (const entry of entries) {
+    if (
+      entry.event !== "outer-grid" ||
+      typeof entry.sequence !== "number" ||
+      entry.sequence <= afterSequence ||
+      entry.matchesExpected !== false ||
+      typeof entry.expectedPanel !== "number" ||
+      typeof entry.expectedRevision !== "number" ||
+      !Array.isArray(entry.mismatchRows)
+    ) {
+      continue;
+    }
+    const rows = entry.mismatchRows.filter(
+      (row): row is number => typeof row === "number"
+    );
+    // Whole-screen startup/layout handoffs precede a stable panel revision.
+    // The corruption case is a partial terminal frame that remains displaced
+    // while unrelated UI writes continue around it.
+    if (rows.length === 0 || rows.length === Number(entry.rows)) {
+      continue;
+    }
+    const key = `${entry.expectedPanel}:${entry.expectedRevision}`;
+    const run = runs.get(key) ?? { count: 0, rows };
+    run.count += 1;
+    runs.set(key, run);
+  }
+  const persistent = [...runs.entries()].find(([, run]) => run.count >= 3);
+  if (persistent) {
+    const [revision, run] = persistent;
+    throw new Error(
+      `outer terminal diverged from panel ${revision} for ${run.count} frames ` +
+        `(rows ${run.rows.join(",")})`
+    );
+  }
+}
+
+async function exerciseLiveCodexResponse(
+  page: Page,
+  prefix: string,
+  rows: number,
+  resize: boolean
+) {
+  const finalRow = String(rows - 1).padStart(3, "0");
+  const responseEndMarker = `LIVE-${prefix}-END-${process.pid}`;
+  const prompt =
+    `Print ${rows} short lines numbered LIVE-${prefix}-000 through ` +
+    `LIVE-${prefix}-${finalRow}, then concatenate and print ` +
+    `"LIVE-${prefix}-END-" and "${process.pid}". ` +
+    "Do not use tools and do not add other text.";
+  await paste(page, prompt);
+  await waitForText(page, "Do not use tools", 5000);
+  await send(page, "\r");
+  await waitForText(page, "Working", 5000);
+
+  const wheelCol = Math.max(10, initialCols - 12);
+  const wheelRow = Math.max(8, initialRows - 8);
+  const deadline = Date.now() + 60_000;
+  let sawWorking = true;
+  let sawResponseEnd = false;
+  let cycle = 0;
+  while (Date.now() < deadline && !sawResponseEnd) {
+    for (let step = 0; step < 8; step += 1) {
+      await wheel(page, wheelCol, wheelRow, "up");
+    }
+    for (let step = 0; step < 12; step += 1) {
+      await wheel(page, wheelCol, wheelRow, "down");
+    }
+    if (resize && cycle === 1) {
+      await resizeOuter(page, 80, 24);
+    } else if (resize && cycle === 2) {
+      await resizeOuter(page, initialCols, initialRows);
+    }
+    cycle += 1;
+    const grid = await bufferGrid(page);
+    const text = grid.lines.join("\n");
+    const workingCount = grid.lines.filter((line) =>
+      line.includes("Working")
+    ).length;
+    if (workingCount > 1) {
+      throw new Error(
+        `live Codex duplicated its working row ${workingCount} times after scrolling`
+      );
+    }
+    sawWorking ||= workingCount === 1;
+    sawResponseEnd = text.includes(responseEndMarker);
+    await Bun.sleep(75);
+  }
+  if (!sawWorking) {
+    throw new Error("live Codex never displayed a working indicator");
+  }
+  if (!sawResponseEnd) {
+    throw new Error("live Codex did not finish the marked response");
+  }
+
+  // Codex handles Workbench wheel events in its native transcript pager. It
+  // may automatically leave that pager when a down-wheel reaches the live
+  // edge, so only send pager keys while its header remains visible.
+  if (
+    (await bufferGrid(page)).lines.join("\n").includes("T R A N S C R I P T")
+  ) {
+    await send(page, "\x1b[F");
+    await Bun.sleep(100);
+    if (
+      (await bufferGrid(page)).lines.join("\n").includes("T R A N S C R I P T")
+    ) {
+      await send(page, "q");
+    }
+  }
+  await Bun.sleep(250);
+}
+
+function assertVisibleCount(grid: Grid, marker: string, expected: number) {
+  const count = grid.lines.join("\n").split(marker).length - 1;
+  if (count !== expected) {
+    throw new Error(
+      `${JSON.stringify(marker)} appears ${count} times; expected ${expected}`
+    );
+  }
 }
 
 // Claude-Code-shaped agents render inline on the primary buffer without mouse
@@ -645,6 +945,13 @@ async function runPlainShellScenario(page: Page) {
   );
   await waitForConsecutiveShellRows(page, "SHELL-WHEEL", 160, 10_000, true);
   report("real shell bottom-edge output survives scrollback and return");
+
+  await send(
+    page,
+    "clear; for i in $(seq 1 180); do printf '[SHELL-UNICODE-%03d] ● 工作 … ↻\\n' \"$i\"; sleep .005; done\r"
+  );
+  await waitForConsecutiveShellRows(page, "SHELL-UNICODE", 180, 10_000, true);
+  report("real shell Unicode rows preserve wide-cell alignment at the bottom");
 
   // Repeated tmux copy-mode enter/exit cycles over an idle prompt: the
   // user-reported "scroll up and down multiple times" path for panes whose
@@ -1039,6 +1346,23 @@ async function waitForText(page: Page, needle: string, timeoutMs: number) {
   throw new Error(`timed out waiting for ${JSON.stringify(needle)}`);
 }
 
+async function waitForAnyText(
+  page: Page,
+  needles: string[],
+  timeoutMs: number
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const text = (await bufferGrid(page)).lines.join("\n");
+    const match = needles.find((needle) => text.includes(needle));
+    if (match) {
+      return match;
+    }
+    await Bun.sleep(25);
+  }
+  throw new Error(`timed out waiting for any of ${JSON.stringify(needles)}`);
+}
+
 async function waitForOutputSettled(page: Page, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;
   let settledSince = 0;
@@ -1252,11 +1576,14 @@ function parseOptions(args: string[]) {
     idleSamples: 1,
     inline: false,
     keepArtifacts: false,
+    liveCodex: false,
     label: undefined as string | undefined,
     plainOnly: false,
     size: undefined as string | undefined,
     soak: 0,
+    stickyTranscript: false,
     theme: undefined as string | undefined,
+    traceFrames: false,
   };
   for (const arg of args) {
     if (arg === "--idle-only") {
@@ -1267,6 +1594,9 @@ function parseOptions(args: string[]) {
       result.inline = true;
     } else if (arg === "--keep-artifacts") {
       result.keepArtifacts = true;
+    } else if (arg === "--live-codex") {
+      result.liveCodex = true;
+      result.codex = true;
     } else if (arg === "--plain-only") {
       result.plainOnly = true;
     } else if (arg.startsWith("--app-root=")) {
@@ -1281,8 +1611,14 @@ function parseOptions(args: string[]) {
       result.size = arg.slice("--size=".length);
     } else if (arg.startsWith("--soak=")) {
       result.soak = Number(arg.slice("--soak=".length));
+    } else if (arg === "--sticky-transcript") {
+      result.stickyTranscript = true;
+      result.codex = true;
+      result.inline = true;
     } else if (arg.startsWith("--theme=")) {
       result.theme = arg.slice("--theme=".length);
+    } else if (arg === "--trace-frames") {
+      result.traceFrames = true;
     }
   }
   if (
@@ -1295,6 +1631,9 @@ function parseOptions(args: string[]) {
     throw new Error(
       "idle samples must be positive and soak must be non-negative"
     );
+  }
+  if (result.liveCodex && (result.inline || result.plainOnly)) {
+    throw new Error("--live-codex cannot be combined with fixture scenarios");
   }
   return result;
 }

@@ -9,6 +9,7 @@ const initialCols = Number(Bun.env.WORKBENCH_E2E_COLS ?? "120");
 const initialRows = Number(Bun.env.WORKBENCH_E2E_ROWS ?? "40");
 const tracePath = Bun.env.WORKBENCH_E2E_TRACE;
 const chunkSeed = parseOptionalInteger(Bun.env.WORKBENCH_E2E_CHUNK_SEED);
+const liveCodex = Bun.env.WORKBENCH_E2E_LIVE_CODEX === "1";
 const chunkPrefix = "\0WORKBENCH_CHUNK_OUTPUT";
 const resizePrefix = "\0WORKBENCH_RESIZE ";
 let randomState = chunkSeed ?? 0;
@@ -76,11 +77,14 @@ const server = Bun.serve({
         COLORTERM: "truecolor",
         FORCE_COLOR: "1",
         LINES: String(initialRows),
-        PATH: `${join(fixtureRoot, "test-harness")}:${Bun.env.PATH ?? ""}`,
+        PATH: `${join(fixtureRoot, "test-harness", liveCodex ? "live-bin" : "")}:${Bun.env.PATH ?? ""}`,
         SHELL: "/bin/bash",
         TERM: "xterm-256color",
         WORKBENCH_E2E_FIXTURE_ROOT: fixtureRoot,
         WORKBENCH_E2E_AGENT_CODEX: Bun.env.WORKBENCH_E2E_AGENT_CODEX ?? "",
+        WORKBENCH_E2E_CODEX_STICKY_TRANSCRIPT:
+          Bun.env.WORKBENCH_E2E_CODEX_STICKY_TRANSCRIPT ?? "",
+        WORKBENCH_E2E_REAL_CODEX: Bun.env.WORKBENCH_E2E_REAL_CODEX ?? "",
         WORKBENCH_LOG_FILTER: "off",
         WORKBENCH_UI_CWD: workspace,
         WORKBENCH_UI_E2E: "1",

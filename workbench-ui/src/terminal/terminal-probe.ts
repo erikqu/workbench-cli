@@ -10,10 +10,16 @@ export interface TerminalProbe {
   // page at `cols * cellPx.w` matches the monitor's native resolution. Null when
   // the terminal doesn't answer the pixel-geometry queries.
   cellPx: { w: number; h: number } | null;
+  // Cell grid reported directly by the host terminal (CSI 18 t). This can
+  // differ from the local PTY's winsize when an SSH resize notification is
+  // stale or lost.
+  cells: { cols: number; rows: number } | null;
   // Terminal answered the Kitty graphics query positively.
   kitty: boolean;
   // DA1 reply advertised Sixel (attribute "4").
   sixel: boolean;
+  // Host terminal identity returned by XTVERSION, when supported.
+  version: string | null;
 }
 
 // Actively query the terminal for everything we need before the renderer grabs
@@ -47,6 +53,7 @@ export async function probeTerminal(
     let buffer = "";
     let settled = false;
     let kitty = false;
+    let version: string | null = null;
     let aspect: number | null = null;
     let cellPx: { w: number; h: number } | null = null;
     let areaPx: { w: number; h: number } | undefined;
@@ -127,6 +134,11 @@ export async function probeTerminal(
       }
       deriveAspect();
 
+      const versionReply = buffer.match(/\x1bP>\|([^\x1b]*)\x1b\\/);
+      if (versionReply) {
+        version = versionReply[1]?.trim() || null;
+      }
+
       // Kitty graphics: a supporting terminal echoes `_Gi=31;OK`.
       if (/\x1b_Gi=31;OK/.test(buffer)) {
         kitty = true;
@@ -137,11 +149,26 @@ export async function probeTerminal(
       if (/\x1b\[\?[0-9;]+c/.test(buffer)) {
         const sixel = sixelFromBuffer();
         if (kitty || !inMultiplexer()) {
-          return finish({ aspect, cellPx, kitty, sixel });
+          return finish({
+            aspect,
+            cellPx,
+            cells: cells ?? null,
+            kitty,
+            sixel,
+            version,
+          });
         }
         if (!grace) {
           grace = setTimeout(
-            () => finish({ aspect, cellPx, kitty, sixel: sixelFromBuffer() }),
+            () =>
+              finish({
+                aspect,
+                cellPx,
+                cells: cells ?? null,
+                kitty,
+                sixel: sixelFromBuffer(),
+                version,
+              }),
             90
           );
         }
@@ -149,7 +176,15 @@ export async function probeTerminal(
     };
 
     const timer = setTimeout(
-      () => finish({ aspect, cellPx, kitty, sixel: sixelFromBuffer() }),
+      () =>
+        finish({
+          aspect,
+          cellPx,
+          cells: cells ?? null,
+          kitty,
+          sixel: sixelFromBuffer(),
+          version,
+        }),
       timeoutMs
     );
 
@@ -172,6 +207,10 @@ export async function probeTerminal(
       // is silently ignored by terminals without Kitty graphics.
       const kittyQuery = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\";
       stdout.write(wrapForMultiplexer(kittyQuery));
+
+      // Identify the host terminal even across SSH, where TERM_PROGRAM is not
+      // normally forwarded.
+      stdout.write("\x1b[>q");
 
       // DA1 fence (also reports Sixel via attribute "4").
       stdout.write("\x1b[c");
