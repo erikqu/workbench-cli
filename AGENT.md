@@ -175,15 +175,16 @@ with text already present in the agent composer.
   and the composer disappears). Wheel events bubble: never add another
   `onWheel` handler on an ancestor pane or grid, and keep `onMouse` ignoring
   wheel, or gestures reach tmux/the harness more than once.
-- Codex is the deliberate exception to tmux-owned wheel scrolling. Current
-  Codex accepts `tui.alternate_screen=always` but can still render inline under
-  tmux, leaving differential composer/status redraws in pane history. Its
-  `HarnessCommand` sets `wheelNavigation: "transcript"`, so wheel-up opens
-  Codex's native Ctrl+T transcript pager and sends row-level Up/Down keys;
-  balanced wheel-down closes the pager and returns to the composer. Do not map
-  wheel input directly to PageUp/PageDown (the main composer does not scroll),
-  and do not enter tmux copy mode. Keep ordinary shell and other harness wheel
-  behavior intact.
+- Codex uses native SGR wheel events whenever its TUI enables mouse tracking.
+  Older already-running Codex panes can remain inline after an update, leaving
+  differential composer/status redraws in pane history with no mouse mode. Its
+  `HarnessCommand` therefore keeps `wheelNavigation: "transcript"` as a runtime
+  fallback only: mouse-aware panes receive native wheel reports, while inline
+  panes open Codex's Ctrl+T transcript pager and receive row-level Up/Down keys.
+  Balanced wheel-down closes the fallback pager and returns to the composer.
+  Do not map wheel input directly to PageUp/PageDown (the main composer does not
+  scroll), and do not enter tmux copy mode. Keep ordinary shell and other
+  harness wheel behavior intact.
 - Focus harness/terminal panes from the embedded terminal's `onMouse` callback,
   not only an ancestor `onMouseDown`; selection handling can consume the event
   before it bubbles. In a focused harness, Ctrl+C copies an active Silvery
@@ -215,8 +216,9 @@ with text already present in the agent composer.
   burst, scroll up and naturally back down while output continues, and run with
   seeded ANSI fragmentation (`--chunk-seed=N`). Keep `convertEol: false` in the
   outer xterm fixture so it has real-terminal LF semantics.
-- `bun run test:terminal` runs three passes: the default alt-screen fixture,
-  generic `--inline`, and `--inline --codex`. The generic inline fixture renders
+- `bun run test:terminal` runs the default alt-screen fixture, a mouse-aware
+  Codex alt-screen fixture, generic `--inline`, and `--inline --codex` (plus the
+  sticky transcript variant). The generic inline fixture renders
   Claude-Code-style (primary
   buffer, no mouse tracking, Ink-style bottom-block repaint, history in tmux
   scrollback) so wheel gestures exercise tmux copy-mode enter/exit. The inline

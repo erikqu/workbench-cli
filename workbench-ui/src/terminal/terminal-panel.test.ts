@@ -250,12 +250,11 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(writes).toEqual(["\x1b[<64;1;1M", "\x1b[<64;1;1M"]);
   });
 
-  test("routes wheel scrolling through an application's transcript", async () => {
+  test("uses the transcript fallback when an application is not tracking the mouse", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24, {
       wheelNavigation: "transcript",
     });
     const writes = capturePty(panel);
-    await feed(panel, "\x1b[?1000h\x1b[?1006h");
 
     expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
     expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
@@ -275,6 +274,18 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(writes.slice(-2)).toEqual([`\x14${"\x1b[A".repeat(3)}`, "\x14"]);
     await feed(panel, "\x1b[?1049l");
     expect(writes.at(-1)).toBe("x");
+  });
+
+  test("honors native wheel tracking before the transcript fallback", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+    await feed(panel, "\x1b[?1049h\x1b[?1000h\x1b[?1006h");
+
+    expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    expect(writes).toEqual(["\x1b[<64;5;10M".repeat(2), "\x1b[<65;5;10M"]);
   });
 
   test("returns to the composer when net wheel intent reaches the live edge", async () => {

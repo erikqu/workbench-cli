@@ -276,7 +276,11 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   } else {
     await send(page, "\x1b[104;5u");
     await waitForText(page, "Switch CLI harness", 3000);
-    await waitForText(page, "Cursor  refresh", 3000);
+    await waitForText(
+      page,
+      `${options.codex ? "Codex" : "Cursor"}  refresh`,
+      3000
+    );
     await send(page, "\r");
     location = await waitForReference(
       page,

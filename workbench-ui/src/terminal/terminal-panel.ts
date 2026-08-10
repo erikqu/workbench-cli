@@ -288,6 +288,7 @@ let revisionCounter = 0;
 let tracePanelCounter = 0;
 const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
 const TRANSCRIPT_WHEEL_SETTLE_MS = 100;
+const TMUX_MOUSE_MODE_CACHE_MS = 100;
 
 export class TerminalPanel implements TerminalReadable {
   private readonly traceId = ++tracePanelCounter;
@@ -307,6 +308,7 @@ export class TerminalPanel implements TerminalReadable {
   private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
   private resizeGeneration = 0;
   private resizeScheduled = false;
+  private tmuxNativeMouseCache?: { active: boolean; at: number };
   private pendingResize?: {
     cols: number;
     generation: number;
@@ -717,7 +719,18 @@ export class TerminalPanel implements TerminalReadable {
     direction: "up" | "down",
     count = 1
   ): boolean {
-    if (this.options.wheelNavigation === "transcript") {
+    // Prefer the application's native mouse protocol when an alternate-screen
+    // TUI is active. tmux itself advertises mouse tracking even when its child
+    // is an older inline Codex, so mouse mode alone cannot distinguish them.
+    // Once the inline transcript fallback opens, keep routing through it until
+    // it closes even though that overlay temporarily enters the alternate
+    // screen.
+    if (
+      this.options.wheelNavigation === "transcript" &&
+      (this.transcriptWheelOpen ||
+        this.transcriptWheelClosing ||
+        !this.childUsesNativeMouse())
+    ) {
       const steps = Math.max(1, Math.floor(count));
       if (this.transcriptWheelClosing) {
         return true;
@@ -787,6 +800,43 @@ export class TerminalPanel implements TerminalReadable {
     const report = `\x1b[<${button};${Math.max(1, Math.floor(col) + 1)};${Math.max(1, Math.floor(row) + 1)}M`;
     this.writeToChild(report.repeat(steps));
     return true;
+  }
+
+  private childUsesNativeMouse(): boolean {
+    const persist = this.options.persist;
+    if (!persist) {
+      return this.usesAlternateBuffer() && this.hasMouseTracking();
+    }
+    const now = performance.now();
+    if (
+      this.tmuxNativeMouseCache &&
+      now - this.tmuxNativeMouseCache.at < TMUX_MOUSE_MODE_CACHE_MS
+    ) {
+      return this.tmuxNativeMouseCache.active;
+    }
+    try {
+      const result = Bun.spawnSync(
+        [
+          "tmux",
+          "-S",
+          persist.socketPath,
+          "display-message",
+          "-p",
+          "-t",
+          persist.name,
+          "#{alternate_on} #{mouse_any_flag}",
+        ],
+        { stderr: "ignore", stdout: "pipe" }
+      );
+      if (result.exitCode === 0) {
+        const active = new TextDecoder().decode(result.stdout).trim() === "1 1";
+        this.tmuxNativeMouseCache = { active, at: now };
+        return active;
+      }
+    } catch {
+      // Fall through to xterm's view when the private tmux server disappears.
+    }
+    return this.usesAlternateBuffer() && this.hasMouseTracking();
   }
 
   private exitTmuxCopyModeIfNeeded() {
