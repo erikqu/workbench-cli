@@ -452,13 +452,12 @@ function SessionRow({
   );
 }
 
-const SESSION_FLOW_SEGMENT_WIDTH = 5;
 const SESSION_FLOW_INTERVAL_MS = 100;
 const SESSION_FLOW_STRENGTHS = [1, 0.72, 0.48, 0.28, 0.12] as const;
 
 function RunningSessionFlow({ width }: { width: number }) {
   const [step, setStep] = useState(0);
-  const point = sessionFlowOffset(step, width, 1);
+  const point = sessionFlowOffset(step, width);
 
   useEffect(() => {
     const interval = setInterval(
@@ -509,15 +508,11 @@ function mixHexColors(low: string, high: string, strength: number): string {
   return `#${channel(0)}${channel(1)}${channel(2)}`;
 }
 
-export function sessionFlowOffset(
-  step: number,
-  width: number,
-  segmentWidth = SESSION_FLOW_SEGMENT_WIDTH
-): number {
-  const travel = Math.max(
-    0,
-    Math.floor(width) - Math.max(1, Math.floor(segmentWidth))
-  );
+export function sessionFlowOffset(step: number, width: number): number {
+  // The bright point itself travels edge-to-edge. Its fading tail is clipped
+  // naturally by sessionFlowStrengths(), so subtracting the tail width here
+  // would freeze short rails (notably rows narrowed by diff badges).
+  const travel = Math.max(0, Math.floor(width) - 1);
   if (travel === 0) {
     return 0;
   }

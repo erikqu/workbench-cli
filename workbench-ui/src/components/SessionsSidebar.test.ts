@@ -46,14 +46,16 @@ describe("sessionCloseTargets", () => {
 });
 
 describe("sessionFlowOffset", () => {
-  test("moves to the far edge and then reverses", () => {
+  test("moves the bright point across the full rail and then reverses", () => {
     expect(
-      Array.from({ length: 9 }, (_, step) => sessionFlowOffset(step, 9, 5))
-    ).toEqual([0, 1, 2, 3, 4, 3, 2, 1, 0]);
+      Array.from({ length: 17 }, (_, step) => sessionFlowOffset(step, 9))
+    ).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
   });
 
-  test("stays at the start when the segment fills the rail", () => {
-    expect(sessionFlowOffset(100, 3, 5)).toBe(0);
+  test("still animates when diff badges shorten the rail", () => {
+    expect(
+      Array.from({ length: 9 }, (_, step) => sessionFlowOffset(step, 5))
+    ).toEqual([0, 1, 2, 3, 4, 3, 2, 1, 0]);
   });
 
   test("fades symmetrically away from the moving point", () => {
