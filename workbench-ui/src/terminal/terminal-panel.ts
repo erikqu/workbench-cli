@@ -341,6 +341,12 @@ let tracePanelCounter = 0;
 const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
 const TRANSCRIPT_WHEEL_SETTLE_MS = 100;
 const TMUX_MOUSE_MODE_CACHE_MS = 100;
+const MAX_TRANSCRIPT_ROWS_PER_BURST = 12;
+
+function transcriptWheelKeys(direction: "up" | "down", steps: number): string {
+  const rows = Math.min(MAX_TRANSCRIPT_ROWS_PER_BURST, steps * 3);
+  return (direction === "up" ? "\x1b[A" : "\x1b[B").repeat(rows);
+}
 
 export class TerminalPanel implements TerminalReadable {
   private readonly traceId = ++tracePanelCounter;
@@ -788,7 +794,6 @@ export class TerminalPanel implements TerminalReadable {
       if (this.transcriptWheelClosing) {
         return true;
       }
-      const lines = steps * 3;
       let data = "";
       if (direction === "up") {
         this.transcriptWheelMovingDown = false;
@@ -798,7 +803,7 @@ export class TerminalPanel implements TerminalReadable {
           data += "\x14";
         }
         this.transcriptWheelOpen = true;
-        data += "\x1b[A".repeat(lines);
+        data += transcriptWheelKeys("up", steps);
       } else if (this.transcriptWheelOpen) {
         this.transcriptWheelMovingDown = true;
         this.transcriptWheelDebt = Math.max(
@@ -808,7 +813,7 @@ export class TerminalPanel implements TerminalReadable {
         if (this.transcriptWheelDebt === 0 || this.transcriptAtBottom()) {
           this.scheduleTranscriptWheelClose(true);
         } else {
-          data = "\x1b[B".repeat(lines);
+          data = transcriptWheelKeys("down", steps);
           this.scheduleTranscriptWheelClose(true);
         }
       }

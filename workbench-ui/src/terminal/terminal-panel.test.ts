@@ -276,6 +276,16 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(writes.at(-1)).toBe("x");
   });
 
+  test("bounds large transcript wheel bursts to row operations", () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 26)).toBe(true);
+    expect(writes).toEqual([`\x14${"\x1b[A".repeat(12)}`]);
+  });
+
   test("honors native wheel tracking before the transcript fallback", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24, {
       wheelNavigation: "transcript",

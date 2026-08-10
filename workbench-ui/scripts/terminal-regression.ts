@@ -1239,7 +1239,18 @@ async function waitForTranscriptGrid(page: Page, timeoutMs: number) {
     const grid = await bufferGrid(page);
     const text = grid.lines.join("\n");
     const markers = text.match(/\[H\d{3}\]/g) ?? [];
-    if (text.includes("T R A N S C R I P T") && new Set(markers).size >= 3) {
+    const liveBlockVisible = [
+      "[META]",
+      "[CMP0]",
+      "[CMP1]",
+      "[CMP2]",
+      "[CMP3]",
+    ].some((marker) => text.includes(marker));
+    if (
+      text.includes("T R A N S C R I P T") &&
+      !liveBlockVisible &&
+      new Set(markers).size >= 3
+    ) {
       return grid;
     }
     await Bun.sleep(25);

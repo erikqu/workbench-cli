@@ -181,6 +181,9 @@ with text already present in the agent composer.
   `HarnessCommand` therefore keeps `wheelNavigation: "transcript"` as a runtime
   fallback only: mouse-aware panes receive native wheel reports, while inline
   panes open Codex's Ctrl+T transcript pager and receive row-level Up/Down keys.
+  Cap each coalesced burst so one fast flick cannot make Codex render hundreds
+  of intermediate frames; do not use PageUp/PageDown because current Codex
+  transcript layouts can jump into an unpainted blank region.
   Balanced wheel-down closes the fallback pager and returns to the composer.
   Do not map wheel input directly to PageUp/PageDown (the main composer does not
   scroll), and do not enter tmux copy mode. Keep ordinary shell and other
