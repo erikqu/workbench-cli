@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IBufferCell } from "@xterm/headless";
@@ -99,6 +100,57 @@ function ensureTmuxConf(): string {
     tmuxConfPath = path;
   }
   return tmuxConfPath;
+}
+
+function interactiveShellCommand(shell: string, cwd: string): string {
+  const shellName = shell.split("/").pop() ?? shell;
+  const home = Bun.env.HOME ?? ".";
+  const digest = createHash("sha1").update(`${shell}\0${cwd}`).digest("hex");
+  const initRoot = join(home, ".workbench", "shell-init", digest);
+  try {
+    mkdirSync(initRoot, { recursive: true });
+    if (shellName === "bash") {
+      const rcPath = join(initRoot, "bashrc");
+      writeFileSync(
+        rcPath,
+        [
+          "# Workbench terminal initialization: preserve login setup, then pin cwd.",
+          'if [ -r "$HOME/.bash_profile" ]; then',
+          '  . "$HOME/.bash_profile"',
+          'elif [ -r "$HOME/.bash_login" ]; then',
+          '  . "$HOME/.bash_login"',
+          'elif [ -r "$HOME/.profile" ]; then',
+          '  . "$HOME/.profile"',
+          "fi",
+          `builtin cd -- ${shellQuote(cwd)}`,
+          "",
+        ].join("\n"),
+        { mode: 0o600 }
+      );
+      return `${shellQuote(shell)} --rcfile ${shellQuote(rcPath)} -i`;
+    }
+    if (shellName === "zsh") {
+      const rcPath = join(initRoot, ".zshrc");
+      writeFileSync(
+        rcPath,
+        [
+          "# Workbench terminal initialization: preserve user setup, then pin cwd.",
+          'if [[ -r "$HOME/.zshrc" ]]; then',
+          '  source "$HOME/.zshrc"',
+          "fi",
+          `builtin cd -- ${shellQuote(cwd)}`,
+          "",
+        ].join("\n"),
+        { mode: 0o600 }
+      );
+      return `ZDOTDIR=${shellQuote(initRoot)} ${shellQuote(shell)} -i`;
+    }
+  } catch {
+    // If the wrapper cannot be created, tmux -c still gives ordinary shells
+    // the correct initial directory. Only startup files that cd elsewhere can
+    // override that fallback.
+  }
+  return `${shellQuote(shell)} -l`;
 }
 
 // macOS folder privacy (TCC) authorizes the private tmux server, not the
@@ -453,7 +505,8 @@ export class TerminalPanel implements TerminalReadable {
     const cols = this.terminal.cols;
     const rows = this.terminal.rows;
     const shell = Bun.env.SHELL ?? "/bin/bash";
-    const inner = this.options.command ?? `${shell} -l`;
+    const inner =
+      this.options.command ?? interactiveShellCommand(shell, this.cwd);
 
     // Build the command the shell runs inside the PTY. `exec` replaces the
     // shell so signals and exit codes pass straight through to the child / tmux

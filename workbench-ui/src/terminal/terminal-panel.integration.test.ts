@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +36,38 @@ afterAll(() => {
 });
 
 describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
+  test("interactive shell startup cannot leave the workspace", async () => {
+    const workspace = join(suiteRoot, "shell-workspace");
+    const startupDirectory = join(suiteRoot, "shell-startup-directory");
+    mkdirSync(workspace);
+    mkdirSync(startupDirectory);
+    writeFileSync(join(suiteRoot, ".bash_profile"), 'source "$HOME/.bashrc"\n');
+    writeFileSync(
+      join(suiteRoot, ".bashrc"),
+      `cd ${shellQuote(startupDirectory)}\n`
+    );
+    const socketPath = join(suiteRoot, "interactive-cwd.sock");
+    const persist = { name: "interactive_cwd_test", socketPath };
+    const previousShell = Bun.env.SHELL;
+    Bun.env.SHELL = "/bin/bash";
+    const panel = new TerminalPanel(workspace, 80, 24, { persist });
+
+    try {
+      panel.start();
+      expect(await waitForPanePath(socketPath, persist.name)).toBe(
+        realpathSync(workspace)
+      );
+    } finally {
+      if (previousShell === undefined) {
+        delete Bun.env.SHELL;
+      } else {
+        Bun.env.SHELL = previousShell;
+      }
+      panel.kill();
+      killServer(socketPath);
+    }
+  });
+
   test("starts a new pane in its requested workspace directory", async () => {
     const workspace = join(suiteRoot, "workspace 'quoted'");
     mkdirSync(workspace);
@@ -294,6 +327,33 @@ async function waitForFile(path: string) {
     await Bun.sleep(25);
   }
   throw new Error(`fixture did not write ${path}`);
+}
+
+async function waitForPanePath(socketPath: string, sessionName: string) {
+  let current = "";
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const result = Bun.spawnSync(
+      [
+        "tmux",
+        "-S",
+        socketPath,
+        "display-message",
+        "-p",
+        "-t",
+        sessionName,
+        "#{pane_current_path}",
+      ],
+      { stderr: "ignore", stdout: "pipe" }
+    );
+    if (result.exitCode === 0) {
+      current = new TextDecoder().decode(result.stdout).trim();
+      if (current) {
+        return current;
+      }
+    }
+    await Bun.sleep(20);
+  }
+  return current;
 }
 
 function clientCount(socketPath: string, session: string): number {
