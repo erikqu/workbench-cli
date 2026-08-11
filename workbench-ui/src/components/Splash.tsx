@@ -1,18 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Box, Text, useBoxRectDangerously } from "silvery";
 import {
-  buildSplashArt,
+  SPLASH_IMAGE_PATH,
+  SPLASH_MAX_COLS,
   SPLASH_VERSION,
-  type SplashArt,
 } from "../media/splash";
 import { colors } from "../ui/theme";
 import type { WorkbenchActions } from "./types";
+import { MeasuredImageContent } from "./viewers/ImageViewer";
 
 // Rows reserved below the art for the version/hint banner.
 const BANNER_ROWS = 4;
 
 // How long the splash lingers before it dismisses itself.
-const SPLASH_DURATION_MS = 2000;
+const SPLASH_DURATION_MS =
+  Bun.env.WORKBENCH_CAPTURE_SPLASH === "1" ? 10_000 : 2000;
 
 export function Splash({ actions }: { actions: WorkbenchActions }) {
   // Auto-dismiss after a short delay; a key/click still dismisses it early.
@@ -50,43 +52,25 @@ export function Splash({ actions }: { actions: WorkbenchActions }) {
 
 function SplashArtwork() {
   const rect = useBoxRectDangerously();
-  const availCols = Math.max(1, Math.floor(rect.width) - 4);
+  const availCols = Math.max(
+    1,
+    Math.min(SPLASH_MAX_COLS, Math.floor(rect.width) - 4)
+  );
   const availRows = Math.max(1, Math.floor(rect.height) - BANNER_ROWS - 2);
-  const [art, setArt] = useState<SplashArt | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    buildSplashArt(availCols, availRows)
-      .then((result) => {
-        if (!cancelled) {
-          setArt(result);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setArt(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [availCols, availRows]);
-
-  if (!art) {
-    return <Text color={colors.dim}>Loading...</Text>;
-  }
 
   return (
-    <Box alignItems="center" flexDirection="column" flexShrink={0}>
-      {art.rows.map((row, y) => (
-        <Box flexDirection="row" flexShrink={0} height={1} key={y}>
-          {row.map((run, x) => (
-            <Text bold={run.bold} color={run.color} key={x} wrap={false}>
-              {run.text}
-            </Text>
-          ))}
-        </Box>
-      ))}
+    <Box
+      alignItems="center"
+      flexShrink={0}
+      height={availRows}
+      justifyContent="center"
+      width={availCols}
+    >
+      <MeasuredImageContent
+        path={SPLASH_IMAGE_PATH}
+        renderWhenSuppressed
+        zIndex={100}
+      />
     </Box>
   );
 }

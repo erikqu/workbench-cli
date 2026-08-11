@@ -59,7 +59,15 @@ export function ImageViewer({
   );
 }
 
-export function MeasuredImageContent({ path }: { path: string }) {
+export function MeasuredImageContent({
+  path,
+  renderWhenSuppressed = false,
+  zIndex = 10,
+}: {
+  path: string;
+  renderWhenSuppressed?: boolean;
+  zIndex?: number;
+}) {
   const rect = useBoxRectDangerously();
   const cols = Math.max(1, Math.floor(rect.width));
   const rows = Math.max(1, Math.floor(rect.height));
@@ -98,7 +106,7 @@ export function MeasuredImageContent({ path }: { path: string }) {
 
   // Hold off transmitting graphics while suppressed (e.g. under the splash) so
   // the emulator's image compositor doesn't paint over the overlay.
-  if (suppressed) {
+  if (suppressed && !renderWhenSuppressed) {
     return <Text color={colors.dim}> </Text>;
   }
   if (!placement) {
@@ -117,7 +125,7 @@ export function MeasuredImageContent({ path }: { path: string }) {
       protocol="auto"
       src={placement.src}
       width={placement.cols}
-      zIndex={10}
+      zIndex={zIndex}
     />
   );
 }

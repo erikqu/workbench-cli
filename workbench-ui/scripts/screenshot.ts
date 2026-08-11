@@ -48,6 +48,28 @@ try {
       timeout: 8000,
     }
   );
+  if (Bun.env.WORKBENCH_CAPTURE_SPLASH === "1") {
+    await page
+      .waitForFunction(
+        () => {
+          const text = (window as any).__bufferText();
+          return (
+            text.includes("Starting up...") &&
+            (text.match(/▀/g)?.length ?? 0) > 100
+          );
+        },
+        undefined,
+        { timeout: 1500 }
+      )
+      .catch(() => undefined);
+    report(
+      "splash renders the park-bench image instead of binary glyphs",
+      await splashUsesImageArt(page)
+    );
+    await page.screenshot({
+      path: join(screenshotDir, "workbench-splash.png"),
+    });
+  }
   // Give the active session's workbench chat PTY time to spawn and draw.
   await page.waitForTimeout(2500);
 
@@ -490,6 +512,16 @@ async function send(page: Page, data: string) {
 
 async function bufferText(page: Page): Promise<string> {
   return page.evaluate(() => (window as any).__bufferText());
+}
+
+async function splashUsesImageArt(page: Page): Promise<boolean> {
+  const text = await bufferText(page);
+  const halfBlocks = text.match(/▀/g)?.length ?? 0;
+  return (
+    text.includes("Starting up...") &&
+    halfBlocks > 100 &&
+    !/[01]{20}/.test(text)
+  );
 }
 
 async function clipboardState(
