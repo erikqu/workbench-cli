@@ -72,8 +72,13 @@ info "Linked $BIN_DIR/work -> $INSTALL_DIR/bin/workbench-cli"
 # Friendly checks for the external tools the workbench drives.
 command -v tmux >/dev/null 2>&1 ||
   warn "tmux not found — persistent agent/terminal panes need it."
-command -v claude >/dev/null 2>&1 ||
-  warn "no 'claude' on PATH (the default harness); install an agent CLI or run with --harness <id>."
+if ! command -v codex >/dev/null 2>&1 &&
+  ! command -v cursor-agent >/dev/null 2>&1 &&
+  ! command -v claude >/dev/null 2>&1 &&
+  ! command -v gemini >/dev/null 2>&1 &&
+  ! command -v opencode >/dev/null 2>&1; then
+  warn "no supported coding-agent CLI found on PATH; install one or run with --harness <id>."
+fi
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

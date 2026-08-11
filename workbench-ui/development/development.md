@@ -1,23 +1,41 @@
 # Workbench CLI Development
 
-Developer notes for working on the Bun + React + Silvery TUI in `workbench-ui/`.
+Developer guide for the Bun + React + Silvery TUI in `workbench-ui/`.
 
-## Requirements
+## Prerequisites
 
-- [Bun](https://bun.sh) >= 1.3.5
+- Bun >= 1.3
 - `tmux`
-- At least one coding-agent CLI on your `PATH` (`claude` is the default)
-- [Ghostty](https://ghostty.org/) for the supported terminal experience. Other
-  terminals are experimental; they may launch, but rendering, images, cursor
-  behavior, mouse input, or tmux passthrough may differ.
+- Ghostty for the supported terminal target
+- At least one of `codex`, `cursor-agent`, `claude`, `gemini`, or `opencode`
 
-Optional viewer tools:
+Optional viewer commands:
 
-- `ffmpeg` / `ffprobe` for video playback
+- `ffmpeg` and `ffprobe` for video
 - `mmdc` for Mermaid diagrams
-- `pdftoppm` / `pdfinfo` for PDF rendering
+- `pdftoppm` and `pdfinfo` for PDFs
 
-## Development Commands
+## Setup and Run
+
+```bash
+cd workbench-ui
+bun install
+bun run start
+```
+
+To exercise the real launcher from the repository root:
+
+```bash
+./bin/workbench-cli .
+./bin/workbench-cli . --harness codex
+./bin/workbench-cli . --hot
+```
+
+The short installed alias is `work`. Hot mode notices when the current
+directory is inside a development checkout and runs that checkout when its
+dependencies are installed. `WORKBENCH_CLI_HOT_ROOT` overrides detection.
+
+## Validation
 
 Run from `workbench-ui/`:
 
@@ -25,64 +43,121 @@ Run from `workbench-ui/`:
 bun run typecheck
 bun test
 bun run check
-bun run fix
 bun run screenshot
+bun run test:terminal
 ```
 
-The screenshot suite drives the real app in a headless-browser PTY and doubles as
-a golden-master regression check. Run it pointed at the package root:
+Use the checks proportionally:
+
+- `typecheck`, `test`, and `check` are the normal baseline.
+- `screenshot` drives the real Workbench through a browser PTY and checks UI
+  interaction, layout, selection, previews, and resizing.
+- `test:terminal` is required for changes to PTY output, cursor handling,
+  resizing, scrolling, tmux, terminal ownership, or frame rendering. It runs
+  alternate-screen, inline, Codex-style, sticky-transcript, and real-shell
+  scenarios with fragmented ANSI input.
+
+The screenshot runner chooses the package root as its fixture workspace and
+writes ignored artifacts to `artifacts/screenshots/`.
+
+## Runtime and Harness Selection
 
 ```bash
-WORKBENCH_UI_CWD="$PWD" bun run screenshot
+work [path] [--harness <id>] [--hot] [--terminal-trace]
 ```
 
-## Runtime Options
+- The path defaults to the current directory.
+- Missing paths entered through New Workspace are created recursively.
+- `--harness` and `--agent` accept `codex`, `cursor`, `claude`, `gemini`, or
+  `opencode`.
+- Automatic selection tries Codex, Cursor, then Claude Code, and falls back to
+  Codex.
+- `--hot`, `--dev`, and `--watch` are aliases for serialized process restart.
+- `--terminal-trace` enables metadata-only terminal diagnostics.
+
+Re-selecting the currently active harness is an intentional restart: Workbench
+kills that harness's private tmux session and recreates it in the same tab.
+The `↻` control in the harness header performs the same action.
+
+## Persistence and Process Ownership
+
+Workbench state lives at `~/.workbench/workbench-ui-state.json`. Harnesses and
+terminals use named sessions on the private socket
+`~/.workbench/tmux-ui.sock`.
+
+- Shutdown and hot reload save state and detach panes.
+- Closing a harness, terminal, or workspace kills its backing tmux session.
+- Every workspace, harness, and terminal has a stable persisted ID.
+- Each workspace starts with one harness and one shell terminal.
+- Shell terminals are normalized to their owning workspace cwd when restored.
+
+Never use or clean the user's default tmux server as part of Workbench tests.
+
+## Hot Reload Contract
+
+`scripts/hot-runner.ts` owns hot reload. It sends `SIGTERM`, waits for Workbench
+to persist state, detach panes, and restore the host terminal, and only then
+starts the replacement process.
+
+Do not replace this with Bun's native `--watch` or in-process hot replacement.
+Those paths can skip shutdown and leave multiple renderers or PTY owners
+fighting over the same session.
+
+## Terminal Debugging
+
+Start with the deterministic regression suite. Do not apply speculative fixes
+for terminal corruption while it is green.
+
+If the fixture cannot reproduce a live issue:
 
 ```bash
-work [path] [--harness <id>] [--hot]
+work --terminal-trace
 ```
 
-- `path` opens a workspace directory (defaults to the current directory).
-- `--harness <id>` / `--agent <id>` picks the default agent: `claude`,
-  `gemini`, `codex`, `opencode`, or `cursor`.
-- `--hot` (aliases `--dev`, `--watch`) restarts the UI on source changes while
-  tmux panes reattach.
-
-`workbench-cli` is kept as the long-form command name; `work` is the shorter
-install alias.
+The default trace is `~/.workbench/terminal-trace.ndjson`. Set
+`WORKBENCH_TERMINAL_TRACE=/path/to/file.ndjson` for another location. Traces
+contain dimensions, buffer positions, opaque row identifiers, byte counts, and
+control-sequence counts—not terminal text or raw ANSI.
 
 ## Environment Variables
 
 | Variable | Purpose |
 | --- | --- |
-| `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID` | Default harness id |
-| `WORKBENCH_UI_CWD` | Starting workspace directory |
-| `WORKBENCH_UI_THEME` | Initial theme name |
-| `WORKBENCH_UI_IMAGE_PROTOCOL` | Force image rendering: `kitty`, `sixel`, or `halfblock` |
-| `WORKBENCH_UI_CELL_ASPECT` | Override terminal cell aspect ratio for image sizing |
-| `WORKBENCH_UI_PRESERVE_DIM` | Set to `1` to preserve SGR dim in harness and terminal panes |
-| `WORKBENCH_SCREENSHOT_QUERY` | Query string passed to the browser screenshot harness, e.g. `fontSize=16&lineHeight=1.15` |
-| `WORKBENCH_CLI_HOT` | Set to `1` to enable hot reload |
+| `WORKBENCH_UI_CWD` | Starting workspace |
+| `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID` | Initial harness |
+| `WORKBENCH_UI_THEME` | Initial theme |
+| `WORKBENCH_UI_IMAGE_PROTOCOL` | `kitty`, `sixel`, or `halfblock` |
+| `WORKBENCH_UI_CELL_ASPECT` | Image cell-aspect override |
+| `WORKBENCH_UI_PRESERVE_DIM=1` | Preserve SGR dim |
+| `WORKBENCH_CLI_HOT=1` | Enable hot mode |
+| `WORKBENCH_CLI_HOT_ROOT` | Explicit development checkout |
+| `WORKBENCH_TERMINAL_TRACE` | `1` or a custom trace path |
+| `WORKBENCH_SCREENSHOT_QUERY` | Browser fixture options |
 
-Persistent state is saved under `~/.workbench`, and the private tmux server uses
-the socket `~/.workbench/tmux-ui.sock`.
-
-## Architecture
-
-`bin/workbench-cli` is a thin bash launcher that execs the Bun app in
-`workbench-ui/`. The app is organized into purpose folders under
-`workbench-ui/src/`:
+## Source Guide
 
 ```text
-app/         the controller (lifecycle, actions, diff polling, render throttle)
-state/       app state, session/harness models, persistence
-terminal/    PTY panels (@xterm/headless), terminal probing, cell sizing
-media/       image/Kitty/Sixel pipeline, mermaid, pdf, video, splash
-ui/          theme tokens and toasts
-text/        regex syntax highlighting, diffing, file-tree, editor model
-components/  React/Silvery views (Workbench, sidebar, tabs, dialogs)
-  viewers/   per-kind file viewers (markdown, image, pdf, video, text)
+src/index.ts              startup and terminal capability probing
+src/app/                  controller, lifecycle, persistence scheduling
+src/state/                state creation, restoration, harness definitions
+src/terminal/             PTY/tmux/xterm, scrolling, cursor, trace/probe
+src/components/           shell, tabs, sidebars, dialogs, viewers
+src/components/viewers/   Markdown, text, image, PDF, and video surfaces
+src/media/                decoding and terminal image protocols
+src/text/                 file tree, syntax, diffs, editor data
+src/ui/                   theme, pane sizing, toasts
+scripts/                  hot runner, screenshots, terminal regression
+test-harness/             deterministic coding-agent and browser fixtures
 ```
 
-See the root [`AGENT.md`](../../AGENT.md) for deeper architecture, performance,
-and input-handling notes.
+The three central files are `app/WorkbenchApp.tsx`,
+`components/Workbench.tsx`, and `terminal/terminal-panel.ts`. Consult the root
+[`AGENT.md`](../../AGENT.md) before changing their lifecycle, input, or rendering
+contracts.
+
+## Release Process
+
+Releases are tag-driven. After the version in `package.json` is bumped and the
+commit is on `main`, push a `v<version>` tag. `.github/workflows/release.yml`
+runs typechecking/tests, packages the source tarball, and creates the GitHub
+Release.

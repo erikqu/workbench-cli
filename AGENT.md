@@ -22,18 +22,19 @@ workbench-cli/
     │   ├── ui/             theme.ts, toast.tsx
     │   ├── text/           syntax.ts, diff.ts, editor.ts, file-tree.ts
     │   └── components/     Workbench.tsx, sidebar/tabs/dialogs + viewers/
-    ├── scripts/        screenshot.ts (Playwright harness) + transient probes
-    ├── test-harness/   harness server + fixtures used by the screenshot tests
+    ├── scripts/        hot runner, screenshot suite, terminal regression driver
+    ├── test-harness/   deterministic agent, shell, browser, and media fixtures
     ├── biome.jsonc     Ultracite/Biome config
     └── assets/         splash art, etc.
 ```
 
 ## How it runs
 
-`bin/workbench-cli` execs `bun workbench-ui/src/index.ts`. The default harness is
-**Claude Code** (`claude` on PATH); by default it resumes the most recent
-conversation for the session's cwd (`claude --continue`) and falls back to a
-fresh `claude` when there is nothing to resume.
+`bin/workbench-cli` execs `bun workbench-ui/src/index.ts`. For a new installation
+the harness preference is **Codex → Cursor → Claude Code**, choosing the first
+CLI found on `PATH` and falling back to Codex. Each harness defines its own
+resume/fallback command in `state/harnesses.ts`; Codex and Claude both try to
+resume the most recent conversation for the workspace before starting fresh.
 
 `src/index.ts` startup order: parse args (`--harness`/`--agent`, positional
 cwd) → actively probe the terminal (`probeTerminal` in `terminal/terminal-probe.ts`,
@@ -60,6 +61,7 @@ bun test              # unit tests
 bun run check         # Ultracite/Biome lint + format check
 bun run fix           # apply formatting + safe fixes
 bun run screenshot    # Playwright screenshot + interaction suite
+bun run test:terminal # full PTY/tmux/rendering regression matrix
 ```
 
 ## Hot reload
@@ -123,6 +125,13 @@ with text already present in the agent composer.
 
 ## Overlay and close-control behavior
 
+- The sessions pane has a framed header, a full-width New Workspace action, and
+  three-row outlined cards separated by one blank row. Session names and
+  Option+Shift number hints live inside the cards; do not reintroduce a topic
+  row or footer shortcut legend. Selected and hovered cards use themed surfaces.
+- `? Help` opens `SessionsHelpDialog`; enhanced-keyboard terminals also toggle
+  it with Ctrl+?. Never interpret legacy DEL as Help because that breaks
+  Backspace. Keep the clickable header action as the universal fallback.
 - Tab and session close buttons stay visible, use a three-cell hit target with
   a bold multiplication sign, and use the destructive/inverted color only on
   hover.
@@ -210,7 +219,9 @@ with text already present in the agent composer.
   `key.meta && key.shift && input==="1"` are reliable across terminals. Handle
   this **before** the terminal/harness focus branches so it works while a CLI is
   focused (agent CLIs never bind Alt+digit). The matching index badges live in
-  `MainTabs.tsx` (tabs) and `SessionsSidebar.tsx` (rows + `⌥`/`⌥⇧` legend).
+  `MainTabs.tsx` (tabs) and `SessionsSidebar.tsx` (session cards). The Help
+  overlay is the consolidated shortcut reference; there is no sidebar footer
+  legend.
 
 ## Terminal-corruption workflow
 
@@ -308,33 +319,43 @@ the rationale if you touch them):
 ## Harnesses
 
 Agent backends are defined in `src/state/harnesses.ts`: `cursor`, `claude`,
-`gemini`, `codex`, `opencode`, ... Each maps to a `command()` spawned in the
-session's cwd. New users default to whichever of Cursor or Claude Code is on
-`PATH` (`defaultHarnessId()` probes each spec's `bin`, Cursor preferred); pick
-another with `--harness <id>` / `--agent <id>` or `WORKBENCH_UI_HARNESS_ID`.
+`gemini`, `codex`, and `opencode`. Each maps to a `command()` spawned in the
+session's cwd. `selectDefaultHarnessId()` probes the preference order Codex,
+Cursor, then Claude Code and falls back to Codex. Pick another with
+`--harness <id>` / `--agent <id>` or `WORKBENCH_UI_HARNESS_ID`.
+
+Re-selecting the active harness type is an explicit restart. It keeps the tab
+identity but kills the backing tmux session so the panel starts cleanly. The
+`↻` control beside `switch ...` invokes the same path.
 
 ## Screenshot suite & fixtures (gotcha)
 
-`bun run screenshot` builds a synthetic state from `cwd` (`createScreenshotState`
-in `state/state.ts`) that opens fixtures `test-harness/sample.ts`, `README.md`,
-and `test-harness/{sample.png,diagram.md,sample.pdf,sample.mp4}`. The harness
-inherits `WORKBENCH_UI_CWD` from the environment, so if your shell exports
-`WORKBENCH_UI_CWD` pointing elsewhere (e.g. `/mnt/nvme/programs`), those fixtures
-don't exist and several checks fail with ENOENT
-(explorer/markdown/image/mermaid/pdf/video/changes/new-agent/session-row).
+`bun run screenshot` builds a synthetic state from the package root
+(`createScreenshotState` in `state/state.ts`) that opens fixtures
+`test-harness/sample.ts`, `README.md`, and
+`test-harness/{sample.png,sample.gif,diagram.md,sample.pdf,sample.mp4}`. The
+screenshot script explicitly sets `WORKBENCH_UI_CWD` to `workbench-ui/`, so an
+exported shell value cannot redirect the fixtures.
 
 `test-harness/sample.ts` is the editor/explorer fixture: it is intentionally
 decoupled from the source tree and excluded from Biome formatting
 (`biome.jsonc`) so the editor screenshot stays pixel-deterministic across
 reorganization and reformatting passes. Don't move or reformat it.
 
-Run it pointed at the workbench so all checks pass:
+Run it from `workbench-ui/`:
 
 ```bash
-WORKBENCH_UI_CWD="$PWD" bun run screenshot   # from workbench-ui/
+bun run screenshot
 ```
 
 Screenshots land in `artifacts/screenshots/`.
+
+## Releases
+
+The version in `workbench-ui/package.json` and the Git tag must agree. Releases
+are triggered by pushing `v<version>`; `.github/workflows/release.yml` installs
+with the lockfile, typechecks, tests, packages a source tarball, and creates the
+GitHub Release. Do not tag until the release commit is already on `main`.
 
 ## Style
 

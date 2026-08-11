@@ -1,98 +1,133 @@
 # Workbench UI
 
 The Bun + React + Silvery package behind Workbench CLI. It renders the
-full-screen terminal workbench that runs coding-agent CLIs, shell terminals,
-workspace files, and live git changes side by side.
+full-screen terminal workbench and owns workspace state, persistent agent and
+shell panes, file previews, Git changes, input routing, and terminal rendering.
 
-## Terminal Support
+## Requirements
 
-Develop and test the UI in [Ghostty](https://ghostty.org/). Ghostty is the
-supported terminal target for Workbench CLI; all other terminal emulators are
-experimental and may differ in rendering, images, cursor behavior, mouse input,
-or tmux passthrough.
+- Bun 1.3 or newer
+- `tmux`
+- At least one supported coding-agent CLI
+- Ghostty for the supported terminal experience
 
-Workbench is a terminal UI, so live harness panes use the font family and size
-configured in the outer terminal emulator. For readability, use a clear
-monospace font such as JetBrains Mono, Cascadia Mono, Berkeley Mono, or a
-similar terminal font at 14-16 px. Workbench can adjust colors and ANSI styling,
-but it cannot change the outer terminal's font face from inside the app.
+Optional preview tools are `ffmpeg`/`ffprobe` for video, `mmdc` for Mermaid,
+and `pdftoppm`/`pdfinfo` for PDFs.
 
 ## Run Locally
 
-From `workbench-ui/`:
+From this directory:
 
 ```bash
 bun install
 bun run start
 ```
 
-The launcher in `../bin/workbench-cli` is what installed users run as
-`workbench-cli` or `work`; it resolves the repo location, optionally enables Bun
-watch mode, and execs `src/index.ts`.
-
-## Development Commands
-
-```bash
-bun run typecheck
-bun test
-bun run check
-bun run fix
-WORKBENCH_UI_CWD="$PWD" bun run screenshot
-```
-
-The screenshot harness drives the real app in a browser-backed PTY and writes
-artifacts under `artifacts/screenshots/`. Point `WORKBENCH_UI_CWD` at this
-package root so the bundled fixtures under `test-harness/` resolve correctly.
-Browser harness font testing can be done with
-`WORKBENCH_SCREENSHOT_QUERY='fontSize=16&lineHeight=1.15' bun run screenshot`.
-
-## Runtime Shape
-
-Each workspace session owns:
-
-- One or more agent harness tabs backed by persistent tmux sessions.
-- Shell terminal tabs, also persistent across relaunches.
-- File viewer tabs for text, Markdown preview/source, images, PDFs, videos, and
-  Mermaid diagrams.
-- A side pane with the active agent, Explorer, Terminals, and Changes sections.
-
-Agent harnesses are defined in `src/state/harnesses.ts`. The current IDs are
-`cursor`, `claude`, `gemini`, `codex`, and `opencode`. New users default to
-whichever of Cursor or Claude Code is installed on `PATH` (Cursor preferred).
-
-## Runtime Options
+The normal installed entry points are `work` and `workbench-cli`. The launcher
+resolves its checkout, handles `update` and hot mode, sets the starting cwd, and
+executes `src/index.ts`.
 
 ```bash
 work [path] [--harness <id>] [--hot]
 ```
 
-- `path` opens a workspace directory.
-- `--harness <id>` / `--agent <id>` selects the default harness for new
-  workspaces.
-- `--hot` (also `--dev` / `--watch`) restarts the UI on source changes while
-  persistent tmux panes reattach.
+- `path` defaults to the current directory.
+- `--harness <id>` and `--agent <id>` choose the initial harness.
+- `--hot`, `--dev`, and `--watch` use the application-owned restart runner.
+- `--terminal-trace` writes metadata-only rendering diagnostics.
 
-Useful environment variables:
+Harness IDs are `codex`, `cursor`, `claude`, `gemini`, and `opencode`. Automatic
+selection prefers the first installed CLI in the order Codex, Cursor, Claude
+Code, then falls back to Codex.
 
-- `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID`
-- `WORKBENCH_UI_CWD`
-- `WORKBENCH_UI_THEME`
-- `WORKBENCH_UI_IMAGE_PROTOCOL=kitty|sixel|halfblock`
-- `WORKBENCH_UI_CELL_ASPECT`
-- `WORKBENCH_UI_PRESERVE_DIM=1`
-- `WORKBENCH_CLI_HOT=1`
-- `WORKBENCH_SCREENSHOT_QUERY='fontSize=16&fontFamily=JetBrains%20Mono'`
+## Development Commands
 
-## Architecture Notes
+```bash
+bun run typecheck       # TypeScript, no emit
+bun test                # unit + integration tests
+bun run check           # Ultracite/Biome validation
+bun run fix             # formatting and safe fixes
+bun run screenshot      # browser-backed interaction/screenshot suite
+bun run test:terminal   # complete PTY/tmux/rendering regression matrix
+bun run dev             # serialized hot-reload runner
+```
 
-`src/app/WorkbenchApp.tsx` owns lifecycle, state mutation, diff polling,
-persistence, and the throttled top-level render. `src/components/Workbench.tsx`
-renders the shell and routes keyboard input. `src/terminal/terminal-panel.ts`
-wraps `@xterm/headless` plus Bun PTYs/tmux, exposing the `TerminalReadable`
-shape consumed by Silvery's `<Terminal>`.
+Screenshot artifacts are written under `artifacts/screenshots/`. The script
+sets its fixture cwd to this package automatically; no `WORKBENCH_UI_CWD`
+override is required for the standard run.
 
-Terminal output should stay on the `TerminalPanel` subscription path. Do not
-route PTY frames through the whole-app render loop; the terminal subtree
-subscribes directly via `useSyncExternalStore` and a revision prop.
+## Runtime Model
 
-For deeper agent-facing guidance, see `../AGENT.md`.
+Each workspace session owns:
+
+- One or more coding-agent harness tabs.
+- One or more shell terminals rooted in the workspace directory.
+- A per-workspace top-tab set containing harnesses, terminals, Changes, and
+  opened files.
+- Explorer expansion state and the selected Git diff.
+
+Harness and shell panes are `TerminalPanel` instances backed by Bun PTYs,
+`@xterm/headless`, and named sessions on a private tmux server. Stable IDs and
+tmux names are persisted so a normal relaunch or hot restart can reattach them.
+Closing a pane kills it; shutting down the app detaches it.
+
+State is stored under `~/.workbench`, including:
+
+```text
+~/.workbench/workbench-ui-state.json
+~/.workbench/tmux-ui.sock
+~/.workbench/terminal-trace.ndjson   # only when tracing is enabled
+```
+
+## Source Layout
+
+```text
+src/
+├── index.ts        argument parsing, host-terminal probe, runtime startup
+├── app/            WorkbenchApp controller and lifecycle
+├── components/     Silvery views, dialogs, tabs, sidebars, viewers
+├── state/          models, persistence, harness definitions
+├── terminal/       PTY/tmux/xterm adapter, input, tracing, terminal probes
+├── media/          image protocols, PDF, Mermaid, video, splash
+├── text/           file tree, syntax, diff, editor model
+└── ui/             theme, pane layout, toasts
+```
+
+The major ownership boundaries are:
+
+- `src/app/WorkbenchApp.tsx`: lifecycle, state mutation, panel registry,
+  persistence, file watching, diff/activity polling, and top-level rendering.
+- `src/components/Workbench.tsx`: shell layout, overlay ordering, clipboard
+  handling, and global keyboard routing.
+- `src/terminal/terminal-panel.ts`: PTY/tmux ownership, xterm state, viewport
+  behavior, frame publication, and the `TerminalReadable` interface.
+
+Terminal output must remain on `TerminalPanel.subscribe` →
+`useSyncExternalStore` → Silvery `<Terminal revision={...}>`. Sending PTY output
+through the whole-app render loop causes avoidable latency and rendering races.
+
+## Environment Variables
+
+| Variable | Purpose |
+| --- | --- |
+| `WORKBENCH_UI_CWD` | Starting workspace when no positional path is supplied |
+| `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID` | Initial harness ID |
+| `WORKBENCH_UI_THEME` | Initial theme (`dark`, `light`, `midnight`, `amber`, `forest`) |
+| `WORKBENCH_UI_IMAGE_PROTOCOL` | Force `kitty`, `sixel`, or `halfblock` rendering |
+| `WORKBENCH_UI_CELL_ASPECT` | Override terminal cell aspect ratio |
+| `WORKBENCH_UI_PRESERVE_DIM=1` | Preserve SGR dim in mirrored terminals |
+| `WORKBENCH_CLI_HOT=1` | Enable serialized hot reload |
+| `WORKBENCH_CLI_HOT_ROOT` | Override the source checkout used by hot mode |
+| `WORKBENCH_TERMINAL_TRACE=1` | Write the default metadata-only trace |
+| `WORKBENCH_TERMINAL_TRACE=/path/file.ndjson` | Write trace metadata to a custom path |
+| `WORKBENCH_SCREENSHOT_QUERY` | Browser fixture query, such as `fontSize=16&lineHeight=1.15` |
+
+Variables beginning `WORKBENCH_UI_SCREENSHOT`, `WORKBENCH_UI_E2E`, or
+`WORKBENCH_E2E_` are internal test-fixture controls rather than supported user
+configuration.
+
+## More Documentation
+
+- [Development guide](development/development.md)
+- [Repository engineering invariants](../AGENT.md)
+- [Public README](../README.md)
