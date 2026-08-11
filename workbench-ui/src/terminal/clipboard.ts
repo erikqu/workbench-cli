@@ -3,18 +3,30 @@ import { wrapForMultiplexer, writeRawStdout } from "../media/image-protocol";
 
 export const CLIPBOARD_READ_QUERY = "\x1b]52;c;?\x07";
 
-export function terminalClipboardShortcut(
+export type ClipboardFocus = "editor" | "harness" | "terminal";
+
+export function selectionClipboardShortcut(
   input: string,
   key: Key,
+  focus: ClipboardFocus,
   hasSelection: boolean
-): "copy" | "paste" | undefined {
-  if (!key.ctrl) {
+): "copy" | "paste" | "consume" | undefined {
+  if (!(key.ctrl || key.super)) {
     return;
   }
-  if (input.toLowerCase() === "c" && hasSelection) {
-    return "copy";
+  const character = input.toLowerCase();
+  if (character === "c") {
+    if (hasSelection) {
+      return "copy";
+    }
+    // Ctrl+C remains SIGINT in an interactive terminal. In a viewer it is a
+    // clipboard shortcut only and must never fall through to app shutdown.
+    if (focus === "editor" || key.super) {
+      return "consume";
+    }
+    return;
   }
-  if (input.toLowerCase() === "v") {
+  if (character === "v" && focus !== "editor") {
     return "paste";
   }
 }

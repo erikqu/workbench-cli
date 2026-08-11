@@ -110,25 +110,63 @@ try {
     await send(page, "echo TERMINAL_OK\r");
     const terminalEcho = await waitForText(page, "TERMINAL_OK", 4000);
     report("terminal tab receives keystrokes", terminalEcho);
+    const terminalMarker = await findCell(page, "TERMINAL_OK", 26);
+    if (terminalMarker) {
+      const before = await clipboardState(page);
+      await drag(
+        page,
+        terminalMarker.col,
+        terminalMarker.row,
+        terminalMarker.col + "TERMINAL_OK".length,
+        terminalMarker.row
+      );
+      await send(page, "\x03");
+      await waitForClipboardWrite(page, before.writes + 1, 3000);
+      report(
+        "regular terminal selection copies with Ctrl+C",
+        (await clipboardState(page)).text.includes("TERMINAL_OK")
+      );
+    } else {
+      report("regular terminal selection copies with Ctrl+C", false);
+    }
   } else {
     report("Terminal 1 tab located", false);
   }
 
-  // 3. Back on the harness tab, clicking a file in the explorer opens the editor.
+  // 3. Back on the harness layout, open the existing source tab and exercise
+  // selection through the full outer-terminal clipboard path.
   const chatTab = await findCell(page, defaultHarnessLabel);
   if (chatTab) {
-    await click(page, chatTab.col + 2, chatTab.row + 1);
-    await page.waitForTimeout(400);
+    await send(page, "\x1b1");
+    await page.waitForTimeout(500);
   }
-  const fileCell = await findCell(page, "sample.ts", 26, 56);
-  if (fileCell) {
-    await click(page, fileCell.col + 2, fileCell.row + 1);
-    const editorOpened = await waitForText(page, "FIXTURE_MARKER", 4000);
-    report("explorer click opens file in editor", editorOpened);
+  await send(page, "\x1b3");
+  const editorOpened = await waitForText(page, "FIXTURE_MARKER", 4000);
+  report("source file opens in editor", editorOpened);
+  if (editorOpened) {
     report(
       "editor pane syntax parses keywords",
       await keywordIsHighlighted(page)
     );
+    const marker = await findCell(page, "FIXTURE_MARKER", 56);
+    if (marker) {
+      const before = await clipboardState(page);
+      await drag(
+        page,
+        marker.col,
+        marker.row,
+        marker.col + "FIXTURE_MARKER".length,
+        marker.row
+      );
+      await send(page, "\x03");
+      await waitForClipboardWrite(page, before.writes + 1, 3000);
+      report(
+        "file viewer selection copies with Ctrl+C",
+        (await clipboardState(page)).text === "FIXTURE_MARKER"
+      );
+    } else {
+      report("file viewer selection copies with Ctrl+C", false);
+    }
     for (let i = 0; i < 16; i++) {
       await wheel(page, 90, 20, 1);
       await page.waitForTimeout(40);
@@ -147,7 +185,7 @@ try {
       path: join(screenshotDir, "workbench-editor.png"),
     });
   } else {
-    report("explorer shows sample.ts", false);
+    report("file viewer selection copies with Ctrl+C", false);
   }
 
   // 3b. The README.md tab renders markdown (heading shown without its "# ").
@@ -420,6 +458,24 @@ async function send(page: Page, data: string) {
 
 async function bufferText(page: Page): Promise<string> {
   return page.evaluate(() => (window as any).__bufferText());
+}
+
+async function clipboardState(
+  page: Page
+): Promise<{ text: string; writes: number }> {
+  return page.evaluate(() => (window as any).__clipboardState());
+}
+
+async function waitForClipboardWrite(
+  page: Page,
+  expected: number,
+  timeoutMs: number
+) {
+  await page.waitForFunction(
+    (writes) => (window as any).__clipboardState().writes >= writes,
+    expected,
+    { timeout: timeoutMs }
+  );
 }
 
 // Simulate a left click via SGR mouse reports (1-based col/row), which the

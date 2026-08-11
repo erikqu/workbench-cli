@@ -24,8 +24,9 @@ import {
   terminalIdFromTab,
 } from "../state/types";
 import {
+  type ClipboardFocus,
   requestClipboardPaste,
-  terminalClipboardShortcut,
+  selectionClipboardShortcut,
 } from "../terminal/clipboard";
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { terminalTrace } from "../terminal/terminal-trace";
@@ -67,24 +68,31 @@ export function Workbench({
     useState<SessionContextMenuState | null>(null);
   const selection = useSelection();
   const selectionActions = useSelectionActions();
-  const harnessSelection = useRef(false);
+  const selectionPresent = useRef(false);
   const observedSelectionRange = useRef(selection?.range);
   const rawSelectionCopy = useRef(false);
   if (selection?.range !== observedSelectionRange.current) {
     observedSelectionRange.current = selection?.range;
-    harnessSelection.current = Boolean(selection?.range);
+    selectionPresent.current = Boolean(selection?.range);
   }
   useRawKeyEvent(({ input, key }) => {
     rawSelectionCopy.current = false;
     if (
-      view.state.focus === "harness" &&
-      terminalClipboardShortcut(input, key, harnessSelection.current) === "copy"
+      isClipboardFocus(view.state.focus) &&
+      selectionClipboardShortcut(
+        input,
+        key,
+        view.state.focus,
+        selectionPresent.current
+      ) === "copy"
     ) {
-      // Raw-key observers run before Silvery clears its selection for ordinary
-      // key dispatch. Copy while the range is still available, then tell the
-      // regular input handler to consume this Ctrl+C instead of forwarding it.
+      // Raw-key observers run before Silvery handles selection shortcuts.
+      // Copy while the range is still available and clear the highlight so
+      // the next click or key is routed normally.
       rawSelectionCopy.current = true;
       selectionActions.copy?.();
+      selectionActions.clear?.();
+      selectionPresent.current = false;
     }
   });
   useInput(
@@ -94,26 +102,36 @@ export function Workbench({
         setSessionContextMenu(null);
         return;
       }
-      if (view.state.focus === "harness") {
-        const clipboard = terminalClipboardShortcut(
+      if (isClipboardFocus(view.state.focus)) {
+        const clipboard = selectionClipboardShortcut(
           input,
           key,
-          rawSelectionCopy.current || harnessSelection.current
+          view.state.focus,
+          rawSelectionCopy.current || selectionPresent.current
         );
         if (clipboard === "copy") {
+          if (!rawSelectionCopy.current) {
+            selectionActions.copy?.();
+          }
+          selectionActions.clear?.();
           rawSelectionCopy.current = false;
-          harnessSelection.current = false;
-          selectionActions.copy?.();
+          selectionPresent.current = false;
           return;
         }
         if (clipboard === "paste") {
+          selectionActions.clear?.();
           rawSelectionCopy.current = false;
-          harnessSelection.current = false;
+          selectionPresent.current = false;
           requestClipboardPaste();
           return;
         }
+        if (clipboard === "consume") {
+          rawSelectionCopy.current = false;
+          selectionPresent.current = false;
+          return;
+        }
         rawSelectionCopy.current = false;
-        harnessSelection.current = false;
+        selectionPresent.current = false;
       }
       handleKey(input, key, view, actions);
     },
@@ -225,7 +243,17 @@ export function Workbench({
                 <PlusButton actions={actions} view={view} />
               </Box>
               {terminalTab ? (
-                <TerminalView actions={actions} view={view} />
+                <TerminalView
+                  actions={actions}
+                  selectionChanged={(selected) => {
+                    selectionPresent.current = selected;
+                    if (!selected) {
+                      rawSelectionCopy.current = false;
+                      selectionActions.clear?.();
+                    }
+                  }}
+                  view={view}
+                />
               ) : (
                 <Box
                   backgroundColor={colors.bg}
@@ -239,7 +267,7 @@ export function Workbench({
                     <HarnessView
                       actions={actions}
                       selectionChanged={(selected) => {
-                        harnessSelection.current = selected;
+                        selectionPresent.current = selected;
                         if (!selected) {
                           rawSelectionCopy.current = false;
                           selectionActions.clear?.();
@@ -289,6 +317,10 @@ export function Workbench({
       </SuppressImagesContext.Provider>
     </Screen>
   );
+}
+
+function isClipboardFocus(focus: string): focus is ClipboardFocus {
+  return focus === "editor" || focus === "harness" || focus === "terminal";
 }
 
 function handleKey(
@@ -637,9 +669,11 @@ function SwitchHarnessButton({ onSwitch }: { onSwitch(): void }) {
 function TerminalView({
   view,
   actions,
+  selectionChanged,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  selectionChanged(selected: boolean): void;
 }) {
   return (
     <Box
@@ -670,6 +704,7 @@ function TerminalView({
           panel={view.terminalPanel}
           resize={actions.resizeTerminal}
           scroll={actions.scrollTerminal}
+          selectionChanged={selectionChanged}
         />
       ) : null}
     </Box>

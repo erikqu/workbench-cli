@@ -397,6 +397,7 @@ export function MarkdownViewer({
         justifyContent="space-between"
         minWidth={1}
         overflow="hidden"
+        userSelect="none"
       >
         <Box flexGrow={1} minWidth={1} overflow="hidden">
           <Text color={colors.dim} wrap={false}>
@@ -408,7 +409,7 @@ export function MarkdownViewer({
           onSelect={(next) => actions.setMarkdownView(tab.path, next)}
         />
       </Box>
-      <Box flexGrow={1} minWidth={1} overflow="hidden">
+      <Box flexGrow={1} minWidth={1} overflow="hidden" userSelect="contain">
         {mode === "preview" ? (
           <MarkdownList
             baseDir={dirname(tab.path)}

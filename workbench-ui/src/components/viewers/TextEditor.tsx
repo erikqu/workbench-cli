@@ -44,15 +44,19 @@ export function ReadOnlyViewer({
       }}
       padding={1}
     >
-      <Text color={colors.dim}>{rel}</Text>
+      <Box flexShrink={0} userSelect="none">
+        <Text color={colors.dim}>{rel}</Text>
+      </Box>
       {tab.binary || tab.truncated ? (
-        <Text color={colors.accentAlt}>
-          {tab.binary
-            ? "(binary file)"
-            : "Large file preview is truncated and read-only."}
-        </Text>
+        <Box flexShrink={0} userSelect="none">
+          <Text color={colors.accentAlt}>
+            {tab.binary
+              ? "(binary file)"
+              : "Large file preview is truncated and read-only."}
+          </Text>
+        </Box>
       ) : null}
-      <Box flexGrow={1} minHeight={1} minWidth={1}>
+      <Box flexGrow={1} minHeight={1} minWidth={1} userSelect="contain">
         <LineList
           focused={focused}
           lines={lines}
@@ -103,10 +107,12 @@ export function FileEditor({
       }}
       padding={1}
     >
-      <Text
-        color={tab.dirty ? colors.accentAlt : colors.dim}
-      >{`${tab.dirty ? "* " : ""}${rel}`}</Text>
-      <Box flexGrow={1} minHeight={1} minWidth={1}>
+      <Box flexShrink={0} userSelect="none">
+        <Text
+          color={tab.dirty ? colors.accentAlt : colors.dim}
+        >{`${tab.dirty ? "* " : ""}${rel}`}</Text>
+      </Box>
+      <Box flexGrow={1} minHeight={1} minWidth={1} userSelect="contain">
         <LineList
           focused={focused}
           lines={lines}
@@ -203,9 +209,11 @@ export function CodeLine({
 }) {
   return (
     <Box flexDirection="row" flexShrink={0} height={1} minWidth={1}>
-      <Text
-        color={colors.dim}
-      >{`${String(lineNumber).padStart(width, " ")}  `}</Text>
+      <Box flexShrink={0} userSelect="none">
+        <Text
+          color={colors.dim}
+        >{`${String(lineNumber).padStart(width, " ")}  `}</Text>
+      </Box>
       {tokens.map((token, index) => (
         <Text color={tokenColor(token.group)} key={index} wrap={false}>
           {token.text}
