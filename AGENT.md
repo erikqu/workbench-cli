@@ -107,9 +107,14 @@ with text already present in the agent composer.
   spawned **inside a private tmux server** at socket `~/.workbench/tmux-ui.sock`
   (never the user's tmux, never `-L`). tmux session names are persisted, so
   relaunch/hot-reload **reattaches the same running processes**.
-- UI layout (sessions, harnesses, terminals, open tabs, active tab, sidebar,
-  expanded dirs) is saved via `savePersistedState` and restored by
+- UI layout (sessions, harnesses, terminals, open tabs, active tab, sidebar) is
+  saved via `savePersistedState` and restored by
   `loadPersistedState`/`createInitialState`.
+- Explorer directory expansion is deliberately ephemeral: restored workspaces
+  start with every directory collapsed.
+- The Explorer header's `<` action collapses the complete workspace side pane;
+  its narrow `>` rail expands the pane again. This visibility is persisted
+  independently from directory expansion.
 - Persistent IDs are not cosmetic: `activeMainTab` references them. Never save
   an active tab ID without saving the matching harness/terminal ID.
 - `shutdown()` (SIGINT/SIGTERM/Ctrl+Q) detaches panels, never kills them.

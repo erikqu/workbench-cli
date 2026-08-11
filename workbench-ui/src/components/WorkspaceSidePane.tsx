@@ -12,6 +12,7 @@ import { harnessSpec } from "../state/harnesses";
 import { harnessIdFromTab, terminalIdFromTab } from "../state/types";
 import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
   clampPaneWidth,
   MIN_SESSIONS_SIDEBAR_WIDTH,
   MIN_WORKSPACE_SIDE_PANE_WIDTH,
@@ -21,6 +22,7 @@ import {
 import { colors } from "../ui/theme";
 import { ChangesSidebarList } from "./ChangesView";
 import { ExplorerSection } from "./Explorer";
+import { PanelCollapseButton } from "./PanelCollapseButton";
 import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
@@ -38,6 +40,23 @@ export function WorkspaceSidePane({
 }) {
   const rect = useBoxRectDangerously();
   const { columns } = useWindowSize();
+  if (!view.state.workspaceSidePaneVisible) {
+    return (
+      <Box
+        alignItems="center"
+        backgroundColor={colors.panel}
+        flexDirection="column"
+        flexShrink={0}
+        height="100%"
+        width={COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH}
+      >
+        <PanelCollapseButton
+          label=">"
+          onCollapse={actions.toggleWorkspaceSidePane}
+        />
+      </Box>
+    );
+  }
   const sessionsWidth = view.state.sidebarVisible
     ? clampPaneWidth(
         view.state.sessionsSidebarWidth,

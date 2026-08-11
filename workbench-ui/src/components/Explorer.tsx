@@ -8,6 +8,7 @@ import {
 } from "silvery";
 import type { FileTreeEntry } from "../state/types";
 import { colors } from "../ui/theme";
+import { PanelCollapseButton } from "./PanelCollapseButton";
 import type {
   SelectOption,
   WorkbenchActions,
@@ -55,10 +56,10 @@ export function Explorer({
       padding={1}
       width={30}
     >
-      <Box flexDirection="row" height={1} justifyContent="space-between">
-        <Text color={colors.dim}>Explorer</Text>
-        <Text color={colors.dim}>{String(options.length)}</Text>
-      </Box>
+      <ExplorerHeader
+        count={options.length}
+        onCollapse={actions.toggleWorkspaceSidePane}
+      />
       <ExplorerBody
         active={focused}
         expandedIds={expandedIds}
@@ -111,23 +112,44 @@ export function ExplorerSection({
       }}
       overflow="hidden"
     >
-      <Box
-        backgroundColor={colors.panelAlt}
-        flexDirection="row"
-        flexShrink={0}
-        height={1}
-        justifyContent="space-between"
-        paddingX={1}
-      >
-        <Text color={colors.accentAlt}>Explorer</Text>
-        <Text color={colors.dim}>{String(options.length)}</Text>
-      </Box>
+      <ExplorerHeader
+        count={options.length}
+        onCollapse={actions.toggleWorkspaceSidePane}
+        section
+      />
       <ExplorerBody
         active={focused}
         expandedIds={expandedIds}
         onActivate={select}
         tree={tree}
       />
+    </Box>
+  );
+}
+
+function ExplorerHeader({
+  count,
+  onCollapse,
+  section = false,
+}: {
+  count: number;
+  onCollapse(): void;
+  section?: boolean;
+}) {
+  return (
+    <Box
+      backgroundColor={section ? colors.panelAlt : undefined}
+      flexDirection="row"
+      flexShrink={0}
+      height={1}
+      justifyContent="space-between"
+      paddingX={section ? 1 : 0}
+    >
+      <Text color={section ? colors.accentAlt : colors.dim}>Explorer</Text>
+      <Box flexDirection="row" flexShrink={0}>
+        <Text color={colors.dim}>{String(count)} </Text>
+        <PanelCollapseButton onCollapse={onCollapse} />
+      </Box>
     </Box>
   );
 }

@@ -106,6 +106,14 @@ try {
     await sessionCardHoverChangesSurface(page)
   );
   report(
+    "Help button hover changes its surface and foreground",
+    await helpButtonHoverChangesSurface(page)
+  );
+  report(
+    "panel collapse buttons show themed hover feedback",
+    await collapseButtonsShowHoverFeedback(page)
+  );
+  report(
     "harness restart control renders beside switch",
     await waitForText(page, "↻ switch ...", 2000)
   );
@@ -410,6 +418,14 @@ try {
         "new session uses the same outlined card structure",
         await sessionCardOutlined(page, "2 workbench")
       );
+      report(
+        "inactive session uses the sessions panel background",
+        await inactiveSessionMatchesPanel(page)
+      );
+      report(
+        "session cards have no vertical gap",
+        await sessionCardsAreContiguous(page)
+      );
     } else {
       report("new agent dialog opens", false);
     }
@@ -467,6 +483,29 @@ try {
     report("switching sessions restores that session's tabs", editorRestored);
   } else {
     report("first session row located", false);
+  }
+
+  // The Explorer control collapses the complete workspace side pane to a
+  // narrow rail, whose inverse caret expands it again.
+  const collapseExplorer = await findExplorerCollapse(page);
+  if (collapseExplorer) {
+    await click(page, collapseExplorer.col + 2, collapseExplorer.row + 1);
+    await page.waitForTimeout(300);
+    const expandExplorer = await findCell(page, ">", 26, 30);
+    report(
+      "Explorer header collapses the complete file panel",
+      (await findCell(page, "Explorer", 26, 56)) === null &&
+        expandExplorer !== null
+    );
+    if (expandExplorer) {
+      await click(page, expandExplorer.col + 1, expandExplorer.row + 1);
+      report(
+        "collapsed file panel can be expanded again",
+        await waitForText(page, "Explorer", 3000)
+      );
+    }
+  } else {
+    report("Explorer collapse control located", false);
   }
 
   // 7. Quick-switch: Option+2 (ESC+"2") jumps to the second main tab (Terminal 1)
@@ -606,6 +645,24 @@ async function selectedSessionCardSurface(page: Page): Promise<boolean> {
   }, session);
 }
 
+async function inactiveSessionMatchesPanel(page: Page): Promise<boolean> {
+  const session = await findCell(page, "1 workbench-ui", 0, 26);
+  if (!session) {
+    return false;
+  }
+  return page.evaluate(({ col, row }) => {
+    const card = (window as any).__cellState(col, row);
+    const panel = (window as any).__cellState(1, row);
+    return card?.bg === panel?.bg;
+  }, session);
+}
+
+async function sessionCardsAreContiguous(page: Page): Promise<boolean> {
+  const first = await findCell(page, "1 workbench-ui", 0, 26);
+  const second = await findCell(page, "2 workbench", 0, 26);
+  return Boolean(first && second && second.row - first.row === 3);
+}
+
 async function sessionCardHoverChangesSurface(page: Page): Promise<boolean> {
   const session = await findCell(page, "workbench-ui", 0, 26);
   if (!session) {
@@ -623,6 +680,91 @@ async function sessionCardHoverChangesSurface(page: Page): Promise<boolean> {
   );
   await send(page, "\x1b[<35;100;20M");
   return before !== after;
+}
+
+async function helpButtonHoverChangesSurface(page: Page): Promise<boolean> {
+  const help = await findCell(page, "? Help", 0, 26);
+  if (!help) {
+    return false;
+  }
+  const before = await page.evaluate(
+    ({ col, row }) => ({
+      bg: (window as any).__cellState(col, row)?.bg,
+      fg: (window as any).__cellFg(col, row)?.color,
+    }),
+    help
+  );
+  await send(page, `\x1b[<35;${help.col + 1};${help.row + 1}M`);
+  await page.waitForTimeout(100);
+  const after = await page.evaluate(
+    ({ col, row }) => ({
+      bg: (window as any).__cellState(col, row)?.bg,
+      fg: (window as any).__cellFg(col, row)?.color,
+    }),
+    help
+  );
+  await send(page, "\x1b[<35;100;20M");
+  return before.bg !== after.bg && before.fg !== after.fg;
+}
+
+async function findExplorerCollapse(
+  page: Page
+): Promise<{ row: number; col: number } | null> {
+  const explorer = await findCell(page, "Explorer", 26, 56);
+  if (!explorer) {
+    return null;
+  }
+  const line = (await bufferText(page)).split("\n")[explorer.row] ?? "";
+  const col = line.lastIndexOf("<", 55);
+  return col > explorer.col ? { row: explorer.row, col } : null;
+}
+
+async function collapseButtonsShowHoverFeedback(page: Page): Promise<boolean> {
+  const explorer = await findExplorerCollapse(page);
+  const sessions = await findSessionsCollapse(page);
+  if (!(explorer && sessions)) {
+    return false;
+  }
+  return (
+    (await hoverChangesSurface(page, explorer)) &&
+    (await hoverChangesSurface(page, sessions))
+  );
+}
+
+async function findSessionsCollapse(
+  page: Page
+): Promise<{ row: number; col: number } | null> {
+  const sessions = await findCell(page, "Sessions", 0, 26);
+  if (!sessions) {
+    return null;
+  }
+  const line = (await bufferText(page)).split("\n")[sessions.row] ?? "";
+  const col = line.lastIndexOf("<", 25);
+  return col > sessions.col ? { row: sessions.row, col } : null;
+}
+
+async function hoverChangesSurface(
+  page: Page,
+  target: { row: number; col: number }
+): Promise<boolean> {
+  const before = await page.evaluate(
+    ({ col, row }) => ({
+      bg: (window as any).__cellState(col, row)?.bg,
+      fg: (window as any).__cellFg(col, row)?.color,
+    }),
+    target
+  );
+  await send(page, `\x1b[<35;${target.col + 1};${target.row + 1}M`);
+  await page.waitForTimeout(100);
+  const after = await page.evaluate(
+    ({ col, row }) => ({
+      bg: (window as any).__cellState(col, row)?.bg,
+      fg: (window as any).__cellFg(col, row)?.color,
+    }),
+    target
+  );
+  await send(page, "\x1b[<35;100;20M");
+  return before.bg !== after.bg && before.fg !== after.fg;
 }
 
 async function screenIsAnchored(page: Page): Promise<boolean> {

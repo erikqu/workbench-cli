@@ -9,9 +9,9 @@ import {
   sessionFlowStrengths,
 } from "./SessionsSidebar";
 
-test("session cards reserve an outlined content row and a gap", () => {
+test("session cards form a continuous list without gaps", () => {
   expect(SESSION_CARD_HEIGHT).toBe(3);
-  expect(SESSION_CARD_GAP).toBe(1);
+  expect(SESSION_CARD_GAP).toBe(0);
 });
 
 test("large diff counts stay compact enough for narrow cards", () => {

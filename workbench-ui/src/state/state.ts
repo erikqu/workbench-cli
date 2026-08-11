@@ -200,7 +200,9 @@ export function restoreSession(
           : persistedTerminalId && session.terminals[0]
             ? `term:${session.terminals[0].id}`
             : `harness:${session.harnesses[0].id}`;
-  session.expandedDirs = new Set(persisted.expandedDirs ?? []);
+  // Directory expansion is intentionally ephemeral. Every restored workspace
+  // starts collapsed so old/deep trees never reopen unexpectedly.
+  session.expandedDirs = new Set();
   return session;
 }
 
@@ -247,6 +249,7 @@ export function createInitialState(cwd: string): AppState {
     // restored coding pane and consumes its first keypress after every edit.
     splashVisible: Bun.env.WORKBENCH_CLI_HOT !== "1",
     themeName,
+    workspaceSidePaneVisible: persisted.workspaceSidePaneVisible ?? true,
     workspaceSidePaneWidth: clampPaneWidth(
       persisted.workspaceSidePaneWidth ?? DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
       MIN_WORKSPACE_SIDE_PANE_WIDTH,
@@ -295,6 +298,7 @@ function createScreenshotState(cwd: string): AppState {
     // Show the splash in screenshots only when explicitly exercising it.
     splashVisible: Bun.env.WORKBENCH_UI_FORCE_SPLASH === "1",
     themeName: applyTheme(Bun.env.WORKBENCH_UI_THEME ?? DEFAULT_THEME),
+    workspaceSidePaneVisible: true,
     workspaceSidePaneWidth: DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
   };
 }
@@ -337,7 +341,6 @@ export function savePersistedState(state: AppState) {
       openTabs: session.openTabs.map((tab) => tab.path),
       activeTabPath: session.activeTabPath,
       activeMainTab: session.activeMainTab,
-      expandedDirs: [...session.expandedDirs],
     })),
     activeSessionIndex: state.sessions.findIndex(
       (session) => session.id === state.activeSessionId
@@ -345,6 +348,7 @@ export function savePersistedState(state: AppState) {
     sessionsSidebarWidth: state.sessionsSidebarWidth,
     sidebarVisible: state.sidebarVisible,
     themeName: state.themeName,
+    workspaceSidePaneVisible: state.workspaceSidePaneVisible,
     workspaceSidePaneWidth: state.workspaceSidePaneWidth,
   };
 

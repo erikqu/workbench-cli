@@ -53,6 +53,7 @@ export interface WorkbenchActions {
   shutdown(code: number): void;
   togglePlusMenu(): void;
   toggleSidebar(): void;
+  toggleWorkspaceSidePane(): void;
   updateFileContent(path: string, content: string): void;
   writeHarness(input: string): void;
   writeTerminal(input: string): void;

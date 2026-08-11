@@ -62,4 +62,13 @@ describe("persisted session identity", () => {
 
     expect(restored.terminals[0]?.cwd).toBe("/workspace/project");
   });
+
+  test("restores the file tree with every directory collapsed", () => {
+    const saved = persisted("harness:harness-stable");
+    saved.expandedDirs = ["/workspace/project/src"];
+
+    const restored = restoreSession(saved, []);
+
+    expect(restored.expandedDirs.size).toBe(0);
+  });
 });

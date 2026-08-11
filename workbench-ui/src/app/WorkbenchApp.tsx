@@ -65,6 +65,7 @@ import {
 } from "../text/file-tree";
 import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
   clampPaneWidth,
   MIN_SESSIONS_SIDEBAR_WIDTH,
   MIN_WORKSPACE_SIDE_PANE_WIDTH,
@@ -194,6 +195,19 @@ export class ReactWorkbenchApp {
         }
         this.persistAndRender();
       },
+      toggleWorkspaceSidePane: () => {
+        this.state.workspaceSidePaneVisible =
+          !this.state.workspaceSidePaneVisible;
+        if (
+          !this.state.workspaceSidePaneVisible &&
+          this.state.focus === "explorer"
+        ) {
+          this.state.focus = focusForMainTab(
+            this.activeSession().activeMainTab
+          );
+        }
+        this.persistAndRender();
+      },
       cycleTheme: (direction) => this.cycleTheme(direction ?? 1),
       dismissSplash: () => {
         if (!this.state.splashVisible) {
@@ -226,7 +240,9 @@ export class ReactWorkbenchApp {
       resizeSessionsSidebar: (width) => {
         const maxWidth = maxSessionsSidebarWidth(
           process.stdout.columns ?? 100,
-          this.state.workspaceSidePaneWidth
+          this.state.workspaceSidePaneVisible
+            ? this.state.workspaceSidePaneWidth
+            : COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH
         );
         const next = clampPaneWidth(
           width,
@@ -1082,7 +1098,9 @@ export class ReactWorkbenchApp {
       20,
       (process.stdout.columns ?? 100) -
         sidebar -
-        this.state.workspaceSidePaneWidth -
+        (this.state.workspaceSidePaneVisible
+          ? this.state.workspaceSidePaneWidth
+          : COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH) -
         4
     );
   }

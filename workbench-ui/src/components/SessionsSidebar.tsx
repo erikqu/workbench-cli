@@ -15,12 +15,14 @@ import type { AgentSession } from "../state/types";
 import type { SessionDiff } from "../text/diff";
 import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
   clampPaneWidth,
   MIN_SESSIONS_SIDEBAR_WIDTH,
   maxSessionsSidebarWidth,
 } from "../ui/pane-layout";
 import { colors } from "../ui/theme";
 import { CloseButton } from "./CloseButton";
+import { PanelCollapseButton } from "./PanelCollapseButton";
 import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
@@ -47,7 +49,9 @@ export function SessionsSidebar({
   }
   const maxWidth = maxSessionsSidebarWidth(
     columns,
-    view.state.workspaceSidePaneWidth
+    view.state.workspaceSidePaneVisible
+      ? view.state.workspaceSidePaneWidth
+      : COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH
   );
   const width = clampPaneWidth(
     view.state.sessionsSidebarWidth,
@@ -89,10 +93,7 @@ export function SessionsSidebar({
           </Box>
           <Box flexDirection="row">
             <HelpButton compact={width < 26} onOpen={onOpenHelp} />
-            <CollapseButton
-              actions={actions}
-              pinned={view.state.sidebarVisible}
-            />
+            <CollapseButton actions={actions} />
           </Box>
         </Box>
         <NewAgentRow actions={actions} compact={width < 22} />
@@ -195,7 +196,7 @@ function SessionListBody({
 }
 
 export const SESSION_CARD_HEIGHT = 3;
-export const SESSION_CARD_GAP = 1;
+export const SESSION_CARD_GAP = 0;
 
 function CollapsedSessionsRail({
   view,
@@ -271,40 +272,30 @@ function CollapsedSessionsRail({
   );
 }
 
-function CollapseButton({
-  pinned,
-  actions,
-}: {
-  pinned: boolean;
-  actions: WorkbenchActions;
-}) {
-  const toggle = () => actions.toggleSidebar();
-  return (
-    <Button
-      color={colors.accentAlt}
-      focusable={false}
-      label={pinned ? "<" : "*"}
-      onClick={(event) => {
-        toggle();
-        event.stopPropagation();
-      }}
-      onPress={toggle}
-    />
-  );
+function CollapseButton({ actions }: { actions: WorkbenchActions }) {
+  return <PanelCollapseButton onCollapse={actions.toggleSidebar} />;
 }
 
 function HelpButton({ compact, onOpen }: { compact: boolean; onOpen(): void }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <Button
-      color={colors.accentAlt}
-      focusable={false}
-      label={compact ? "?" : "? Help"}
-      onClick={(event) => {
-        onOpen();
-        event.stopPropagation();
-      }}
-      onPress={onOpen}
-    />
+    <Box
+      backgroundColor={hovered ? colors.selectedMuted : undefined}
+      mouseCursor="pointer"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <Button
+        color={hovered ? colors.accent : colors.accentAlt}
+        focusable={false}
+        label={compact ? "?" : "? Help"}
+        onClick={(event) => {
+          onOpen();
+          event.stopPropagation();
+        }}
+        onPress={onOpen}
+      />
+    </Box>
   );
 }
 
@@ -387,7 +378,7 @@ function SessionCard({
       : colors.selected
     : hovered
       ? colors.selectedMuted
-      : colors.panelAlt;
+      : colors.panel;
   const foreground = selected ? colors.onSelected : colors.text;
   const border = selected || hovered ? colors.borderFocus : colors.border;
 

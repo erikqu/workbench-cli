@@ -96,6 +96,7 @@ export interface AppState {
   splashVisible: boolean;
   // Active UI theme name (see theme.ts THEME_ORDER); cycled with Option+Tab.
   themeName: string;
+  workspaceSidePaneVisible: boolean;
   workspaceSidePaneWidth: number;
 }
 
@@ -104,6 +105,7 @@ export interface PersistedSession {
   activeTabPath?: string;
   agentId?: string;
   cwd: string;
+  // Legacy field accepted for compatibility; restored explorers ignore it.
   expandedDirs?: string[];
   harnesses?: PersistedHarnessTab[];
   id?: string;
@@ -133,6 +135,7 @@ export interface PersistedWorkbenchState {
   sessionsSidebarWidth?: number;
   sidebarVisible?: boolean;
   themeName?: string;
+  workspaceSidePaneVisible?: boolean;
   workspaceSidePaneWidth?: number;
 }
 
