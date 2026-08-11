@@ -178,6 +178,8 @@ function SessionList({
     <Box
       flexGrow={1}
       flexShrink={1}
+      marginLeft={-1}
+      marginRight={-1}
       marginTop={1}
       minHeight={1}
       minWidth={1}
@@ -394,22 +396,19 @@ function SessionRow({
     event.stopPropagation();
   };
   const hasChanges = diff && diff.files.length > 0;
+  const hasSecondLine = Boolean(running || hasChanges);
   const diffWidth = hasChanges
     ? String(diff.totalAdded).length + String(diff.totalDeleted).length + 5
     : 0;
   const flowWidth = Math.max(1, nameMaxWidth - diffWidth);
   // First 9 sessions get a dim index badge matching their Option+Shift+N shortcut.
   const hint = index < 9 ? String(index + 1) : undefined;
+  const sectionWidth = nameMaxWidth + 7;
 
   return (
     <Box
       anchorRef={anchorId}
-      backgroundColor={selected ? colors.selectedMuted : colors.panel}
-      borderBottom={false}
-      borderColor={colors.border}
-      borderLeft={false}
-      borderRight={false}
-      borderStyle="single"
+      backgroundColor={colors.panel}
       flexDirection="column"
       flexShrink={0}
       height={SESSION_ROW_HEIGHT}
@@ -422,39 +421,70 @@ function SessionRow({
         event.preventDefault();
         event.stopPropagation();
       }}
-      paddingLeft={1}
     >
-      <Box flexDirection="row" height={1}>
-        <Box flexDirection="row" flexGrow={1} minWidth={1}>
-          {hint ? (
+      {/* Every row carries the same top separator: a lower-eighth stroke at
+          the bottom of the gap line, directly above the row's content. The
+          selected row sheds the stroke — sitting flush against the highlight,
+          it would fuse with the block and read as an extra sliver of height
+          on top. The gap line itself stays so the rhythm remains even. */}
+      <Text color={colors.border} wrap={false}>
+        {(selected ? " " : "▁").repeat(sectionWidth)}
+      </Text>
+      <Box
+        backgroundColor={selected ? colors.selectedMuted : colors.panel}
+        flexDirection="column"
+        height={hasSecondLine ? 2 : 1}
+        paddingLeft={1}
+        paddingRight={1}
+        width={sectionWidth}
+      >
+        <Box flexDirection="row" height={1}>
+          <Box flexDirection="row" flexGrow={1} minWidth={1}>
+            {hint ? (
+              <Text
+                color={selected ? colors.accent : colors.dim}
+              >{`${hint} `}</Text>
+            ) : null}
             <Text
-              color={selected ? colors.accent : colors.dim}
-            >{`${hint} `}</Text>
+              bold={selected || running}
+              color={selected ? colors.onSelected : colors.text}
+              flexShrink={1}
+              minWidth={1}
+              wrap={false}
+            >
+              {truncateText(session.name, nameMaxWidth, "...")}
+            </Text>
+          </Box>
+          {canClose ? (
+            <CloseButton onClose={() => actions.closeSession(session.id)} />
           ) : null}
-          <Text
-            bold={selected || running}
-            color={selected ? colors.onSelected : colors.text}
-            flexShrink={1}
-            minWidth={1}
-            wrap={false}
-          >
-            {truncateText(session.name, nameMaxWidth, "...")}
-          </Text>
         </Box>
-        {canClose ? (
-          <CloseButton onClose={() => actions.closeSession(session.id)} />
-        ) : null}
-      </Box>
-      <Box flexDirection="row" height={1} justifyContent="space-between">
-        {running ? <RunningSessionFlow width={flowWidth} /> : <Text> </Text>}
-        {hasChanges ? (
-          <Box flexDirection="row">
-            <Badge label={`+${diff.totalAdded}`} variant="success" />
-            <Text> </Text>
-            <Badge label={`-${diff.totalDeleted}`} variant="error" />
+        {hasSecondLine ? (
+          <Box flexDirection="row" height={1} justifyContent="space-between">
+            {running ? (
+              <RunningSessionFlow width={flowWidth} />
+            ) : (
+              <Text> </Text>
+            )}
+            {hasChanges ? (
+              <Box flexDirection="row">
+                <Badge label={`+${diff.totalAdded}`} variant="success" />
+                <Text> </Text>
+                <Badge label={`-${diff.totalDeleted}`} variant="error" />
+              </Box>
+            ) : null}
           </Box>
         ) : null}
       </Box>
+      {hasSecondLine ? null : (
+        // With nothing to show on the second line, the highlight would read
+        // as a full empty line of bottom padding. Render it as an upper-half
+        // block instead so the selected block keeps some breathing room below
+        // the name but at half a cell; unselected rows leave the line blank.
+        <Text color={selected ? colors.selectedMuted : colors.panel}>
+          {"▀".repeat(sectionWidth)}
+        </Text>
+      )}
     </Box>
   );
 }
