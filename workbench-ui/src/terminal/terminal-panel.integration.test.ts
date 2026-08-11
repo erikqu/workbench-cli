@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  killPersistentTmuxSession,
   restartServerIfPermissionStale,
   shellQuote,
   TerminalPanel,
@@ -36,6 +37,33 @@ afterAll(() => {
 });
 
 describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
+  test("kills an unopened persisted pane by identity", () => {
+    const socketPath = join(suiteRoot, "unopened-close.sock");
+    const persist = { name: "unopened_close_test", socketPath };
+    const created = Bun.spawnSync([
+      "tmux",
+      "-S",
+      socketPath,
+      "new-session",
+      "-d",
+      "-s",
+      persist.name,
+      "sleep 30",
+    ]);
+    expect(created.exitCode).toBe(0);
+
+    try {
+      expect(killPersistentTmuxSession(persist)).toBe(true);
+      const remaining = Bun.spawnSync(
+        ["tmux", "-S", socketPath, "has-session", "-t", persist.name],
+        { stderr: "ignore", stdout: "ignore" }
+      );
+      expect(remaining.exitCode).not.toBe(0);
+    } finally {
+      killServer(socketPath);
+    }
+  });
+
   test("interactive shell startup cannot leave the workspace", async () => {
     const workspace = join(suiteRoot, "shell-workspace");
     const startupDirectory = join(suiteRoot, "shell-startup-directory");

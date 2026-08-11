@@ -111,6 +111,11 @@ with text already present in the agent composer.
 - Persistent IDs are not cosmetic: `activeMainTab` references them. Never save
   an active tab ID without saving the matching harness/terminal ID.
 - `shutdown()` (SIGINT/SIGTERM/Ctrl+Q) detaches panels, never kills them.
+- A user close action is different from shutdown: tab/workspace X must kill the
+  backing private tmux session immediately. Persisted panes are lazy and may
+  not have a `TerminalPanel` in the current process, so close by the persisted
+  tmux name when the local panel map has no entry; never remove state first and
+  leave the live tmux session orphaned.
 - New-workspace paths may be missing. `createAgent()` resolves shell-style path
   input and creates the directory tree recursively before adding the session;
   creation failures keep the dialog open and surface an error instead of

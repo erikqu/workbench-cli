@@ -38,7 +38,11 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
-import { TerminalPanel } from "../terminal/terminal-panel";
+import {
+  killPersistentTmuxSession,
+  type PersistentTmuxSession,
+  TerminalPanel,
+} from "../terminal/terminal-panel";
 import {
   captureTmuxPane,
   harnessAppearsRunning,
@@ -589,9 +593,7 @@ export class ReactWorkbenchApp {
 
   // Persistent tmux backing for a panel, unless we're in a throwaway screenshot
   // run (which must not spawn real tmux sessions).
-  private persistFor(
-    name: string
-  ): { socketPath: string; name: string } | undefined {
+  private persistFor(name: string): PersistentTmuxSession | undefined {
     if (Bun.env.WORKBENCH_UI_SCREENSHOT === "1") {
       return;
     }
@@ -738,12 +740,10 @@ export class ReactWorkbenchApp {
     }
     const closing = this.state.sessions[index];
     for (const harness of closing.harnesses) {
-      this.harnessPanels.get(harness.id)?.kill();
-      this.harnessPanels.delete(harness.id);
+      this.killBackingPanel(this.harnessPanels, harness.id, harness.tmux);
     }
     for (const terminal of closing.terminals) {
-      this.shellPanels.get(terminal.id)?.kill();
-      this.shellPanels.delete(terminal.id);
+      this.killBackingPanel(this.shellPanels, terminal.id, terminal.tmux);
     }
     this.state.sessions.splice(index, 1);
     if (this.state.activeSessionId === id) {
@@ -806,10 +806,7 @@ export class ReactWorkbenchApp {
       // restart. Keep the tab and its stable tmux identity, but destroy the
       // current tmux session and replace the local panel so the next render
       // starts a clean harness process in place.
-      const panel =
-        this.harnessPanels.get(existing.id) ?? this.harnessPanel(existing);
-      panel.kill();
-      this.harnessPanels.delete(existing.id);
+      this.killBackingPanel(this.harnessPanels, existing.id, existing.tmux);
     }
     session.activeMainTab = `harness:${harness.id}`;
     this.state.newHarnessOpen = false;
@@ -834,8 +831,7 @@ export class ReactWorkbenchApp {
     if (index === -1) {
       return;
     }
-    this.shellPanels.get(id)?.kill();
-    this.shellPanels.delete(id);
+    this.killBackingPanel(this.shellPanels, id, session.terminals[index].tmux);
     session.terminals.splice(index, 1);
     if (session.activeMainTab === `term:${id}`) {
       const next = session.terminals[Math.max(0, index - 1)];
@@ -856,8 +852,11 @@ export class ReactWorkbenchApp {
     if (index === -1) {
       return;
     }
-    this.harnessPanels.get(id)?.kill();
-    this.harnessPanels.delete(id);
+    this.killBackingPanel(
+      this.harnessPanels,
+      id,
+      session.harnesses[index].tmux
+    );
     session.harnesses.splice(index, 1);
     if (session.activeMainTab === `harness:${id}`) {
       const next =
@@ -866,6 +865,23 @@ export class ReactWorkbenchApp {
       this.state.focus = "harness";
     }
     this.persistAndRender();
+  }
+
+  private killBackingPanel(
+    panels: Map<string, TerminalPanel>,
+    id: string,
+    tmux: string
+  ) {
+    const panel = panels.get(id);
+    if (panel) {
+      panel.kill();
+    } else {
+      // A persisted pane may never have been opened in this Workbench process.
+      // Closing its tab/workspace must still destroy the private tmux session;
+      // otherwise removing the state entry makes that live process orphaned.
+      killPersistentTmuxSession(this.persistFor(tmux));
+    }
+    panels.delete(id);
   }
 
   private updateFileContent(path: string, content: string) {

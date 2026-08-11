@@ -18,6 +18,11 @@ import {
   terminalTraceRowId,
 } from "./terminal-trace";
 
+export interface PersistentTmuxSession {
+  name: string;
+  socketPath: string;
+}
+
 export interface TerminalPanelOptions {
   command?: string;
   env?: Record<string, string>;
@@ -26,7 +31,7 @@ export interface TerminalPanelOptions {
   // survives the editor closing and is re-attached on the next launch. Using a
   // socket path under the app's own directory keeps this server fully separate
   // from the user's tmux (default server and any `-L` named servers).
-  persist?: { socketPath: string; name: string };
+  persist?: PersistentTmuxSession;
   // Some inline applications leave transient redraws in tmux history. Route
   // wheel gestures through their native transcript overlay instead.
   wheelNavigation?: "transcript";
@@ -38,6 +43,24 @@ function hasTmux(): boolean {
     tmuxAvailable = Bun.which("tmux") !== null;
   }
   return tmuxAvailable;
+}
+
+export function killPersistentTmuxSession(
+  persist: PersistentTmuxSession | undefined
+): boolean {
+  if (!(persist && hasTmux())) {
+    return false;
+  }
+  try {
+    return (
+      Bun.spawnSync(
+        ["tmux", "-S", persist.socketPath, "kill-session", "-t", persist.name],
+        { stderr: "ignore", stdout: "ignore" }
+      ).exitCode === 0
+    );
+  } catch {
+    return false;
+  }
 }
 
 // `setsid -c` (util-linux) starts the shell in a new session AND makes the PTY
@@ -1126,27 +1149,7 @@ export class TerminalPanel implements TerminalReadable {
 
   // Permanently tear down the panel, including its persistent tmux session.
   kill() {
-    const persist = this.persist;
-    if (persist) {
-      try {
-        Bun.spawnSync(
-          [
-            "tmux",
-            "-S",
-            persist.socketPath,
-            "kill-session",
-            "-t",
-            persist.name,
-          ],
-          {
-            stdout: "ignore",
-            stderr: "ignore",
-          }
-        );
-      } catch {
-        // Session may already be gone.
-      }
-    }
+    killPersistentTmuxSession(this.persist);
     this.detach();
   }
 }
