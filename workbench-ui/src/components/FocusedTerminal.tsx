@@ -116,13 +116,18 @@ function normalizeTerminalWidths(
     let normalizedRow: TerminalCell[] | undefined;
     for (let col = 0; col < row.length; col += 1) {
       const cell = row[col];
-      if (
-        !cell ||
-        cell.wide ||
-        cell.continuation ||
-        !cell.char ||
-        graphemeWidth(cell.char) <= 1
-      ) {
+      if (!cell || cell.wide || cell.continuation || !cell.char) {
+        continue;
+      }
+      // Nearly every cell of every frame is a single character below U+2000
+      // (ASCII/Latin/box padding). Those are always one cell wide and can
+      // never carry emoji presentation, so skip the comparatively expensive
+      // grapheme-width lookup for them — this pass runs on every PTY frame
+      // and scrolling makes each frame a full-pane change.
+      if (cell.char.length === 1 && cell.char.charCodeAt(0) < 0x20_00) {
+        continue;
+      }
+      if (graphemeWidth(cell.char) <= 1) {
         continue;
       }
       normalizedRow ??= row.slice();

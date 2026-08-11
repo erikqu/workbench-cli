@@ -256,34 +256,109 @@ describe("TerminalPanel.sendMouseWheel", () => {
     });
     const writes = capturePty(panel);
 
+    // Opening writes Ctrl+T ALONE: the pager discards keys that arrive during
+    // its startup window, so the scroll rows flush once the header paints.
     expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    expect(writes).toEqual(["\x14"]);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    expect(writes).toEqual(["\x14", "\x1b[A".repeat(6)]);
+
     expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
-    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 100% ");
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(3));
     expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
-    await Bun.sleep(150);
-    expect(writes).toEqual([
-      `\x14${"\x1b[A".repeat(6)}`,
-      "\x1b[B".repeat(3),
-      "\x14",
-    ]);
+    await Bun.sleep(450);
+    expect(writes.at(-1)).toBe("\x14");
 
     await feed(panel, "\x1b[?1049l");
     expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
+    expect(writes.at(-1)).toBe("\x14");
     await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    expect(writes.at(-1)).toBe("\x1b[A".repeat(3));
     expect(panel.sendViewportKey("x")).toBe(true);
-    expect(writes.slice(-2)).toEqual([`\x14${"\x1b[A".repeat(3)}`, "\x14"]);
+    expect(writes.at(-1)).toBe("\x14");
     await feed(panel, "\x1b[?1049l");
     expect(writes.at(-1)).toBe("x");
   });
 
-  test("bounds large transcript wheel bursts to row operations", () => {
+  test("bounds large transcript wheel bursts to row operations", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24, {
       wheelNavigation: "transcript",
     });
     const writes = capturePty(panel);
 
     expect(panel.sendMouseWheel(4, 9, "up", 26)).toBe(true);
-    expect(writes).toEqual([`\x14${"\x1b[A".repeat(12)}`]);
+    expect(writes).toEqual(["\x14"]);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    expect(writes).toEqual(["\x14", "\x1b[A".repeat(12)]);
+  });
+
+  test("folds wheel gestures into the queue while the pager starts", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
+    expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    expect(writes).toEqual(["\x14"]);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    // 3 + 6 - 3 queued rows flush in one write once the header paints.
+    expect(writes).toEqual(["\x14", "\x1b[A".repeat(6)]);
+  });
+
+  test("a wheel-up during the pager close reopens instead of vanishing", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 99% ");
+    expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    await Bun.sleep(450);
+    expect(writes.at(-1)).toBe("\x14");
+
+    // Reversal while the pager is closing: queued, then reopened.
+    expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    await feed(panel, "\x1b[?1049l");
+    expect(writes.at(-1)).toBe("\x14");
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    expect(writes.at(-1)).toBe("\x1b[A".repeat(6));
+  });
+
+  test("holds the presented frame across pager transitions", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    capturePty(panel);
+    await feed(panel, "composer");
+    const beforeOpen = panel.getSnapshot();
+
+    expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
+    // The cleared alternate screen must not be presented: no new revision
+    // until the pager header has painted.
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[H");
+    expect(panel.getSnapshot()).toBe(beforeOpen);
+    await feed(panel, "T R A N S C R I P T\r\n 50% ");
+    expect(panel.getSnapshot()).toBeGreaterThan(beforeOpen);
+  });
+
+  test("a wedged pager close cannot swallow input forever", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    expect(panel.sendViewportKey("x")).toBe(true);
+    expect(writes.at(-1)).toBe("\x14");
+    // The pager never leaves the screen (marker keeps matching). The bounded
+    // transition hold must still flush the queued keystroke.
+    await feed(panel, "T R A N S C R I P T\r\n 50% ");
+    await Bun.sleep(600);
+    expect(writes.at(-1)).toBe("x");
   });
 
   test("honors native wheel tracking before the transcript fallback", async () => {
@@ -307,9 +382,9 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(panel.sendMouseWheel(4, 9, "up", 4)).toBe(true);
     await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 83% ");
     expect(panel.sendMouseWheel(4, 9, "down", 4)).toBe(true);
-    await Bun.sleep(150);
+    await Bun.sleep(450);
 
-    expect(writes).toEqual([`\x14${"\x1b[A".repeat(12)}`, "\x14"]);
+    expect(writes).toEqual(["\x14", "\x1b[A".repeat(12), "\x14"]);
   });
 });
 

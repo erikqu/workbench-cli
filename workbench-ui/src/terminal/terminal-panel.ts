@@ -362,9 +362,18 @@ const PALETTE_256 = (() => {
 let revisionCounter = 0;
 let tracePanelCounter = 0;
 const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
-const TRANSCRIPT_WHEEL_SETTLE_MS = 100;
+// Grace before the wheel-opened pager auto-closes at the bottom. Long enough
+// that an up/down/up direction reversal never lands after a close (which would
+// force a full alt-screen reopen and read as a flash), short enough that the
+// composer returns promptly once the user actually stops scrolling.
+const TRANSCRIPT_WHEEL_SETTLE_MS = 400;
 const TMUX_MOUSE_MODE_CACHE_MS = 100;
 const MAX_TRANSCRIPT_ROWS_PER_BURST = 12;
+// Upper bound on how long the panel keeps presenting the last stable frame
+// while the pager opens or closes. Real transitions finish in tens of
+// milliseconds; the cap only exists so a wedged pager can never freeze the
+// pane.
+const TRANSCRIPT_TRANSITION_MAX_HOLD_MS = 500;
 
 function transcriptWheelKeys(direction: "up" | "down", steps: number): string {
   const rows = Math.min(MAX_TRANSCRIPT_ROWS_PER_BURST, steps * 3);
@@ -384,8 +393,21 @@ export class TerminalPanel implements TerminalReadable {
   private transcriptWheelClosing = false;
   private transcriptWheelMovingDown = false;
   private transcriptWheelDebt = 0;
+  // Scroll rows queued while the pager is still starting. Codex silently
+  // discards arrow keys that arrive in the same instant as the opening Ctrl+T,
+  // so the rows are flushed only once the pager header is on screen.
+  private transcriptPendingRows = 0;
+  // Wheel-up steps that arrived while the pager was closing. Dropping them
+  // makes a direction reversal feel dead; instead the pager reopens with these
+  // steps once the close resolves.
+  private transcriptReopenSteps = 0;
   private pendingTranscriptInput = "";
   private transcriptWheelSettle?: ReturnType<typeof setTimeout>;
+  // While set, onWriteParsed keeps presenting the last stable frame: the
+  // cleared alternate screen of an opening pager and the stale primary screen
+  // of a closing one must never paint (they read as a flash / blank pane).
+  private transcriptFrameHold?: "close" | "open";
+  private transcriptFrameHoldTimer?: ReturnType<typeof setTimeout>;
   private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
   private resizeGeneration = 0;
   private resizeScheduled = false;
@@ -433,12 +455,18 @@ export class TerminalPanel implements TerminalReadable {
       }
       this.clearSynchronizedOutputRecovery();
       if (this.transcriptWheelClosing && !this.transcriptVisible()) {
-        this.transcriptWheelClosing = false;
-        const pendingInput = this.pendingTranscriptInput;
-        this.pendingTranscriptInput = "";
-        if (pendingInput) {
-          this.writeToChild(pendingInput);
+        this.finishTranscriptClose();
+      }
+      if (this.transcriptFrameHold === "open" && this.transcriptVisible()) {
+        // The pager has painted: deliver the queued scroll rows (sending them
+        // earlier loses them in the pager's startup window) and reveal it.
+        const rows = this.transcriptPendingRows;
+        this.transcriptPendingRows = 0;
+        if (rows > 0) {
+          this.writeToChild("\x1b[A".repeat(rows));
         }
+        this.releaseTranscriptFrameHold();
+        return;
       }
       if (
         this.transcriptWheelOpen &&
@@ -447,8 +475,74 @@ export class TerminalPanel implements TerminalReadable {
       ) {
         this.scheduleTranscriptWheelClose(false);
       }
+      if (this.transcriptFrameHold) {
+        // Mid-transition: keep the last stable frame on screen instead of the
+        // half-switched buffer. The hold is released by the branches above or
+        // by its bounded timer.
+        return;
+      }
       this.publishFrame();
     });
+  }
+
+  // A pager close resolved (its header left the screen) or timed out: deliver
+  // input the user typed while it was closing, reveal the restored composer,
+  // and honor a wheel-up reversal that arrived mid-close by reopening.
+  private finishTranscriptClose() {
+    this.transcriptWheelClosing = false;
+    const pendingInput = this.pendingTranscriptInput;
+    this.pendingTranscriptInput = "";
+    if (pendingInput) {
+      // Typed input wins over a queued scroll reversal: the user decided to
+      // return to the composer.
+      this.transcriptReopenSteps = 0;
+      this.writeToChild(pendingInput);
+    }
+    const reopenSteps = this.transcriptReopenSteps;
+    this.transcriptReopenSteps = 0;
+    if (reopenSteps > 0) {
+      this.transcriptWheelOpen = true;
+      this.transcriptWheelMovingDown = false;
+      this.transcriptWheelDebt += reopenSteps;
+      this.transcriptPendingRows = Math.min(
+        MAX_TRANSCRIPT_ROWS_PER_BURST,
+        reopenSteps * 3
+      );
+      this.writeToChild("\x14");
+      this.beginTranscriptFrameHold("open");
+      return;
+    }
+    this.releaseTranscriptFrameHold();
+  }
+
+  private beginTranscriptFrameHold(kind: "close" | "open") {
+    this.transcriptFrameHold = kind;
+    if (this.transcriptFrameHoldTimer) {
+      clearTimeout(this.transcriptFrameHoldTimer);
+    }
+    this.transcriptFrameHoldTimer = setTimeout(() => {
+      this.transcriptFrameHoldTimer = undefined;
+      // Never freeze the pane: resolve whatever transition state remains and
+      // show the real buffer, even if the pager misbehaved.
+      this.transcriptPendingRows = 0;
+      if (this.transcriptWheelClosing) {
+        this.finishTranscriptClose();
+      }
+      this.releaseTranscriptFrameHold();
+    }, TRANSCRIPT_TRANSITION_MAX_HOLD_MS);
+    this.transcriptFrameHoldTimer.unref?.();
+  }
+
+  private releaseTranscriptFrameHold() {
+    if (this.transcriptFrameHold === undefined) {
+      return;
+    }
+    this.transcriptFrameHold = undefined;
+    if (this.transcriptFrameHoldTimer) {
+      clearTimeout(this.transcriptFrameHoldTimer);
+      this.transcriptFrameHoldTimer = undefined;
+    }
+    this.publishFrame();
   }
 
   private publishFrame() {
@@ -815,6 +909,11 @@ export class TerminalPanel implements TerminalReadable {
     ) {
       const steps = Math.max(1, Math.floor(count));
       if (this.transcriptWheelClosing) {
+        if (direction === "up") {
+          // A reversal mid-close must not vanish: reopen once the close
+          // resolves so the gesture still lands.
+          this.transcriptReopenSteps += steps;
+        }
         return true;
       }
       let data = "";
@@ -822,18 +921,54 @@ export class TerminalPanel implements TerminalReadable {
         this.transcriptWheelMovingDown = false;
         this.transcriptWheelDebt += steps;
         this.clearTranscriptWheelSettle();
-        if (!(this.transcriptWheelOpen || this.transcriptVisible())) {
+        if (
+          this.transcriptPendingRows > 0 ||
+          this.transcriptFrameHold === "open"
+        ) {
+          // The pager is still starting; keys written now would be discarded.
+          // Fold this gesture into the queued rows instead.
+          this.transcriptPendingRows = Math.min(
+            MAX_TRANSCRIPT_ROWS_PER_BURST,
+            this.transcriptPendingRows + steps * 3
+          );
+        } else if (this.transcriptWheelOpen || this.transcriptVisible()) {
+          data += transcriptWheelKeys("up", steps);
+        } else {
+          // Open the pager with Ctrl+T alone. Codex discards arrow keys that
+          // arrive during the pager's startup window, so the scroll rows are
+          // queued and flushed once the header paints (onWriteParsed).
           data += "\x14";
+          this.transcriptPendingRows = Math.min(
+            MAX_TRANSCRIPT_ROWS_PER_BURST,
+            steps * 3
+          );
+          this.beginTranscriptFrameHold("open");
         }
         this.transcriptWheelOpen = true;
-        data += transcriptWheelKeys("up", steps);
       } else if (this.transcriptWheelOpen) {
         this.transcriptWheelMovingDown = true;
         this.transcriptWheelDebt = Math.max(
           0,
           this.transcriptWheelDebt - steps
         );
-        if (this.transcriptWheelDebt === 0 || this.transcriptAtBottom()) {
+        if (
+          this.transcriptPendingRows > 0 ||
+          this.transcriptFrameHold === "open"
+        ) {
+          // Still starting: shrink the queued rows instead of writing keys
+          // the pager would discard. The at-bottom grep is also unreliable
+          // here — the primary screen may contain a literal "100%".
+          this.transcriptPendingRows = Math.max(
+            0,
+            this.transcriptPendingRows - steps * 3
+          );
+          if (this.transcriptWheelDebt === 0) {
+            this.scheduleTranscriptWheelClose(true);
+          }
+        } else if (
+          this.transcriptWheelDebt === 0 ||
+          this.transcriptAtBottom()
+        ) {
           this.scheduleTranscriptWheelClose(true);
         } else {
           data = transcriptWheelKeys("down", steps);
@@ -964,7 +1099,9 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptWheelClosing = true;
     this.transcriptWheelMovingDown = false;
     this.transcriptWheelDebt = 0;
+    this.transcriptPendingRows = 0;
     this.clearTranscriptWheelSettle();
+    this.beginTranscriptFrameHold("close");
     if (data === "\x14") {
       this.writeToChild(data);
       return true;
@@ -981,7 +1118,9 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptWheelClosing = true;
     this.transcriptWheelMovingDown = false;
     this.transcriptWheelDebt = 0;
+    this.transcriptPendingRows = 0;
     this.clearTranscriptWheelSettle();
+    this.beginTranscriptFrameHold("close");
     this.writeToChild("\x14");
   }
 
@@ -1131,6 +1270,19 @@ export class TerminalPanel implements TerminalReadable {
   // detaches the client; the session keeps running for the next launch.
   detach() {
     this.clearSynchronizedOutputRecovery();
+    this.clearTranscriptWheelSettle();
+    if (this.transcriptFrameHoldTimer) {
+      clearTimeout(this.transcriptFrameHoldTimer);
+      this.transcriptFrameHoldTimer = undefined;
+    }
+    this.transcriptFrameHold = undefined;
+    this.transcriptWheelOpen = false;
+    this.transcriptWheelClosing = false;
+    this.transcriptWheelMovingDown = false;
+    this.transcriptWheelDebt = 0;
+    this.transcriptPendingRows = 0;
+    this.transcriptReopenSteps = 0;
+    this.pendingTranscriptInput = "";
     this.pendingResize = undefined;
     this.resizeGeneration += 1;
     try {

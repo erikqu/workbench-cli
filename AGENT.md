@@ -207,6 +207,22 @@ with text already present in the agent composer.
   Do not map wheel input directly to PageUp/PageDown (the main composer does not
   scroll), and do not enter tmux copy mode. Keep ordinary shell and other
   harness wheel behavior intact.
+- The pager transition protocol exists to make wheel scrolling feel continuous;
+  measured against real Codex 0.147 (open <15ms, close <10ms, but arrow keys
+  sent during the pager's startup window are silently DISCARDED):
+  - Open with Ctrl+T ALONE. Queue the scroll rows (`transcriptPendingRows`) and
+    flush them only when the pager header has painted; writing them with the
+    Ctrl+T loses them and the first gesture scrolls nothing.
+  - Hold the presented frame (`transcriptFrameHold`, bounded by a timer) across
+    open AND close so the cleared alternate screen / stale primary screen never
+    paint — that intermediate frame is the "flash".
+  - The at-bottom auto-close waits `TRANSCRIPT_WHEEL_SETTLE_MS` (hundreds of
+    ms, not tens): an up/down/up reversal must never pay a close->reopen
+    alt-screen cycle. A wheel-up that lands while the pager is closing is
+    queued (`transcriptReopenSteps`) and reopens the pager — never dropped.
+  - `transcriptWheelClosing` must always be time-bounded: if the header grep
+    never resolves, the bounded hold flushes `pendingTranscriptInput` anyway,
+    or typed keys vanish into a permanently-closing pager.
 - Focus harness/terminal panes from the embedded terminal's `onMouse` callback,
   not only an ancestor `onMouseDown`; selection handling can consume the event
   before it bubbles. In a focused harness, Ctrl+C copies an active Silvery
