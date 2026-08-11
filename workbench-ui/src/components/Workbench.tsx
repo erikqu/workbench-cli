@@ -43,6 +43,7 @@ import {
 } from "./MainTabs";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { NewHarnessDialog } from "./NewHarnessDialog";
+import { SessionsHelpDialog } from "./SessionsHelpDialog";
 import {
   SessionContextMenuOverlay,
   type SessionContextMenuState,
@@ -66,6 +67,7 @@ export function Workbench({
     useState<TabContextMenuState | null>(null);
   const [sessionContextMenu, setSessionContextMenu] =
     useState<SessionContextMenuState | null>(null);
+  const [sessionsHelpOpen, setSessionsHelpOpen] = useState(false);
   const selection = useSelection();
   const selectionActions = useSelectionActions();
   const selectionPresent = useRef(false);
@@ -97,6 +99,16 @@ export function Workbench({
   });
   useInput(
     (input, key) => {
+      if (isHelpShortcut(input, key)) {
+        setSessionsHelpOpen((open) => !open);
+        return;
+      }
+      if (sessionsHelpOpen) {
+        if (key.escape) {
+          setSessionsHelpOpen(false);
+        }
+        return;
+      }
       if ((tabContextMenu || sessionContextMenu) && key.escape) {
         setTabContextMenu(null);
         setSessionContextMenu(null);
@@ -214,6 +226,12 @@ export function Workbench({
                 setTabContextMenu(null);
                 setSessionContextMenu(value);
               }}
+              onOpenHelp={() => {
+                actions.closePlusMenu();
+                setTabContextMenu(null);
+                setSessionContextMenu(null);
+                setSessionsHelpOpen(true);
+              }}
               view={view}
             />
             <Box
@@ -305,6 +323,9 @@ export function Workbench({
             onClose={() => setSessionContextMenu(null)}
             view={view}
           />
+          {sessionsHelpOpen ? (
+            <SessionsHelpDialog onClose={() => setSessionsHelpOpen(false)} />
+          ) : null}
           {view.state.newAgentOpen ? (
             <NewAgentDialog actions={actions} view={view} />
           ) : null}
@@ -316,6 +337,21 @@ export function Workbench({
         </Box>
       </SuppressImagesContext.Provider>
     </Screen>
+  );
+}
+
+export function isHelpShortcut(input: string, key: Key): boolean {
+  // Enhanced keyboard protocols can distinguish Ctrl+Shift+/ (Ctrl+?) from
+  // Backspace. Legacy terminals encode both as DEL (0x7f), which Silvery
+  // correctly reports as key.backspace; never treat that ambiguous byte as
+  // Help or terminal deletion would stop working.
+  return (
+    key.ctrl &&
+    key.shift &&
+    !key.backspace &&
+    !key.meta &&
+    !key.super &&
+    (input === "?" || input === "/")
   );
 }
 

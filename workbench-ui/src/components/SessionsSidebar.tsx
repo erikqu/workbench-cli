@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AnchoredOverlay,
-  Badge,
   Box,
   Button,
+  displayWidth,
   ListView,
   type ListViewHandle,
   Text,
@@ -19,7 +19,7 @@ import {
   MIN_SESSIONS_SIDEBAR_WIDTH,
   maxSessionsSidebarWidth,
 } from "../ui/pane-layout";
-import { colors, THEME_LABELS } from "../ui/theme";
+import { colors } from "../ui/theme";
 import { CloseButton } from "./CloseButton";
 import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
@@ -27,10 +27,12 @@ import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 export function SessionsSidebar({
   view,
   actions,
+  onOpenHelp,
   onContextMenuChange,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  onOpenHelp(): void;
   onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
   const { columns } = useWindowSize();
@@ -79,9 +81,14 @@ export function SessionsSidebar({
         padding={1}
       >
         <Box flexDirection="row" height={1} justifyContent="space-between">
-          <Text color={colors.dim}>Sessions</Text>
+          <Box flexDirection="row" minWidth={1}>
+            <Text bold color={colors.text}>
+              Sessions
+            </Text>
+            <Text color={colors.dim}>{` ${view.state.sessions.length}`}</Text>
+          </Box>
           <Box flexDirection="row">
-            <Text color={colors.dim}>{`${view.state.sessions.length} `}</Text>
+            <HelpButton compact={width < 26} onOpen={onOpenHelp} />
             <CollapseButton
               actions={actions}
               pinned={view.state.sidebarVisible}
@@ -92,10 +99,8 @@ export function SessionsSidebar({
         <SessionList
           actions={actions}
           onContextMenuChange={onContextMenuChange}
-          sidebarWidth={width}
           view={view}
         />
-        <SidebarControls actions={actions} sidebarWidth={width} view={view} />
       </Box>
       <PaneResizeHandle
         maxWidth={maxWidth}
@@ -108,57 +113,6 @@ export function SessionsSidebar({
   );
 }
 
-// Reminds keyboard users how to jump around. The badges on the tabs and session
-// rows map 1:1 to these numbers; Shift selects the left (session) column.
-function SidebarControls({
-  view,
-  actions,
-  sidebarWidth,
-}: {
-  view: WorkbenchViewModel;
-  actions: WorkbenchActions;
-  sidebarWidth: number;
-}) {
-  const themeLabel =
-    THEME_LABELS[view.state.themeName as keyof typeof THEME_LABELS] ??
-    view.state.themeName;
-  const cycleTheme = (event?: { stopPropagation(): void }) => {
-    actions.cycleTheme();
-    event?.stopPropagation();
-  };
-  const quit = (event?: { stopPropagation(): void }) => {
-    actions.shutdown(0);
-    event?.stopPropagation();
-  };
-  const compact = sidebarWidth < 24;
-  return (
-    <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <Box flexDirection="row" height={1} justifyContent="space-between">
-        <Text color={colors.accentAlt} onClick={cycleTheme} wrap={false}>
-          {compact ? "Theme" : `Theme: ${themeLabel}`}
-        </Text>
-        <Text color={colors.dim} onClick={quit}>
-          Quit
-        </Text>
-      </Box>
-      <LegendRow keys="⌥1-9" label="tab" />
-      <LegendRow keys="⌥⇧1-9" label={compact ? "sess" : "session"} />
-      <LegendRow keys="⌥Space" label={compact ? "next" : "next session"} />
-      <LegendRow keys="⌥Tab" label="theme" />
-      <LegendRow keys="Ctrl+Q" label="quit" />
-    </Box>
-  );
-}
-
-function LegendRow({ keys, label }: { keys: string; label: string }) {
-  return (
-    <Box flexDirection="row" height={1}>
-      <Text color={colors.accentAlt}>{keys}</Text>
-      <Text color={colors.dim}>{` ${label}`}</Text>
-    </Box>
-  );
-}
-
 // Keyboard session navigation (up/down/x/return) stays in Workbench.handleKey;
 // this ListView windows the rows and adds ref-driven wheel scrolling so the two
 // input paths never fight over arrow keys.
@@ -166,25 +120,25 @@ function SessionList({
   view,
   actions,
   onContextMenuChange,
-  sidebarWidth,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
   onContextMenuChange(value: SessionContextMenuState | null): void;
-  sidebarWidth: number;
 }) {
   const listRef = useRef<ListViewHandle>(null);
   return (
     <Box
       flexGrow={1}
       flexShrink={1}
-      marginLeft={-1}
-      marginRight={-1}
       marginTop={1}
       minHeight={1}
       minWidth={1}
       onWheel={(event) => {
-        listRef.current?.scrollBy(event.deltaY > 0 ? 3 : -3);
+        listRef.current?.scrollBy(
+          event.deltaY > 0
+            ? SESSION_CARD_HEIGHT + SESSION_CARD_GAP
+            : -(SESSION_CARD_HEIGHT + SESSION_CARD_GAP)
+        );
         event.preventDefault();
         event.stopPropagation();
       }}
@@ -192,7 +146,6 @@ function SessionList({
       <SessionListBody
         actions={actions}
         listRef={listRef}
-        nameMaxWidth={Math.max(3, sidebarWidth - 9)}
         onContextMenuChange={onContextMenuChange}
         view={view}
       />
@@ -204,44 +157,45 @@ function SessionListBody({
   listRef,
   view,
   actions,
-  nameMaxWidth,
   onContextMenuChange,
 }: {
   listRef: React.RefObject<ListViewHandle | null>;
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
-  nameMaxWidth: number;
   onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
   const rect = useBoxRectDangerously();
   const height = Math.max(1, Math.floor(rect.height));
+  const cardWidth = Math.max(8, Math.floor(rect.width));
   const sessions = view.state.sessions;
   return (
     <ListView
       active={false}
-      estimateHeight={SESSION_ROW_HEIGHT}
+      estimateHeight={SESSION_CARD_HEIGHT + SESSION_CARD_GAP}
+      gap={SESSION_CARD_GAP}
       getKey={(session) => session.id}
       height={height}
       items={sessions}
       ref={listRef}
       renderItem={(session) => (
-        <SessionRow
+        <SessionCard
           actions={actions}
           canClose={sessions.length > 1}
           diff={view.diffs.get(session.cwd)}
           index={sessions.indexOf(session)}
-          nameMaxWidth={nameMaxWidth}
           onContextMenuChange={onContextMenuChange}
           running={view.runningSessionIds.has(session.id)}
           selected={session.id === view.state.activeSessionId}
           session={session}
+          width={cardWidth}
         />
       )}
     />
   );
 }
 
-export const SESSION_ROW_HEIGHT = 3;
+export const SESSION_CARD_HEIGHT = 3;
+export const SESSION_CARD_GAP = 1;
 
 function CollapsedSessionsRail({
   view,
@@ -339,6 +293,21 @@ function CollapseButton({
   );
 }
 
+function HelpButton({ compact, onOpen }: { compact: boolean; onOpen(): void }) {
+  return (
+    <Button
+      color={colors.accentAlt}
+      focusable={false}
+      label={compact ? "?" : "? Help"}
+      onClick={(event) => {
+        onOpen();
+        event.stopPropagation();
+      }}
+      onPress={onOpen}
+    />
+  );
+}
+
 function NewAgentRow({
   actions,
   compact,
@@ -364,7 +333,7 @@ function NewAgentRow({
   );
 }
 
-function SessionRow({
+function SessionCard({
   session,
   index,
   running,
@@ -372,7 +341,7 @@ function SessionRow({
   canClose,
   diff,
   actions,
-  nameMaxWidth,
+  width,
   onContextMenuChange,
 }: {
   session: AgentSession;
@@ -382,9 +351,10 @@ function SessionRow({
   canClose: boolean;
   diff?: SessionDiff;
   actions: WorkbenchActions;
-  nameMaxWidth: number;
+  width: number;
   onContextMenuChange(value: SessionContextMenuState | null): void;
 }) {
+  const [hovered, setHovered] = useState(false);
   const anchorId = `workbench-session-${session.id}`;
   const select = (event: { button: number; stopPropagation(): void }) => {
     if (event.button !== 0) {
@@ -396,22 +366,38 @@ function SessionRow({
     event.stopPropagation();
   };
   const hasChanges = diff && diff.files.length > 0;
-  const hasSecondLine = Boolean(running || hasChanges);
-  const diffWidth = hasChanges
-    ? String(diff.totalAdded).length + String(diff.totalDeleted).length + 5
-    : 0;
-  const flowWidth = Math.max(1, nameMaxWidth - diffWidth);
+  const added = hasChanges ? compactDiffCount(diff.totalAdded) : "";
+  const deleted = hasChanges ? compactDiffCount(diff.totalDeleted) : "";
+  const diffWidth = hasChanges ? added.length + deleted.length + 3 : 0;
   // First 9 sessions get a dim index badge matching their Option+Shift+N shortcut.
   const hint = index < 9 ? String(index + 1) : undefined;
-  const sectionWidth = nameMaxWidth + 7;
+  const hintText = hint ? `${hint} ` : "";
+  const closeWidth = canClose ? 3 : 0;
+  const titleMaxWidth = Math.max(1, width - 4 - hintText.length);
+  const title = `${hintText}${truncateText(session.name, titleMaxWidth, "...")}`;
+  const titleFillWidth = Math.max(0, width - 4 - displayWidth(title));
+  const topFillWidth = Math.max(0, width - 2 - closeWidth);
+  const flowWidth = running
+    ? Math.max(1, Math.min(11, width - diffWidth - 2))
+    : 0;
+  const bottomFillWidth = Math.max(0, width - 2 - flowWidth - diffWidth);
+  const surface = selected
+    ? hovered
+      ? colors.selectedHover
+      : colors.selected
+    : hovered
+      ? colors.selectedMuted
+      : colors.panelAlt;
+  const foreground = selected ? colors.onSelected : colors.text;
+  const border = selected || hovered ? colors.borderFocus : colors.border;
 
   return (
     <Box
       anchorRef={anchorId}
-      backgroundColor={colors.panel}
+      backgroundColor={surface}
       flexDirection="column"
       flexShrink={0}
-      height={SESSION_ROW_HEIGHT}
+      height={SESSION_CARD_HEIGHT}
       onClick={select}
       onMouseDown={(event) => {
         if (event.button !== 2) {
@@ -421,72 +407,55 @@ function SessionRow({
         event.preventDefault();
         event.stopPropagation();
       }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      width={width}
     >
-      {/* Every row carries the same top separator: a lower-eighth stroke at
-          the bottom of the gap line, directly above the row's content. The
-          selected row sheds the stroke — sitting flush against the highlight,
-          it would fuse with the block and read as an extra sliver of height
-          on top. The gap line itself stays so the rhythm remains even. */}
-      <Text color={colors.border} wrap={false}>
-        {(selected ? " " : "▁").repeat(sectionWidth)}
-      </Text>
-      <Box
-        backgroundColor={selected ? colors.selectedMuted : colors.panel}
-        flexDirection="column"
-        height={hasSecondLine ? 2 : 1}
-        paddingLeft={1}
-        paddingRight={1}
-        width={sectionWidth}
-      >
-        <Box flexDirection="row" height={1}>
-          <Box flexDirection="row" flexGrow={1} minWidth={1}>
-            {hint ? (
-              <Text
-                color={selected ? colors.accent : colors.dim}
-              >{`${hint} `}</Text>
-            ) : null}
-            <Text
-              bold={selected || running}
-              color={selected ? colors.onSelected : colors.text}
-              flexShrink={1}
-              minWidth={1}
-              wrap={false}
-            >
-              {truncateText(session.name, nameMaxWidth, "...")}
-            </Text>
-          </Box>
-          {canClose ? (
-            <CloseButton onClose={() => actions.closeSession(session.id)} />
-          ) : null}
-        </Box>
-        {hasSecondLine ? (
-          <Box flexDirection="row" height={1} justifyContent="space-between">
-            {running ? (
-              <RunningSessionFlow width={flowWidth} />
-            ) : (
-              <Text> </Text>
-            )}
-            {hasChanges ? (
-              <Box flexDirection="row">
-                <Badge label={`+${diff.totalAdded}`} variant="success" />
-                <Text> </Text>
-                <Badge label={`-${diff.totalDeleted}`} variant="error" />
-              </Box>
-            ) : null}
-          </Box>
+      <Box backgroundColor={surface} flexDirection="row" height={1}>
+        <Text color={border}>╭</Text>
+        <Text color={border}>{"─".repeat(topFillWidth)}</Text>
+        {canClose ? (
+          <CloseButton
+            color={foreground}
+            onClose={() => actions.closeSession(session.id)}
+          />
         ) : null}
+        <Text color={border}>╮</Text>
       </Box>
-      {hasSecondLine ? null : (
-        // With nothing to show on the second line, the highlight would read
-        // as a full empty line of bottom padding. Render it as an upper-half
-        // block instead so the selected block keeps some breathing room below
-        // the name but at half a cell; unselected rows leave the line blank.
-        <Text color={selected ? colors.selectedMuted : colors.panel}>
-          {"▀".repeat(sectionWidth)}
+      <Box backgroundColor={surface} flexDirection="row" height={1}>
+        <Text color={border}>│ </Text>
+        <Text bold={selected || running} color={foreground} wrap={false}>
+          {title}
         </Text>
-      )}
+        <Text color={surface}>{" ".repeat(titleFillWidth)}</Text>
+        <Text color={border}> │</Text>
+      </Box>
+      <Box backgroundColor={surface} flexDirection="row" height={1}>
+        <Text color={border}>╰</Text>
+        {running ? <RunningSessionFlow width={flowWidth} /> : null}
+        <Text color={border}>{"─".repeat(bottomFillWidth)}</Text>
+        {hasChanges ? (
+          <>
+            <Text color={colors.diffAddFg}>{`+${added}`}</Text>
+            <Text color={border}> </Text>
+            <Text color={colors.diffDelFg}>{`-${deleted}`}</Text>
+          </>
+        ) : null}
+        <Text color={border}>╯</Text>
+      </Box>
     </Box>
   );
+}
+
+export function compactDiffCount(value: number): string {
+  const count = Math.max(0, Math.floor(value));
+  if (count < 1000) {
+    return String(count);
+  }
+  if (count < 1_000_000) {
+    return `${Math.floor(count / 1000)}k`;
+  }
+  return `${Math.min(999, Math.floor(count / 1_000_000))}m`;
 }
 
 const SESSION_FLOW_INTERVAL_MS = 100;

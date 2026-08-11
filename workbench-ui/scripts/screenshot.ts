@@ -72,26 +72,34 @@ try {
     await waitForText(page, `⌥1 ${defaultHarnessLabel}`, 2000)
   );
   report(
-    "selected session sheds its top separator stroke",
-    (await sessionSeparatorStrokes(page, "workbench-ui")) === 0
+    "selected session renders its name inside an outlined card",
+    await sessionCardOutlined(page, "1 workbench-ui")
   );
   report(
-    "selected session highlight starts below its separator",
-    await selectedSessionHighlightStartsBelowSeparator(page)
+    "selected session surface fills only its card",
+    await selectedSessionCardSurface(page)
   );
   report(
-    "selected session highlight spans its section width",
-    await selectedSessionHighlightSpansSectionWidth(page)
-  );
-  report(
-    "selected session highlight ends flush below its content",
-    await selectedSessionHighlightEndsFlush(page)
+    "session card hover changes its themed surface",
+    await sessionCardHoverChangesSurface(page)
   );
   report(
     "harness restart control renders beside switch",
     await waitForText(page, "↻ switch ...", 2000)
   );
   await page.screenshot({ path: join(screenshotDir, "workbench.png") });
+
+  await send(page, "\x1b[63;6u");
+  const helpOpened = await waitForText(page, "Workbench help", 3000);
+  report("Ctrl+? opens the Workbench help overlay", helpOpened);
+  if (helpOpened) {
+    await page.screenshot({ path: join(screenshotDir, "workbench-help.png") });
+    await send(page, "\x1b[63;6u");
+    report(
+      "Ctrl+? closes the Workbench help overlay",
+      await waitForTextGone(page, "Workbench help", 3000)
+    );
+  }
 
   // 1b. Both vertical pane borders are draggable. Move each six columns right,
   // assert its new position, then restore the default geometry so subsequent
@@ -374,13 +382,11 @@ try {
         path: join(screenshotDir, "workbench-dialog.png"),
       });
       await send(page, "\r");
-      const secondSession = await waitForText(page, "workbench-ui (2)", 4000);
+      const secondSession = await waitForText(page, "2 workbench", 4000);
       report("new agent dialog creates a second session", secondSession);
-      // The new session is now active, so the first one is unselected and
-      // must show its separator stroke again.
       report(
-        "unselected session entries keep top separators",
-        (await sessionSeparatorStrokes(page, "1 workbench-ui")) >= 10
+        "new session uses the same outlined card structure",
+        await sessionCardOutlined(page, "2 workbench")
       );
     } else {
       report("new agent dialog opens", false);
@@ -528,79 +534,63 @@ async function hasBorderAt(page: Page, col: number): Promise<boolean> {
   return lines.slice(4, -2).some((line) => line[col] === "│");
 }
 
-// Unselected rows draw a lower-eighth separator stroke on the gap line above
-// their content; the selected row sheds it so the stroke cannot fuse with the
-// highlight block and read as extra height on top.
-async function sessionSeparatorStrokes(
+async function sessionCardOutlined(
   page: Page,
   needle: string
-): Promise<number> {
+): Promise<boolean> {
   const session = await findCell(page, needle, 0, 26);
-  if (!session || session.row === 0) {
-    return -1;
-  }
-  const line = (await bufferText(page)).split("\n")[session.row - 1] ?? "";
-  return [...line.slice(1, 25)].filter((char) => char === "▁").length;
-}
-
-async function selectedSessionHighlightStartsBelowSeparator(
-  page: Page
-): Promise<boolean> {
-  const session = await findCell(page, "workbench-ui", 0, 26);
-  if (!session || session.row === 0) {
+  if (!session) {
     return false;
   }
-  return page.evaluate(({ col, row }) => {
-    const separator = (window as any).__cellState(col, row - 1);
-    const content = (window as any).__cellState(col, row);
-    return separator?.bg !== content?.bg;
-  }, session);
+  const lines = (await bufferText(page)).split("\n");
+  const top = lines[session.row - 1]?.slice(1, 25) ?? "";
+  const middle = lines[session.row]?.slice(1, 25) ?? "";
+  const bottom = lines[session.row + 1]?.slice(1, 25) ?? "";
+  return (
+    top.includes("╭") &&
+    top.includes("╮") &&
+    middle.includes("│") &&
+    bottom.includes("╰") &&
+    bottom.includes("╯")
+  );
 }
 
-async function selectedSessionHighlightSpansSectionWidth(
-  page: Page
-): Promise<boolean> {
-  const session = await findCell(page, "workbench-ui", 0, 26);
-  if (!session || session.row === 0) {
-    return false;
-  }
-  // Measure the contiguous run of highlight background around the name cell.
-  // The section spans the sidebar interior, so anything narrower than 20
-  // columns means the highlight no longer covers the full row width.
-  return page.evaluate(({ col, row }) => {
-    const content = (window as any).__cellState(col, row);
-    if (!content || content.bg === 0) {
-      return false;
-    }
-    let left = col;
-    while (
-      left > 0 &&
-      (window as any).__cellState(left - 1, row)?.bg === content.bg
-    ) {
-      left -= 1;
-    }
-    let right = col;
-    while ((window as any).__cellState(right + 1, row)?.bg === content.bg) {
-      right += 1;
-    }
-    return right - left + 1 >= 20;
-  }, session);
-}
-
-async function selectedSessionHighlightEndsFlush(page: Page): Promise<boolean> {
+async function selectedSessionCardSurface(page: Page): Promise<boolean> {
   const session = await findCell(page, "workbench-ui", 0, 26);
   if (!session) {
     return false;
   }
-  // The highlight must cover its full content (name + badge line) and stop
-  // there: the following separator line stays on the panel background instead
-  // of bleeding an extra highlighted sliver below the block.
   return page.evaluate(({ col, row }) => {
-    const name = (window as any).__cellState(col, row);
-    const badges = (window as any).__cellState(col, row + 1);
-    const below = (window as any).__cellState(col, row + 2);
-    return name?.bg === badges?.bg && below?.bg !== name?.bg;
+    const top = (window as any).__cellState(col, row - 1);
+    const middle = (window as any).__cellState(col, row);
+    const bottom = (window as any).__cellState(col, row + 1);
+    const gap = (window as any).__cellState(col, row + 2);
+    return (
+      top?.bg !== 0 &&
+      top.bg === middle?.bg &&
+      top.bg === bottom?.bg &&
+      gap?.bg !== top.bg
+    );
   }, session);
+}
+
+async function sessionCardHoverChangesSurface(page: Page): Promise<boolean> {
+  const session = await findCell(page, "workbench-ui", 0, 26);
+  if (!session) {
+    return false;
+  }
+  const before = await page.evaluate(
+    ({ col, row }) => (window as any).__cellState(col, row)?.bg,
+    session
+  );
+  await send(page, `\x1b[<35;${session.col + 1};${session.row + 1}M`);
+  await page.waitForTimeout(100);
+  const after = await page.evaluate(
+    ({ col, row }) => (window as any).__cellState(col, row)?.bg,
+    session
+  );
+  await send(page, "\x1b[<35;100;20M");
+  return before !== after;
 }
 
 async function screenIsAnchored(page: Page): Promise<boolean> {

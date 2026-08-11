@@ -230,6 +230,7 @@ function colorMap(t: Record<string, string>) {
     accent: t["fg-accent"],
     accentAlt: t["fg-accent-hover"],
     selected: t["bg-selected"],
+    selectedHover: t["bg-selected-hover"],
     selectedMuted: t["bg-muted"],
     onSelected: t["fg-on-selected"],
     error: t["bg-error"],

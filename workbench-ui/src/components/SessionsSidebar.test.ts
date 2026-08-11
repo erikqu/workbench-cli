@@ -1,14 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentSession } from "../state/types";
 import {
-  SESSION_ROW_HEIGHT,
+  compactDiffCount,
+  SESSION_CARD_GAP,
+  SESSION_CARD_HEIGHT,
   sessionCloseTargets,
   sessionFlowOffset,
   sessionFlowStrengths,
 } from "./SessionsSidebar";
 
-test("session rows reserve a dedicated top separator", () => {
-  expect(SESSION_ROW_HEIGHT).toBe(3);
+test("session cards reserve an outlined content row and a gap", () => {
+  expect(SESSION_CARD_HEIGHT).toBe(3);
+  expect(SESSION_CARD_GAP).toBe(1);
+});
+
+test("large diff counts stay compact enough for narrow cards", () => {
+  expect(compactDiffCount(999)).toBe("999");
+  expect(compactDiffCount(12_345)).toBe("12k");
+  expect(compactDiffCount(4_500_000)).toBe("4m");
 });
 
 function sessions(...ids: string[]): AgentSession[] {

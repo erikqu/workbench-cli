@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Box, Text } from "silvery";
 import { colors } from "../ui/theme";
 
-export function CloseButton({ onClose }: { onClose(): void }) {
+export function CloseButton({
+  color = colors.text,
+  onClose,
+}: {
+  color?: string;
+  onClose(): void;
+}) {
   const [hovered, setHovered] = useState(false);
   return (
     <Box
@@ -23,7 +29,7 @@ export function CloseButton({ onClose }: { onClose(): void }) {
       onMouseLeave={() => setHovered(false)}
       width={3}
     >
-      <Text bold color={hovered ? colors.onError : colors.text}>
+      <Text bold color={hovered ? colors.onError : color}>
         ×
       </Text>
     </Box>

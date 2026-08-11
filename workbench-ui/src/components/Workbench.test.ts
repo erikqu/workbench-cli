@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { parseKey } from "silvery";
-import { isThemeCycleKey, terminalGridSize, wheelGesture } from "./Workbench";
+import {
+  isHelpShortcut,
+  isThemeCycleKey,
+  terminalGridSize,
+  wheelGesture,
+} from "./Workbench";
 
 function parsed(input: string) {
   return parseKey(input);
@@ -24,6 +29,21 @@ describe("isThemeCycleKey", () => {
   test("does not match plain Tab", () => {
     const [input, key] = parsed("\t");
     expect(isThemeCycleKey(input, key)).toBe(false);
+  });
+});
+
+describe("isHelpShortcut", () => {
+  test("matches enhanced Ctrl+? encodings", () => {
+    for (const raw of ["\x1b[63;6u", "\x1b[47;6u"]) {
+      const [input, key] = parsed(raw);
+      expect(isHelpShortcut(input, key)).toBe(true);
+    }
+  });
+
+  test("never mistakes legacy DEL for Help", () => {
+    const [input, key] = parsed("\x7f");
+    expect(key.backspace).toBe(true);
+    expect(isHelpShortcut(input, key)).toBe(false);
   });
 });
 
