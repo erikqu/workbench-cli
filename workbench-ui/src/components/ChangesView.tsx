@@ -9,8 +9,10 @@ import {
 } from "silvery";
 import { isChangesTab } from "../state/types";
 import type { DiffFile, DiffLine, FilePatch, SessionDiff } from "../text/diff";
+import { editorTabKind } from "../text/editor";
 import { colors } from "../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
+import { MeasuredImageContent } from "./viewers/ImageViewer";
 
 const listWidth = 38;
 
@@ -372,6 +374,7 @@ function DiffDetail({
   const listRef = useRef<ListViewHandle>(null);
   const [patch, setPatch] = useState<FilePatch | null>(null);
   const [pageRows, setPageRows] = useState(20);
+  const imagePath = imageDiffPreviewPath(file);
 
   useEffect(() => {
     if (!file) {
@@ -447,7 +450,17 @@ function DiffDetail({
         </Text>
       </Box>
       {file ? (
-        patch ? (
+        imagePath ? (
+          <Box
+            backgroundColor={colors.panelAlt}
+            flexGrow={1}
+            minHeight={1}
+            minWidth={1}
+            overflow="hidden"
+          >
+            <MeasuredImageContent path={imagePath} />
+          </Box>
+        ) : patch ? (
           patch.binary ? (
             <Text color={colors.dim}>Binary file ({file.status})</Text>
           ) : lines.length === 0 ? (
@@ -477,6 +490,14 @@ function DiffDetail({
       ) : null}
     </Box>
   );
+}
+
+export function imageDiffPreviewPath(file?: DiffFile): string | undefined {
+  return file &&
+    file.status !== "deleted" &&
+    editorTabKind(file.path) === "image"
+    ? file.path
+    : undefined;
 }
 
 // Patch pane: a ref-driven (non-nav) ListView so its arrow keys never collide

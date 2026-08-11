@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { defaultHarnessId, harnessSpec } from "../src/state/harnesses";
@@ -12,8 +12,10 @@ const screenshotQuery = normalizeQuery(
     (lightTheme ? "terminalTheme=light" : undefined)
 );
 const defaultHarnessLabel = harnessSpec(defaultHarnessId()).label;
+const diffImagePath = join(root, "test-harness", "diff-preview.png");
 
 mkdirSync(screenshotDir, { recursive: true });
+copyFileSync(join(root, "test-harness", "sample.png"), diffImagePath);
 
 const server = Bun.spawn(["bun", "test-harness/server.ts"], {
   cwd: root,
@@ -389,6 +391,38 @@ try {
     await page.screenshot({
       path: join(screenshotDir, "workbench-changes.png"),
     });
+    const changesSidebar = await findCell(page, "Changes", 26, 56);
+    let diffImage = changesSidebar
+      ? await findCellBelow(
+          page,
+          "preview.png",
+          26,
+          56,
+          changesSidebar.row + 1
+        )
+      : null;
+    for (let step = 0; changesSidebar && !diffImage && step < 30; step++) {
+      await wheel(page, 40, changesSidebar.row + 2, 1);
+      await page.waitForTimeout(40);
+      diffImage = await findCellBelow(
+        page,
+        "preview.png",
+        26,
+        56,
+        changesSidebar.row + 1
+      );
+    }
+    if (diffImage) {
+      await click(page, diffImage.col + 2, diffImage.row + 1);
+      const imageDrawn = await waitForText(page, "▀", 5000);
+      const buffer = await bufferText(page);
+      report(
+        "image diff renders the image instead of a binary label",
+        imageDrawn && !buffer.includes("Binary file")
+      );
+    } else {
+      report("image diff fixture appears in Changes", false);
+    }
   } else {
     report("Changes tab located", false);
   }
@@ -524,6 +558,7 @@ try {
   console.log(join(screenshotDir, "workbench.png"));
 } finally {
   server.kill();
+  rmSync(diffImagePath, { force: true });
 }
 
 if (failures.length > 0) {
@@ -801,6 +836,23 @@ async function findCell(
       ? lines[row].slice(colStart, colEnd)
       : lines[row].slice(colStart);
     const index = slice.indexOf(needle);
+    if (index !== -1) {
+      return { row, col: colStart + index };
+    }
+  }
+  return null;
+}
+
+async function findCellBelow(
+  page: Page,
+  needle: string,
+  colStart: number,
+  colEnd: number,
+  rowStart: number
+): Promise<{ row: number; col: number } | null> {
+  const lines = (await bufferText(page)).split("\n");
+  for (let row = rowStart; row < lines.length; row++) {
+    const index = lines[row].slice(colStart, colEnd).indexOf(needle);
     if (index !== -1) {
       return { row, col: colStart + index };
     }
