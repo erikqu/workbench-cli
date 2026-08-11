@@ -68,6 +68,14 @@ try {
   const harnessVisible = await waitForText(page, defaultHarnessLabel, 8000);
   report("default harness pane renders", harnessVisible);
   report(
+    "top tabs show explicit Option shortcuts",
+    await waitForText(page, `⌥1 ${defaultHarnessLabel}`, 2000)
+  );
+  report(
+    "session entries have top separators",
+    await sessionEntryHasTopSeparator(page)
+  );
+  report(
     "harness restart control renders beside switch",
     await waitForText(page, "↻ switch ...", 2000)
   );
@@ -500,6 +508,15 @@ async function drag(
 async function hasBorderAt(page: Page, col: number): Promise<boolean> {
   const lines = (await bufferText(page)).split("\n");
   return lines.slice(4, -2).some((line) => line[col] === "│");
+}
+
+async function sessionEntryHasTopSeparator(page: Page): Promise<boolean> {
+  const session = await findCell(page, "workbench-ui", 0, 26);
+  if (!session || session.row === 0) {
+    return false;
+  }
+  const line = (await bufferText(page)).split("\n")[session.row - 1] ?? "";
+  return [...line.slice(1, 25)].filter((char) => char === "─").length >= 10;
 }
 
 async function screenIsAnchored(page: Page): Promise<boolean> {

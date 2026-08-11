@@ -118,8 +118,9 @@ function Tab({
   // three cells wide and bold, with the destructive inverse color reserved
   // for hover so the strip stays calm until the user targets the action.
   const showClose = closable;
-  // The first 9 tabs get a dim index badge matching their Option+N shortcut.
-  const hint = index < 9 ? String(index + 1) : undefined;
+  // Spell out the actual chord so the shortcut is discoverable without
+  // consulting the sidebar legend.
+  const hint = tabShortcutHint(index);
   const openContextMenu = (event: {
     button: number;
     preventDefault(): void;
@@ -213,7 +214,8 @@ export function tabIndexAtOffset(
       continue;
     }
     const closable = !harnessIdFromTab(option.value) || canCloseHarness;
-    const hintWidth = index < 9 ? 2 : 0;
+    const hint = tabShortcutHint(index);
+    const hintWidth = hint ? displayWidth(hint) + 1 : 0;
     const width =
       1 + hintWidth + displayWidth(option.name) + (closable ? 3 : 1);
     if (offset >= start && offset < start + width) {
@@ -222,6 +224,10 @@ export function tabIndexAtOffset(
     start += width;
   }
   return -1;
+}
+
+export function tabShortcutHint(index: number): string | undefined {
+  return index >= 0 && index < 9 ? `⌥${index + 1}` : undefined;
 }
 
 export function TabContextMenuOverlay({

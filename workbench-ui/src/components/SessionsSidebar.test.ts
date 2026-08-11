@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentSession } from "../state/types";
 import {
+  SESSION_ROW_HEIGHT,
   sessionCloseTargets,
   sessionFlowOffset,
   sessionFlowStrengths,
 } from "./SessionsSidebar";
+
+test("session rows reserve a dedicated top separator", () => {
+  expect(SESSION_ROW_HEIGHT).toBe(3);
+});
 
 function sessions(...ids: string[]): AgentSession[] {
   return ids.map(

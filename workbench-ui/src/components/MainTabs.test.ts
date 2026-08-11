@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { tabCloseTargets, tabIndexAtOffset } from "./MainTabs";
+import { tabCloseTargets, tabIndexAtOffset, tabShortcutHint } from "./MainTabs";
 import type { TabSelectOption } from "./types";
 
 const options: TabSelectOption[] = [
@@ -37,5 +37,13 @@ describe("tabIndexAtOffset", () => {
     expect(tabIndexAtOffset(options, 2, false)).toBe(0);
     expect(tabIndexAtOffset(options, 12, false)).toBe(1);
     expect(tabIndexAtOffset(options, 25, false)).toBe(2);
+  });
+});
+
+describe("tabShortcutHint", () => {
+  test("shows the complete Option shortcut for the first nine tabs", () => {
+    expect(tabShortcutHint(0)).toBe("⌥1");
+    expect(tabShortcutHint(8)).toBe("⌥9");
+    expect(tabShortcutHint(9)).toBeUndefined();
   });
 });

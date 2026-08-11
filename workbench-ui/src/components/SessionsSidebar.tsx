@@ -217,7 +217,7 @@ function SessionListBody({
   return (
     <ListView
       active={false}
-      estimateHeight={2}
+      estimateHeight={SESSION_ROW_HEIGHT}
       getKey={(session) => session.id}
       height={height}
       items={sessions}
@@ -238,6 +238,8 @@ function SessionListBody({
     />
   );
 }
+
+export const SESSION_ROW_HEIGHT = 3;
 
 function CollapsedSessionsRail({
   view,
@@ -403,9 +405,14 @@ function SessionRow({
     <Box
       anchorRef={anchorId}
       backgroundColor={selected ? colors.selectedMuted : colors.panel}
+      borderBottom={false}
+      borderColor={colors.border}
+      borderLeft={false}
+      borderRight={false}
+      borderStyle="single"
       flexDirection="column"
       flexShrink={0}
-      height={2}
+      height={SESSION_ROW_HEIGHT}
       onClick={select}
       onMouseDown={(event) => {
         if (event.button !== 2) {
