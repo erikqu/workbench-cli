@@ -458,7 +458,7 @@ function DiffDetail({
             minWidth={1}
             overflow="hidden"
           >
-            <MeasuredImageContent path={imagePath} />
+            <MeasuredImageContent path={imagePath} terminalArtOnly />
           </Box>
         ) : patch ? (
           patch.binary ? (

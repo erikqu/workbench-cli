@@ -12,7 +12,9 @@ const screenshotQuery = normalizeQuery(
     (lightTheme ? "terminalTheme=light" : undefined)
 );
 const defaultHarnessLabel = harnessSpec(defaultHarnessId()).label;
-const diffImagePath = join(root, "test-harness", "diff-preview.png");
+// Sort immediately after package.json so the compact Changes viewport exposes
+// both a textual patch first and this binary-image regression fixture second.
+const diffImagePath = join(root, "q-diff-preview.png");
 
 mkdirSync(screenshotDir, { recursive: true });
 copyFileSync(join(root, "test-harness", "sample.png"), diffImagePath);
@@ -393,17 +395,11 @@ try {
     });
     const changesSidebar = await findCell(page, "Changes", 26, 56);
     let diffImage = changesSidebar
-      ? await findCellBelow(
-          page,
-          "preview.png",
-          26,
-          56,
-          changesSidebar.row + 1
-        )
+      ? await findCellBelow(page, "preview.png", 26, 56, changesSidebar.row + 1)
       : null;
     for (let step = 0; changesSidebar && !diffImage && step < 30; step++) {
-      await wheel(page, 40, changesSidebar.row + 2, 1);
-      await page.waitForTimeout(40);
+      await send(page, "\x1b[B");
+      await page.waitForTimeout(25);
       diffImage = await findCellBelow(
         page,
         "preview.png",
@@ -417,7 +413,7 @@ try {
       const imageDrawn = await waitForText(page, "▀", 5000);
       const buffer = await bufferText(page);
       report(
-        "image diff renders the image instead of a binary label",
+        "image diff renders terminal art instead of a binary label",
         imageDrawn && !buffer.includes("Binary file")
       );
     } else {

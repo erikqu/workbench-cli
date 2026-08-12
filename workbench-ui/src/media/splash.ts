@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 const ASSET_DIR = join(import.meta.dir, "..", "..", "assets", "splash");
 
-// The splash uses the same real-image pipeline as file previews. Cap its width
-// so the park-bench illustration stays composed on ultrawide terminals.
+// The splash decodes this image into colored terminal-cell art. It must never
+// use a native graphics protocol, which can flash above the TUI during redraws.
 export const SPLASH_IMAGE_PATH = join(ASSET_DIR, "og-image.jpg");
 export const SPLASH_MAX_COLS = 100;
 

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { prepareHalfblockImage } from "./image";
 import { SPLASH_IMAGE_PATH } from "./splash";
 
-test("splash renders the park-bench image instead of binary glyph art", async () => {
+test("splash converts the park-bench image to terminal-cell art", async () => {
   expect(existsSync(SPLASH_IMAGE_PATH)).toBe(true);
 
   const placement = await prepareHalfblockImage(SPLASH_IMAGE_PATH, 48, 14);

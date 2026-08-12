@@ -69,6 +69,7 @@ function SplashArtwork() {
       <MeasuredImageContent
         path={SPLASH_IMAGE_PATH}
         renderWhenSuppressed
+        terminalArtOnly
         zIndex={100}
       />
     </Box>

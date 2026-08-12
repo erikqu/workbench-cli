@@ -6,6 +6,7 @@ import {
   useBoxRectDangerously,
 } from "silvery";
 import {
+  prepareHalfblockImage,
   prepareSilveryImage,
   type SilveryImagePlacement,
 } from "../../media/image";
@@ -62,10 +63,12 @@ export function ImageViewer({
 export function MeasuredImageContent({
   path,
   renderWhenSuppressed = false,
+  terminalArtOnly = false,
   zIndex = 10,
 }: {
   path: string;
   renderWhenSuppressed?: boolean;
+  terminalArtOnly?: boolean;
   zIndex?: number;
 }) {
   const rect = useBoxRectDangerously();
@@ -79,7 +82,8 @@ export function MeasuredImageContent({
 
   useEffect(() => {
     let cancelled = false;
-    prepareSilveryImage(path, cols, rows)
+    const prepare = imagePreparer(terminalArtOnly);
+    prepare(path, cols, rows)
       .then((result) => {
         if (cancelled) {
           return;
@@ -102,7 +106,7 @@ export function MeasuredImageContent({
     return () => {
       cancelled = true;
     };
-  }, [path, cols, rows]);
+  }, [path, cols, rows, terminalArtOnly]);
 
   // Hold off transmitting graphics while suppressed (e.g. under the splash) so
   // the emulator's image compositor doesn't paint over the overlay.
@@ -128,6 +132,10 @@ export function MeasuredImageContent({
       zIndex={zIndex}
     />
   );
+}
+
+export function imagePreparer(terminalArtOnly: boolean) {
+  return terminalArtOnly ? prepareHalfblockImage : prepareSilveryImage;
 }
 
 // Kitty graphics inside a multiplexer: transmit the image out-of-band (already
