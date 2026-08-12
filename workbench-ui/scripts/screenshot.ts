@@ -27,6 +27,8 @@ const server = Bun.spawn(["bun", "test-harness/server.ts"], {
     ...Bun.env,
     WORKBENCH_SCREENSHOT_PORT: String(port),
     WORKBENCH_UI_CWD: root,
+    WORKBENCH_UI_FORCE_SPLASH:
+      Bun.env.WORKBENCH_CAPTURE_SPLASH === "1" ? "1" : "0",
     // Diff polling is skipped in screenshot mode by default; force it on so the
     // Changes tab populates against the working tree for the diff check below.
     WORKBENCH_UI_FORCE_DIFF: "1",
@@ -59,7 +61,7 @@ try {
           const text = (window as any).__bufferText();
           return (
             text.includes("Starting up...") &&
-            (text.match(/▀/g)?.length ?? 0) > 100
+            (text.match(/[01]/g)?.length ?? 0) > 100
           );
         },
         undefined,
@@ -67,8 +69,8 @@ try {
       )
       .catch(() => undefined);
     report(
-      "splash renders the park-bench image instead of binary glyphs",
-      await splashUsesImageArt(page)
+      "splash renders monochrome binary ASCII art",
+      await splashUsesBinaryArt(page)
     );
     await page.screenshot({
       path: join(screenshotDir, "workbench-splash.png"),
@@ -584,13 +586,11 @@ async function bufferText(page: Page): Promise<string> {
   return page.evaluate(() => (window as any).__bufferText());
 }
 
-async function splashUsesImageArt(page: Page): Promise<boolean> {
+async function splashUsesBinaryArt(page: Page): Promise<boolean> {
   const text = await bufferText(page);
-  const halfBlocks = text.match(/▀/g)?.length ?? 0;
+  const binaryGlyphs = text.match(/[01]/g)?.length ?? 0;
   return (
-    text.includes("Starting up...") &&
-    halfBlocks > 100 &&
-    !/[01]{20}/.test(text)
+    text.includes("Starting up...") && binaryGlyphs > 100 && !text.includes("▀")
   );
 }
 

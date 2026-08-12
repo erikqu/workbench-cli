@@ -1,13 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Box, Text, useBoxRectDangerously } from "silvery";
 import {
-  SPLASH_IMAGE_PATH,
+  buildBinarySplashArt,
   SPLASH_MAX_COLS,
   SPLASH_VERSION,
 } from "../media/splash";
 import { colors } from "../ui/theme";
 import type { WorkbenchActions } from "./types";
-import { MeasuredImageContent } from "./viewers/ImageViewer";
 
 // Rows reserved below the art for the version/hint banner.
 const BANNER_ROWS = 4;
@@ -57,21 +56,27 @@ function SplashArtwork() {
     Math.min(SPLASH_MAX_COLS, Math.floor(rect.width) - 4)
   );
   const availRows = Math.max(1, Math.floor(rect.height) - BANNER_ROWS - 2);
+  const [lines, setLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    buildBinarySplashArt(availCols, availRows).then((art) => {
+      if (!cancelled) {
+        setLines(art);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [availCols, availRows]);
 
   return (
-    <Box
-      alignItems="center"
-      flexShrink={0}
-      height={availRows}
-      justifyContent="center"
-      width={availCols}
-    >
-      <MeasuredImageContent
-        path={SPLASH_IMAGE_PATH}
-        renderWhenSuppressed
-        terminalArtOnly
-        zIndex={100}
-      />
+    <Box alignItems="center" flexDirection="column" flexShrink={0}>
+      {lines.map((line, index) => (
+        <Text key={index} wrap={false}>
+          {line}
+        </Text>
+      ))}
     </Box>
   );
 }
