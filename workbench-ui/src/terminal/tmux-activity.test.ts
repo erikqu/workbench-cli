@@ -2,7 +2,38 @@ import { describe, expect, test } from "bun:test";
 import {
   harnessAppearsRunning,
   parseRecentTmuxActivity,
+  parseTmuxScrollPosition,
 } from "./tmux-activity";
+
+describe("parseTmuxScrollPosition", () => {
+  test("reads a scrolled copy-mode pane", () => {
+    expect(parseTmuxScrollPosition("1|2|482|40\n")).toEqual({
+      historySize: 482,
+      paneHeight: 40,
+      scrollPosition: 2,
+    });
+  });
+
+  test("ignores a pane that is not in a mode", () => {
+    // tmux leaves scroll_position empty outside copy-mode.
+    expect(parseTmuxScrollPosition("0||482|40")).toBeUndefined();
+  });
+
+  test("ignores a mode with no scroll offset yet", () => {
+    expect(parseTmuxScrollPosition("1||482|40")).toBeUndefined();
+  });
+
+  test("ignores malformed or missing output", () => {
+    expect(parseTmuxScrollPosition("")).toBeUndefined();
+    expect(parseTmuxScrollPosition("no such pane")).toBeUndefined();
+    expect(parseTmuxScrollPosition("1|abc|482|40")).toBeUndefined();
+    expect(parseTmuxScrollPosition("1|2|abc|40")).toBeUndefined();
+  });
+
+  test("accepts a pane sitting at the bottom of its history", () => {
+    expect(parseTmuxScrollPosition("1|0|900|30")?.scrollPosition).toBe(0);
+  });
+});
 
 describe("parseRecentTmuxActivity", () => {
   test("returns live tmux sessions with recent pane output", () => {

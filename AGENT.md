@@ -170,6 +170,19 @@ with text already present in the agent composer.
 - Highlighting in `text/syntax.ts` is regex-based and the file tree
   (`text/file-tree.ts`) uses `readdirSync` + `ignore`. `web-tree-sitter` and
   `fast-glob` were removed as dead dependencies — don't reintroduce either.
+- **The harness activity poll owns its own timer.** `startHarnessActivityPolling`
+  re-arms itself and nothing else restarts it, so no other scheduler may clear
+  `harnessActivityTimer` — only `shutdown()` may. `scheduleDiffTick` used to
+  clear it, which silently froze the animated session rail a few seconds into
+  every launch (the diff loop re-schedules after every pass, and the activity
+  tick spends nearly its whole 750ms cycle parked on that timeout).
+- **The animated rail is why an "idle" pane must really be idle.** While any
+  session is in `runningSessionIds` the rail animates, and every animation frame
+  repaints cells, so the app emits bytes. `assertIdleWindows` in the terminal
+  regression demands *zero* bytes from a settled pane, so the running heuristic
+  must retire promptly: `TMUX_ACTIVITY_WINDOW_MS` (the output-based fallback in
+  `terminal/tmux-activity.ts`) doubles as how long the rail keeps spinning after
+  an agent goes quiet. Lengthening it re-breaks that gate.
 - `actions()` returns a cached, stable object (`workbenchActions`) — don't
   rebuild it per render.
 
@@ -205,9 +218,13 @@ with text already present in the agent composer.
   `HarnessCommand` therefore keeps `wheelNavigation: "transcript"` as a runtime
   fallback only: mouse-aware panes receive native wheel reports, while inline
   panes open Codex's Ctrl+T transcript pager and receive row-level Up/Down keys.
-  Cap each coalesced burst so one fast flick cannot make Codex render hundreds
-  of intermediate frames; do not use PageUp/PageDown because current Codex
-  transcript layouts can jump into an unpainted blank region.
+  Scale each coalesced burst with the gesture (`transcriptBurstRows`, three rows
+  per wheel tick) and cap it at one screenful, not at a small fixed number: the
+  pager repaints ONCE per burst regardless of how many arrows arrive (measured
+  against Codex 0.147 — twelve back-to-back Down arrows produced a single ~12.5ms
+  repaint), so a low cap throttles scrolling without saving the agent any work.
+  Do not use PageUp/PageDown because current Codex transcript layouts can jump
+  into an unpainted blank region.
   Balanced wheel-down closes the fallback pager and returns to the composer.
   Do not map wheel input directly to PageUp/PageDown (the main composer does not
   scroll), and do not enter tmux copy mode. Keep ordinary shell and other

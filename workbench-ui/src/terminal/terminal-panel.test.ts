@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { TerminalPanel } from "./terminal-panel";
+import {
+  TerminalPanel,
+  transcriptBurstCap,
+  transcriptBurstRows,
+} from "./terminal-panel";
 
 // Reach the panel's internal xterm so tests can feed it raw bytes directly
 // (the public `write` path only forwards to a child PTY).
@@ -280,16 +284,19 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(writes.at(-1)).toBe("x");
   });
 
-  test("bounds large transcript wheel bursts to row operations", async () => {
+  test("bounds a large transcript wheel burst to one screenful", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24, {
       wheelNavigation: "transcript",
     });
     const writes = capturePty(panel);
 
+    // 26 steps would ask for 78 rows; a 24-row pane caps the burst at a
+    // screenful (22). The pager repaints once per burst either way, so the cap
+    // exists to keep the jump comprehensible, not to save the agent work.
     expect(panel.sendMouseWheel(4, 9, "up", 26)).toBe(true);
     expect(writes).toEqual(["\x14"]);
     await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
-    expect(writes).toEqual(["\x14", "\x1b[A".repeat(12)]);
+    expect(writes).toEqual(["\x14", "\x1b[A".repeat(22)]);
   });
 
   test("folds wheel gestures into the queue while the pager starts", async () => {
@@ -385,6 +392,92 @@ describe("TerminalPanel.sendMouseWheel", () => {
     await Bun.sleep(450);
 
     expect(writes).toEqual(["\x14", "\x1b[A".repeat(12), "\x14"]);
+  });
+});
+
+describe("transcriptBurstRows", () => {
+  test("moves three rows per wheel tick for fine control", () => {
+    expect(transcriptBurstRows(1, 40)).toBe(3);
+    expect(transcriptBurstRows(2, 40)).toBe(6);
+  });
+
+  test("lets a fast flick travel a screenful instead of a fixed 12 rows", () => {
+    // A 40-row pane allows 38; the old fixed cap throttled every flick to 12.
+    expect(transcriptBurstRows(20, 40)).toBe(38);
+    expect(transcriptBurstRows(100, 70)).toBe(68);
+  });
+
+  test("keeps a usable floor on short panes", () => {
+    expect(transcriptBurstRows(20, 8)).toBe(12);
+    expect(transcriptBurstCap(8)).toBe(12);
+  });
+
+  test("clamps nonsense step counts to at least one tick", () => {
+    expect(transcriptBurstRows(0, 40)).toBe(3);
+    expect(transcriptBurstRows(-5, 40)).toBe(3);
+  });
+});
+
+describe("TerminalPanel.scrollIndicator", () => {
+  function capturePty(panel: TerminalPanel) {
+    const writes: string[] = [];
+    (panel as unknown as { child: unknown }).child = {};
+    (panel as unknown as { pty: { write(data: string): void } }).pty = {
+      write(data) {
+        writes.push(data);
+      },
+    };
+    return writes;
+  }
+
+  test("has nothing to show on a pane sitting at the live edge", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh");
+    expect(panel.scrollIndicator()).toBeUndefined();
+  });
+
+  test("tracks the local mirror once the pane is scrolled", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\ni\r\nj");
+
+    panel.scrollLines(-3);
+    const thumb = panel.scrollIndicator();
+    expect(thumb).toBeDefined();
+    expect(thumb?.approximate).toBe(false);
+    // A fresh gesture highlights the thumb.
+    expect(thumb?.active).toBe(true);
+    expect(thumb?.trackHeight).toBe(6);
+
+    panel.scrollToBottom();
+    expect(panel.scrollIndicator()).toBeUndefined();
+  });
+
+  test("derives an approximate thumb from the Codex pager footer", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 50% ");
+    const thumb = panel.scrollIndicator();
+    expect(thumb?.approximate).toBe(true);
+    expect(thumb?.trackHeight).toBe(24);
+
+    // The footer reporting the live edge retires the indicator.
+    await feed(panel, "\x1b[2J\x1b[HT R A N S C R I P T\r\n 100% ");
+    expect(panel.scrollIndicator()).toBeUndefined();
+  });
+
+  test("clears scroll state on detach", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 6);
+    await feed(panel, "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\ni\r\nj");
+    panel.scrollLines(-3);
+    expect(panel.scrollIndicator()).toBeDefined();
+
+    panel.detach();
+    // followOutput is restored, so nothing lingers for the next attach.
+    expect(panel.scrollIndicator()).toBeUndefined();
   });
 });
 

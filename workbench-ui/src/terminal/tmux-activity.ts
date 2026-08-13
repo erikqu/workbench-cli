@@ -1,4 +1,10 @@
-const TMUX_ACTIVITY_WINDOW_MS = 5000;
+// How long after a pane's last output it still counts as active, for harnesses
+// that expose no explicit busy marker. This is the fallback heuristic behind the
+// animated session rail, so the window is also how long the rail keeps spinning
+// after an agent finishes. Five seconds left it animating well past the point
+// the agent went quiet — visibly wrong, and the animation repaints cells the
+// whole time. Two seconds still spans ordinary gaps in a streaming response.
+const TMUX_ACTIVITY_WINDOW_MS = 2000;
 
 export function parseRecentTmuxActivity(
   output: string,
@@ -68,6 +74,75 @@ export async function captureTmuxPane(
     return exitCode === 0 ? output : "";
   } catch {
     return "";
+  }
+}
+
+export interface TmuxScrollPosition {
+  historySize: number;
+  paneHeight: number;
+  // Rows scrolled UP from the live bottom, as tmux reports it.
+  scrollPosition: number;
+}
+
+// Parse `#{pane_in_mode}|#{scroll_position}|#{history_size}|#{pane_height}`.
+// tmux leaves `scroll_position` empty unless the pane is scrolled in copy-mode
+// (it can report `1||482|40` for a pane in a mode with no offset yet), so both
+// the mode flag and a real number are required.
+export function parseTmuxScrollPosition(
+  output: string
+): TmuxScrollPosition | undefined {
+  const [inMode, scrollText, historyText, heightText] = output
+    .trim()
+    .split("|");
+  if (inMode !== "1") {
+    return;
+  }
+  const scrollPosition = Number(scrollText);
+  const historySize = Number(historyText);
+  const paneHeight = Number(heightText);
+  if (
+    !(
+      scrollText &&
+      Number.isFinite(scrollPosition) &&
+      scrollPosition >= 0 &&
+      Number.isFinite(historySize) &&
+      historySize >= 0 &&
+      Number.isFinite(paneHeight)
+    )
+  ) {
+    return;
+  }
+  return { historySize, paneHeight, scrollPosition };
+}
+
+// Read a pane's copy-mode scroll offset. Strictly read-only: `display-message`
+// never alters the pane, which matters because the terminal regression suite
+// fails if an idle pane emits any bytes.
+export async function tmuxScrollPosition(
+  socketPath: string,
+  sessionName: string
+): Promise<TmuxScrollPosition | undefined> {
+  try {
+    const child = Bun.spawn(
+      [
+        "tmux",
+        "-S",
+        socketPath,
+        "display-message",
+        "-p",
+        "-t",
+        sessionName,
+        "#{pane_in_mode}|#{scroll_position}|#{history_size}|#{pane_height}",
+      ],
+      { stdout: "pipe", stderr: "ignore" }
+    );
+    const [output, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      child.exited,
+    ]);
+    return exitCode === 0 ? parseTmuxScrollPosition(output) : undefined;
+  } catch {
+    return;
   }
 }
 

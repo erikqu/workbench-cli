@@ -12,11 +12,19 @@ import type {
 import { colors } from "../ui/theme";
 import { emitToast } from "../ui/toast";
 import {
+  type PaneScrollPosition,
+  parseTranscriptPercent,
+  type ScrollThumb,
+  sameScrollThumb,
+  scrollThumb,
+} from "./scroll-position";
+import {
   terminalTrace,
   terminalTraceEnabled,
   terminalTracePresentedPanel,
   terminalTraceRowId,
 } from "./terminal-trace";
+import { type TmuxScrollPosition, tmuxScrollPosition } from "./tmux-activity";
 
 export interface PersistentTmuxSession {
   name: string;
@@ -368,15 +376,48 @@ const SYNCHRONIZED_OUTPUT_RECOVERY_IDLE_MS = 1000;
 // composer returns promptly once the user actually stops scrolling.
 const TRANSCRIPT_WHEEL_SETTLE_MS = 400;
 const TMUX_MOUSE_MODE_CACHE_MS = 100;
-const MAX_TRANSCRIPT_ROWS_PER_BURST = 12;
+// Rows one coalesced wheel burst may move inside the transcript pager.
+//
+// The pager repaints ONCE per burst no matter how many arrows arrive (measured
+// against Codex 0.147: twelve back-to-back Down arrows produced a single
+// ~12.5ms repaint), so a small fixed cap throttles scrolling without saving the
+// agent any work. Scale with the gesture instead and allow up to a screenful,
+// which keeps a fast flick fast while a single tick still moves three rows for
+// fine control. The floor keeps narrow panes usable.
+const TRANSCRIPT_ROWS_PER_WHEEL_STEP = 3;
+const MIN_TRANSCRIPT_ROWS_PER_BURST = 12;
+
+// Most rows any single burst may move: a screenful, floored so narrow panes
+// still scroll usefully.
+export function transcriptBurstCap(paneRows: number): number {
+  const screenful = Math.max(1, Math.floor(paneRows) - 2);
+  return Math.max(MIN_TRANSCRIPT_ROWS_PER_BURST, screenful);
+}
+
+export function transcriptBurstRows(steps: number, paneRows: number): number {
+  const requested =
+    Math.max(1, Math.floor(steps)) * TRANSCRIPT_ROWS_PER_WHEEL_STEP;
+  return Math.min(transcriptBurstCap(paneRows), requested);
+}
 // Upper bound on how long the panel keeps presenting the last stable frame
 // while the pager opens or closes. Real transitions finish in tens of
 // milliseconds; the cap only exists so a wedged pager can never freeze the
 // pane.
 const TRANSCRIPT_TRANSITION_MAX_HOLD_MS = 500;
+// How often a scrolled persistent pane re-reads its tmux copy-mode offset, and
+// how many unchanged samples end the poll. Four ticks matches silvery's
+// SCROLLBAR_FADE_AFTER_MS (800ms) so the poll and the highlight fade retire
+// together and a pane parked in scrollback costs nothing.
+const SCROLL_POLL_MS = 200;
+const SCROLL_POLL_IDLE_TICKS = 4;
+const SCROLL_HIGHLIGHT_MS = 800;
 
-function transcriptWheelKeys(direction: "up" | "down", steps: number): string {
-  const rows = Math.min(MAX_TRANSCRIPT_ROWS_PER_BURST, steps * 3);
+function transcriptWheelKeys(
+  direction: "up" | "down",
+  steps: number,
+  paneRows: number
+): string {
+  const rows = transcriptBurstRows(steps, paneRows);
   return (direction === "up" ? "\x1b[A" : "\x1b[B").repeat(rows);
 }
 
@@ -412,6 +453,14 @@ export class TerminalPanel implements TerminalReadable {
   private resizeGeneration = 0;
   private resizeScheduled = false;
   private tmuxNativeMouseCache?: { active: boolean; at: number };
+  // Scroll-indicator state. `scrollHighlight` only changes the thumb's color, so
+  // its timer fires once per gesture rather than driving visibility.
+  private scrollPollTimer?: ReturnType<typeof setTimeout>;
+  private scrollHighlightTimer?: ReturnType<typeof setTimeout>;
+  private scrollPollIdleTicks = 0;
+  private scrollHighlight = false;
+  private transcriptPercent?: number;
+  private tmuxScroll?: TmuxScrollPosition;
   private pendingResize?: {
     cols: number;
     generation: number;
@@ -454,6 +503,12 @@ export class TerminalPanel implements TerminalReadable {
         return;
       }
       this.clearSynchronizedOutputRecovery();
+      // The pager footer carries the only scroll position Codex publishes. Read
+      // it before the transition branches below, which can return early, so the
+      // indicator always rides a frame that is being published anyway.
+      if (this.transcriptWheelOpen) {
+        this.transcriptPercent = parseTranscriptPercent(this.viewportRows());
+      }
       if (this.transcriptWheelClosing && !this.transcriptVisible()) {
         this.finishTranscriptClose();
       }
@@ -504,9 +559,9 @@ export class TerminalPanel implements TerminalReadable {
       this.transcriptWheelOpen = true;
       this.transcriptWheelMovingDown = false;
       this.transcriptWheelDebt += reopenSteps;
-      this.transcriptPendingRows = Math.min(
-        MAX_TRANSCRIPT_ROWS_PER_BURST,
-        reopenSteps * 3
+      this.transcriptPendingRows = transcriptBurstRows(
+        reopenSteps,
+        this.terminal.rows
       );
       this.writeToChild("\x14");
       this.beginTranscriptFrameHold("open");
@@ -758,6 +813,9 @@ export class TerminalPanel implements TerminalReadable {
     terminalTrace("panel-scroll", { lines, panel: this.traceId });
     this.terminal.scrollLines(lines);
     this.updateFollowOutput();
+    // The local mirror already bumps a revision, so the indicator repaints for
+    // free — only the highlight needs arming.
+    this.markScrollActive();
     this.updateRevision = ++revisionCounter;
     this.emit();
   }
@@ -765,6 +823,7 @@ export class TerminalPanel implements TerminalReadable {
   scrollPages(pages: number) {
     this.terminal.scrollPages(pages);
     this.updateFollowOutput();
+    this.markScrollActive();
     this.updateRevision = ++revisionCounter;
     this.emit();
   }
@@ -928,19 +987,20 @@ export class TerminalPanel implements TerminalReadable {
           // The pager is still starting; keys written now would be discarded.
           // Fold this gesture into the queued rows instead.
           this.transcriptPendingRows = Math.min(
-            MAX_TRANSCRIPT_ROWS_PER_BURST,
-            this.transcriptPendingRows + steps * 3
+            transcriptBurstCap(this.terminal.rows),
+            this.transcriptPendingRows +
+              transcriptBurstRows(steps, this.terminal.rows)
           );
         } else if (this.transcriptWheelOpen || this.transcriptVisible()) {
-          data += transcriptWheelKeys("up", steps);
+          data += transcriptWheelKeys("up", steps, this.terminal.rows);
         } else {
           // Open the pager with Ctrl+T alone. Codex discards arrow keys that
           // arrive during the pager's startup window, so the scroll rows are
           // queued and flushed once the header paints (onWriteParsed).
           data += "\x14";
-          this.transcriptPendingRows = Math.min(
-            MAX_TRANSCRIPT_ROWS_PER_BURST,
-            steps * 3
+          this.transcriptPendingRows = transcriptBurstRows(
+            steps,
+            this.terminal.rows
           );
           this.beginTranscriptFrameHold("open");
         }
@@ -960,7 +1020,8 @@ export class TerminalPanel implements TerminalReadable {
           // here — the primary screen may contain a literal "100%".
           this.transcriptPendingRows = Math.max(
             0,
-            this.transcriptPendingRows - steps * 3
+            this.transcriptPendingRows -
+              transcriptBurstRows(steps, this.terminal.rows)
           );
           if (this.transcriptWheelDebt === 0) {
             this.scheduleTranscriptWheelClose(true);
@@ -971,7 +1032,7 @@ export class TerminalPanel implements TerminalReadable {
         ) {
           this.scheduleTranscriptWheelClose(true);
         } else {
-          data = transcriptWheelKeys("down", steps);
+          data = transcriptWheelKeys("down", steps, this.terminal.rows);
           this.scheduleTranscriptWheelClose(true);
         }
       }
@@ -1015,6 +1076,9 @@ export class TerminalPanel implements TerminalReadable {
     const button = direction === "up" ? 64 : 65;
     const report = `\x1b[<${button};${Math.max(1, Math.floor(col) + 1)};${Math.max(1, Math.floor(row) + 1)}M`;
     this.writeToChild(report.repeat(steps));
+    // tmux may have entered copy-mode for this gesture; track its offset so the
+    // pane can show a thumb. No-op for panes without a persistent session.
+    this.beginScrollTracking();
     return true;
   }
 
@@ -1080,6 +1144,8 @@ export class TerminalPanel implements TerminalReadable {
     } catch {
       // The session may have exited between the wheel and the next input.
     }
+    // The pane is back at the live edge, so retire the poll and the thumb.
+    this.stopScrollTracking();
   }
 
   // A wheel-opened Codex transcript must close before composer input. Consume
@@ -1151,6 +1217,18 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptWheelSettle = undefined;
   }
 
+  // Visible rows of the bottom page, as plain text.
+  private viewportRows(): string[] {
+    const buffer = this.terminal.buffer.active;
+    const rows: string[] = [];
+    for (let row = 0; row < this.terminal.rows; row += 1) {
+      rows.push(
+        buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? ""
+      );
+    }
+    return rows;
+  }
+
   private transcriptVisible(): boolean {
     const buffer = this.terminal.buffer.active;
     for (let row = 0; row < this.terminal.rows; row += 1) {
@@ -1178,6 +1256,123 @@ export class TerminalPanel implements TerminalReadable {
       }
     }
     return false;
+  }
+
+  // Thumb geometry for the pane's scroll overlay, or undefined when this pane
+  // has no readable scroll position (an alternate-screen CLI that owns the
+  // mouse scrolls itself and reports nothing) or is sitting at the live edge.
+  scrollIndicator(): (ScrollThumb & { active: boolean }) | undefined {
+    const thumb = scrollThumb(this.terminal.rows, this.scrollPosition());
+    if (!thumb) {
+      return;
+    }
+    return { ...thumb, active: this.scrollHighlight };
+  }
+
+  private scrollPosition(): PaneScrollPosition | undefined {
+    // 1. Codex's transcript pager: a percentage is all it publishes.
+    if (
+      this.options.wheelNavigation === "transcript" &&
+      this.transcriptWheelOpen &&
+      this.transcriptPercent !== undefined
+    ) {
+      return {
+        approximate: true,
+        offsetRows: this.transcriptPercent,
+        scrollableRows: 100,
+        source: "transcript",
+      };
+    }
+    // 2. tmux copy-mode owns scrolling for persistent panes whose program is
+    //    not mouse-aware; `scrollPosition` counts rows up from the bottom.
+    const tmux = this.tmuxScroll;
+    if (tmux) {
+      return {
+        approximate: false,
+        offsetRows: Math.max(0, tmux.historySize - tmux.scrollPosition),
+        scrollableRows: tmux.historySize,
+        source: "tmux",
+      };
+    }
+    // 3. Our own xterm mirror, for non-persistent panes. `followOutput` is
+    //    false exactly when the user scrolled it via scrollLines/scrollPages.
+    const buffer = this.terminal.buffer.active;
+    if (!this.followOutput && buffer.baseY > 0) {
+      return {
+        approximate: false,
+        offsetRows: buffer.viewportY,
+        scrollableRows: buffer.baseY,
+        source: "xterm",
+      };
+    }
+    return;
+  }
+
+  // Light up the thumb while a scroll gesture is in flight, then dim it. This
+  // only changes color, so it fires once per gesture and never re-arms itself.
+  private markScrollActive() {
+    if (!this.scrollHighlight) {
+      this.scrollHighlight = true;
+      this.publishFrame();
+    }
+    if (this.scrollHighlightTimer) {
+      clearTimeout(this.scrollHighlightTimer);
+    }
+    this.scrollHighlightTimer = setTimeout(() => {
+      this.scrollHighlightTimer = undefined;
+      this.scrollHighlight = false;
+      this.publishFrame();
+    }, SCROLL_HIGHLIGHT_MS);
+    this.scrollHighlightTimer.unref?.();
+  }
+
+  // Track a persistent pane's tmux copy-mode offset while it is scrolling.
+  // Read-only, async, and self-retiring: after SCROLL_POLL_IDLE_TICKS samples
+  // that do not move the thumb it stops instead of re-arming, so an idle or
+  // parked pane spawns nothing.
+  private beginScrollTracking() {
+    this.markScrollActive();
+    const persist = this.persist;
+    if (!persist || this.scrollPollTimer) {
+      return;
+    }
+    this.scrollPollIdleTicks = 0;
+    const tick = async () => {
+      this.scrollPollTimer = undefined;
+      const next = await tmuxScrollPosition(persist.socketPath, persist.name);
+      // The pane may have been detached while the query was in flight.
+      if (!this.pty) {
+        return;
+      }
+      const before = this.scrollIndicator();
+      this.tmuxScroll = next;
+      const after = this.scrollIndicator();
+      if (sameScrollThumb(before, after)) {
+        this.scrollPollIdleTicks += 1;
+        if (this.scrollPollIdleTicks >= SCROLL_POLL_IDLE_TICKS) {
+          return;
+        }
+      } else {
+        this.scrollPollIdleTicks = 0;
+        this.publishFrame();
+      }
+      this.scrollPollTimer = setTimeout(tick, SCROLL_POLL_MS);
+      this.scrollPollTimer.unref?.();
+    };
+    this.scrollPollTimer = setTimeout(tick, SCROLL_POLL_MS);
+    this.scrollPollTimer.unref?.();
+  }
+
+  private stopScrollTracking() {
+    if (this.scrollPollTimer) {
+      clearTimeout(this.scrollPollTimer);
+      this.scrollPollTimer = undefined;
+    }
+    this.scrollPollIdleTicks = 0;
+    if (this.tmuxScroll) {
+      this.tmuxScroll = undefined;
+      this.publishFrame();
+    }
   }
 
   private writeToChild(data: string) {
@@ -1283,6 +1478,21 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptPendingRows = 0;
     this.transcriptReopenSteps = 0;
     this.pendingTranscriptInput = "";
+    if (this.scrollPollTimer) {
+      clearTimeout(this.scrollPollTimer);
+      this.scrollPollTimer = undefined;
+    }
+    if (this.scrollHighlightTimer) {
+      clearTimeout(this.scrollHighlightTimer);
+      this.scrollHighlightTimer = undefined;
+    }
+    this.scrollPollIdleTicks = 0;
+    this.scrollHighlight = false;
+    this.transcriptPercent = undefined;
+    this.tmuxScroll = undefined;
+    // The next attach repaints the live screen, so a viewport the user had
+    // parked in local scrollback must not survive as a stale scroll position.
+    this.followOutput = true;
     this.pendingResize = undefined;
     this.resizeGeneration += 1;
     try {

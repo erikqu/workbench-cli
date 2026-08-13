@@ -450,9 +450,13 @@ export class ReactWorkbenchApp {
     if (this.diffTimer) {
       clearTimeout(this.diffTimer);
     }
-    if (this.harnessActivityTimer) {
-      clearTimeout(this.harnessActivityTimer);
-    }
+    // Never touch `harnessActivityTimer` here. This scheduler only owns the
+    // diff cadence; the harness activity poll re-arms itself and nothing
+    // restarts it if its pending wakeup is cancelled. Clearing it from here
+    // silently froze the running-session animation a few seconds into every
+    // launch, because this runs after every diff pass (every 2s with the
+    // Changes tab open, otherwise every 10s) and the activity tick spends
+    // nearly its whole 750ms cycle parked on that timeout.
     const onChanges = isChangesTab(this.activeSession().activeMainTab);
     this.diffTimer = setTimeout(tick, onChanges ? 2000 : 10_000);
     this.diffTick = tick;
@@ -1078,6 +1082,11 @@ export class ReactWorkbenchApp {
     }
     if (this.diffTimer) {
       clearTimeout(this.diffTimer);
+    }
+    // Shutdown is the one place that legitimately stops the activity poll.
+    if (this.harnessActivityTimer) {
+      clearTimeout(this.harnessActivityTimer);
+      this.harnessActivityTimer = undefined;
     }
     void this.explorerWatcher?.close();
     try {

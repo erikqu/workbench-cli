@@ -193,6 +193,32 @@ try {
     } else {
       report("regular terminal selection copies with Ctrl+C", false);
     }
+
+    // The pane scroll indicator overlays the pane's right border while the
+    // pane is scrolled off the live edge, and retires when it returns. In
+    // screenshot mode panes are not persistent, so this exercises the local
+    // xterm-scrollback source.
+    report(
+      "terminal pane shows no scroll thumb at the live edge",
+      !(await hasPaneScrollThumb(page))
+    );
+    await send(page, "seq 1 400\r");
+    await waitForText(page, "400", 4000);
+    for (let i = 0; i < 4; i++) {
+      await wheel(page, 90, 20, -1);
+      await page.waitForTimeout(60);
+    }
+    report(
+      "scrolled terminal pane shows a scroll thumb on its border",
+      await hasPaneScrollThumb(page)
+    );
+    // Any keystroke re-anchors the pane to the prompt, retiring the thumb.
+    await send(page, "\r");
+    await page.waitForTimeout(300);
+    report(
+      "scroll thumb retires when the pane returns to the live edge",
+      !(await hasPaneScrollThumb(page))
+    );
   } else {
     report("Terminal 1 tab located", false);
   }
@@ -801,6 +827,25 @@ async function hoverChangesSurface(
 async function screenIsAnchored(page: Page): Promise<boolean> {
   return (
     (await bufferText(page)).split("\n")[0]?.includes("Workbench") ?? false
+  );
+}
+
+// The pane scroll indicator paints thumb glyphs on a pane's right-hand border
+// column, i.e. where a border glyph would otherwise be. Detect it by looking
+// for a thumb glyph in a column that is otherwise vertical border.
+async function hasPaneScrollThumb(page: Page): Promise<boolean> {
+  const thumb = new Set("▁▂▃▄▅▆▇█");
+  const lines = (await bufferText(page)).split("\n").slice(4, -2);
+  const borderColumns = new Set<number>();
+  for (const line of lines) {
+    for (const [col, char] of [...line].entries()) {
+      if (char === "│" || char === "╭" || char === "╰") {
+        borderColumns.add(col);
+      }
+    }
+  }
+  return lines.some((line) =>
+    [...line].some((char, col) => thumb.has(char) && borderColumns.has(col))
   );
 }
 

@@ -43,6 +43,7 @@ import {
 } from "./MainTabs";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { NewHarnessDialog } from "./NewHarnessDialog";
+import { PaneScrollIndicator } from "./PaneScrollIndicator";
 import { SessionsHelpDialog } from "./SessionsHelpDialog";
 import {
   SessionContextMenuOverlay,
@@ -630,6 +631,9 @@ function HarnessView({
         </Box>
       </Box>
       {view.harnessPanel ? (
+        <PaneScrollIndicator panel={view.harnessPanel} top={1} />
+      ) : null}
+      {view.harnessPanel ? (
         <TerminalGrid
           focus={() => actions.focus("harness")}
           focused={view.state.focus === "harness"}
@@ -733,6 +737,9 @@ function TerminalView({
         {" "}
         Terminal{" "}
       </Text>
+      {view.terminalPanel ? (
+        <PaneScrollIndicator panel={view.terminalPanel} top={1} />
+      ) : null}
       {view.terminalPanel ? (
         <TerminalGrid
           focus={() => actions.focus("terminal")}
