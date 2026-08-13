@@ -94,6 +94,9 @@ const TMUX_SOCKET_PATH = tmuxSocketPath();
 // throttle. Low enough to feel instant, high enough to coalesce bursts.
 const RENDER_INTERVAL_MS = 16;
 const HARNESS_ACTIVITY_POLL_MS = 750;
+// Long enough for a freshly mounted pane's first repaint burst to land, short
+// enough that a stale region is never visible for more than a blink.
+const FULL_REDRAW_DELAY_MS = 200;
 const HARNESS_COLOR_ENV = {
   CLICOLOR: "1",
   CLICOLOR_FORCE: "1",
@@ -129,6 +132,7 @@ export class ReactWorkbenchApp {
   private diffRunning = false;
   private runningSessionIds = new Set<string>();
   private harnessActivityTimer?: ReturnType<typeof setTimeout>;
+  private fullRedrawTimer?: ReturnType<typeof setTimeout>;
   private readonly workbenchActions: WorkbenchActions;
   private shuttingDown = false;
   private viewListener?: () => void;
@@ -604,6 +608,9 @@ export class ReactWorkbenchApp {
         }
       );
       this.harnessPanels.set(harness.id, panel);
+      // A newly mounted pane paints its whole backlog at once; that is exactly
+      // when the renderer's incremental model has been observed to diverge.
+      this.scheduleFullRedraw();
     }
     return panel;
   }
@@ -620,6 +627,7 @@ export class ReactWorkbenchApp {
         }
       );
       this.shellPanels.set(terminal.id, panel);
+      this.scheduleFullRedraw();
     }
     return panel;
   }
@@ -708,7 +716,43 @@ export class ReactWorkbenchApp {
         this.scheduleDiffTick(this.diffTick);
       }
     }
+    // Mounting a pane and immediately taking its first large repaint can leave
+    // the renderer believing part of the pane is already correct, so those rows
+    // are never written again — an agent's bottom-anchored composer then stays
+    // invisible indefinitely. Repaint every cell once the switch settles.
+    this.scheduleFullRedraw();
     this.persistAndRender();
+  }
+
+  // Force the renderer to rewrite every cell of the next frame.
+  //
+  // Silvery's diff only emits rows it considers dirty, so once its notion of
+  // the screen diverges from what was actually painted, nothing converges on
+  // its own: the stale rows are never written again. A `--terminal-trace`
+  // capture showed exactly that — after a freshly mounted pane took its first
+  // large PTY burst, 38 of the pane's 65 rows stayed wrong for 163 consecutive
+  // frames across 47 panel revisions, which is what hides an agent's
+  // bottom-anchored composer.
+  //
+  // `markAllRowsDirty()` re-arms every row so the next commit repaints in full.
+  // Debounced, and delayed so a pane's initial burst lands first.
+  private scheduleFullRedraw() {
+    if (this.fullRedrawTimer) {
+      clearTimeout(this.fullRedrawTimer);
+    }
+    this.fullRedrawTimer = setTimeout(() => {
+      this.fullRedrawTimer = undefined;
+      if (this.shuttingDown) {
+        return;
+      }
+      try {
+        this.instance?.buffer?.markAllRowsDirty();
+        this.render();
+      } catch {
+        // A repaint is best-effort; never take the app down for it.
+      }
+    }, FULL_REDRAW_DELAY_MS);
+    this.fullRedrawTimer.unref?.();
   }
 
   private closeTab(value: string) {
@@ -760,6 +804,10 @@ export class ReactWorkbenchApp {
       this.state.focus = focusForMainTab(session.activeMainTab);
     }
     this.syncExplorerToActiveSession();
+    // Switching workspaces swaps every pane's contents at once, the same
+    // condition under which the incremental renderer has been seen to leave a
+    // region stale.
+    this.scheduleFullRedraw();
     this.persistAndRender();
   }
 
@@ -1100,6 +1148,10 @@ export class ReactWorkbenchApp {
     if (this.harnessActivityTimer) {
       clearTimeout(this.harnessActivityTimer);
       this.harnessActivityTimer = undefined;
+    }
+    if (this.fullRedrawTimer) {
+      clearTimeout(this.fullRedrawTimer);
+      this.fullRedrawTimer = undefined;
     }
     releaseInstanceLock();
     void this.explorerWatcher?.close();

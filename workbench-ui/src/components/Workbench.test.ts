@@ -73,13 +73,16 @@ describe("wheelGesture", () => {
 });
 
 describe("terminalGridSize", () => {
-  test("uses the measured pane size when it fits the host window", () => {
+  // Every pane reserves unused rows at the bottom so an agent's bottom-anchored
+  // composer can never be pushed under the frame by a stale measurement or an
+  // off-by-a-row reflow. 48 measured rows -> 43 for the PTY.
+  test("uses the measured pane size minus the bottom safety margin", () => {
     expect(
       terminalGridSize(
         { x: 57, y: 5, width: 130, height: 48 },
         { columns: 188, rows: 54 }
       )
-    ).toEqual({ cols: 130, rows: 48 });
+    ).toEqual({ cols: 130, rows: 43 });
   });
 
   test("clamps runaway layout measurements to visible cells", () => {
@@ -88,6 +91,23 @@ describe("terminalGridSize", () => {
         { x: 57, y: 5, width: 500, height: 3102 },
         { columns: 188, rows: 54 }
       )
-    ).toEqual({ cols: 130, rows: 48 });
+    ).toEqual({ cols: 130, rows: 43 });
+  });
+
+  test("keeps the grid usable on panes shorter than the margin", () => {
+    expect(
+      terminalGridSize(
+        { x: 0, y: 0, width: 40, height: 2 },
+        { columns: 80, rows: 24 }
+      ).rows
+    ).toBe(1);
+  });
+
+  test("never returns more rows than the window can show", () => {
+    const { rows } = terminalGridSize(
+      { x: 0, y: 20, width: 80, height: 400 },
+      { columns: 80, rows: 24 }
+    );
+    expect(rows).toBeLessThanOrEqual(24 - 20 - 1);
   });
 });

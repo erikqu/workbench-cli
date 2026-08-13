@@ -920,6 +920,18 @@ export function wheelGesture(
   };
 }
 
+// Rows deliberately left unused at the bottom of every harness/terminal pane.
+//
+// Agent CLIs anchor their composer to the last row they believe they have. Any
+// disagreement between the height we hand the PTY and the height we actually
+// paint therefore hides the input box first — the single worst thing that can
+// happen to this pane, since the user loses the ability to type at all. Giving
+// the PTY a slightly shorter grid than the box costs a few rows of transcript
+// and makes that class of failure impossible to reach: the composer lands
+// several rows above the frame, so even a stale measurement or an off-by-a-row
+// reflow leaves it on screen.
+const TERMINAL_BOTTOM_SAFETY_ROWS = 5;
+
 export function terminalGridSize(
   rect: { x: number; y: number; width: number; height: number },
   windowSize: { columns: number; rows: number }
@@ -931,9 +943,11 @@ export function terminalGridSize(
   // PTY (and its composer) underneath the pane's right or bottom border.
   const visibleCols = Math.max(1, Math.floor(windowSize.columns) - x - 1);
   const visibleRows = Math.max(1, Math.floor(windowSize.rows) - y - 1);
+  const height = Math.min(Math.floor(rect.height), visibleRows);
   return {
     cols: Math.max(1, Math.min(Math.floor(rect.width), visibleCols)),
-    rows: Math.max(1, Math.min(Math.floor(rect.height), visibleRows)),
+    // Keep at least one row on panes too short for the full margin.
+    rows: Math.max(1, height - TERMINAL_BOTTOM_SAFETY_ROWS),
   };
 }
 
