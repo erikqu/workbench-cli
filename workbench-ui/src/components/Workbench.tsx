@@ -930,7 +930,7 @@ export function wheelGesture(
 // and makes that class of failure impossible to reach: the composer lands
 // several rows above the frame, so even a stale measurement or an off-by-a-row
 // reflow leaves it on screen.
-const TERMINAL_BOTTOM_SAFETY_ROWS = 5;
+const TERMINAL_BOTTOM_SAFETY_ROWS = 3;
 
 export function terminalGridSize(
   rect: { x: number; y: number; width: number; height: number },

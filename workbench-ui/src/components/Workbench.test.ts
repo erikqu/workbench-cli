@@ -75,14 +75,14 @@ describe("wheelGesture", () => {
 describe("terminalGridSize", () => {
   // Every pane reserves unused rows at the bottom so an agent's bottom-anchored
   // composer can never be pushed under the frame by a stale measurement or an
-  // off-by-a-row reflow. 48 measured rows -> 43 for the PTY.
+  // off-by-a-row reflow. 48 measured rows -> 45 for the PTY.
   test("uses the measured pane size minus the bottom safety margin", () => {
     expect(
       terminalGridSize(
         { x: 57, y: 5, width: 130, height: 48 },
         { columns: 188, rows: 54 }
       )
-    ).toEqual({ cols: 130, rows: 43 });
+    ).toEqual({ cols: 130, rows: 45 });
   });
 
   test("clamps runaway layout measurements to visible cells", () => {
@@ -91,7 +91,7 @@ describe("terminalGridSize", () => {
         { x: 57, y: 5, width: 500, height: 3102 },
         { columns: 188, rows: 54 }
       )
-    ).toEqual({ cols: 130, rows: 43 });
+    ).toEqual({ cols: 130, rows: 45 });
   });
 
   test("keeps the grid usable on panes shorter than the margin", () => {
