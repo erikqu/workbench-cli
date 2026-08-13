@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import { useEffect, useState } from "react";
 import { ThemeProvider } from "silvery";
@@ -17,6 +17,7 @@ import type {
 } from "../components/types";
 import { Workbench } from "../components/Workbench";
 import { harnessSpec, harnessSpecs } from "../state/harnesses";
+import { claimInstanceLock, releaseInstanceLock } from "../state/instance-lock";
 import {
   createHarness,
   createInitialState,
@@ -38,6 +39,7 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
+import { tmuxSocketPath, workbenchDir } from "../state/workbench-paths";
 import {
   killPersistentTmuxSession,
   type PersistentTmuxSession,
@@ -84,11 +86,9 @@ import { emitToast } from "../ui/toast";
 // an explicit socket *path* under ~/.workbench (not a `-L` name in the shared
 // per-user tmux tmpdir). This guarantees they never collide with, or show up in,
 // the user's own tmux server.
-const TMUX_SOCKET_PATH = join(
-  Bun.env.HOME ?? homedir(),
-  ".workbench",
-  "tmux-ui.sock"
-);
+// Resolved via workbench-paths: a hot-reload launch gets its own socket so it
+// cannot detach the panes of the user's everyday instance.
+const TMUX_SOCKET_PATH = tmuxSocketPath();
 
 // Minimum gap between full-app repaints (~60fps) used by the leading-edge render
 // throttle. Low enough to feel instant, high enough to coalesce bursts.
@@ -144,6 +144,19 @@ export class ReactWorkbenchApp {
     delete process.env.NO_COLOR;
     process.env.FORCE_COLOR = "1";
     process.env.COLORTERM ??= "truecolor";
+
+    // Claim this workbench namespace. A live previous owner means two instances
+    // share one tmux server and one state file, which silently corrupts panes
+    // (the later mount detaches the earlier client), so say so plainly rather
+    // than letting the user hunt a vanished input box.
+    const collidingOwner = claimInstanceLock();
+    if (collidingOwner) {
+      emitToast({
+        title: "Another Workbench is using these sessions",
+        description: `pid ${collidingOwner.pid} on ${collidingOwner.tty} shares ${workbenchDir()}. Panes will fight; quit one window.`,
+        variant: "warning",
+      });
+    }
 
     this.rebuildExplorer();
     this.syncExplorerWatcher();
@@ -1088,6 +1101,7 @@ export class ReactWorkbenchApp {
       clearTimeout(this.harnessActivityTimer);
       this.harnessActivityTimer = undefined;
     }
+    releaseInstanceLock();
     void this.explorerWatcher?.close();
     try {
       this.instance?.unmount();

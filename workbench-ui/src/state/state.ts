@@ -33,12 +33,11 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "./types";
+import { persistedStatePath } from "./workbench-paths";
 
-const statePath = join(
-  Bun.env.HOME ?? ".",
-  ".workbench",
-  "workbench-ui-state.json"
-);
+// Resolved once via workbench-paths so a hot-reload launch persists into its own
+// isolated namespace instead of overwriting the real session layout.
+const statePath = persistedStatePath();
 
 export function createSession(
   cwd: string,

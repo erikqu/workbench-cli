@@ -23,6 +23,7 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
+import { isolatedInstance } from "../state/workbench-paths";
 import {
   type ClipboardFocus,
   requestClipboardPaste,
@@ -213,6 +214,13 @@ export function Workbench({
             <Text bold color={colors.accent}>
               Workbench
             </Text>
+            {/* An isolated (hot-reload) instance runs its own tmux server and
+                state file, so label it — otherwise two open windows are
+                indistinguishable and it is not obvious which sessions you are
+                looking at. */}
+            {isolatedInstance() ? (
+              <Text color={colors.dim}>{"  hot — isolated sessions"}</Text>
+            ) : null}
           </Box>
           <Box
             backgroundColor={colors.bg}

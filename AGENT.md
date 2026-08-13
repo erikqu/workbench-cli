@@ -81,6 +81,26 @@ requires the checkout's `node_modules` to be installed (warns and falls back
 otherwise), and can be overridden with `WORKBENCH_CLI_HOT_ROOT`. Pinned by
 `workbench-ui/scripts/launcher-hot-root.test.ts` (part of `bun test`).
 
+**A hot launch runs in its own namespace.** `state/workbench-paths.ts` resolves
+the tmux socket and the persisted state file once at load: normally
+`~/.workbench`, and under `WORKBENCH_CLI_HOT=1` a sibling
+`~/.workbench/hot-<sha1(checkout)>`. Without this, `work --hot` and the everyday
+`work` share one tmux server and one state file, and because panes attach with
+`new-session -A -D` the later mount **detaches the other instance's client** —
+the loser then paints a stale mirror at its own size, which shows up as an
+agent's bottom-anchored input box missing entirely. The namespace is derived from
+the checkout path rather than randomised, because hot reload must reattach the
+same running agents after every restart; two different checkouts still separate.
+Never bypass these helpers by rebuilding `~/.workbench` paths inline. Pinned by
+`src/state/workbench-paths.test.ts`.
+
+Two instances in the *same* namespace remain possible (two ordinary `work`
+windows). `state/instance-lock.ts` records the owning pid/tty and the next
+launch surfaces a toast naming the other instance instead of silently corrupting
+a pane. It claims the namespace anyway rather than refusing, so a stale lock from
+a killed run can never lock a user out. The isolated hot instance also labels
+itself in the title bar so two open windows are distinguishable.
+
 Do not replace the hot runner with native `bun --watch` or in-process
 `bun --hot`. Native watch can replace the program without completing its JS
 shutdown handlers; this has reproduced lost composer state and restarted coding
