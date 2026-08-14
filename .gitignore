@@ -7,3 +7,6 @@ artifacts/
 # Personal site repo is sometimes checked out here to update /install; it is a
 # separate repo and must never be committed into this one.
 erikqu.github.io/
+
+# Local scratch space: throwaway diagnostic scripts, never committed.
+scratch/
