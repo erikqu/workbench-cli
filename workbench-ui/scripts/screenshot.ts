@@ -72,9 +72,24 @@ try {
       "splash renders monochrome binary ASCII art",
       await splashUsesBinaryArt(page)
     );
+    // xterm's buffer updates before its canvas paint. Wait through two browser
+    // frames so this artifact proves what a user actually sees, not only what
+    // the parsed terminal grid contains.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        })
+    );
     await page.screenshot({
       path: join(screenshotDir, "workbench-splash.png"),
     });
+    await send(page, "\x1b");
+    await page.waitForFunction(
+      () => !(window as any).__bufferText().includes("Starting up..."),
+      undefined,
+      { timeout: 1500 }
+    );
   }
   // Give the active session's workbench chat PTY time to spawn and draw.
   await page.waitForTimeout(2500);

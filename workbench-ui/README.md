@@ -112,7 +112,7 @@ through the whole-app render loop causes avoidable latency and rendering races.
 | --- | --- |
 | `WORKBENCH_UI_CWD` | Starting workspace when no positional path is supplied |
 | `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID` | Initial harness ID |
-| `WORKBENCH_UI_THEME` | Initial theme (`dark`, `light`, `midnight`, `amber`, `forest`) |
+| `WORKBENCH_UI_THEME` | Initial theme (`dark`, `light`, `midnight`, `amber`, `red`, `forest`) |
 | `WORKBENCH_UI_IMAGE_PROTOCOL` | Force `kitty`, `sixel`, or `halfblock` rendering |
 | `WORKBENCH_UI_CELL_ASPECT` | Override terminal cell aspect ratio |
 | `WORKBENCH_UI_PRESERVE_DIM=1` | Preserve SGR dim in mirrored terminals |

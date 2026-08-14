@@ -381,7 +381,9 @@ function handleKey(
 
   // The startup splash swallows the first interaction to dismiss itself.
   if (view.state.splashVisible) {
-    actions.dismissSplash();
+    if (isSplashDismissKey(input, key)) {
+      actions.dismissSplash();
+    }
     return;
   }
 
@@ -563,6 +565,32 @@ function handleKey(
   if (key.escape) {
     actions.focus(focusForMainTab(view.session.activeMainTab));
   }
+}
+
+export function isSplashDismissKey(input: string, key: Key): boolean {
+  // Terminal capability replies arrive on stdin during startup too. Unknown
+  // CSI replies parse as an empty key, while OSC replies can surface as text
+  // containing their terminating Escape. Neither is a human interaction and
+  // must not dismiss the splash before its asynchronously decoded art appears.
+  if (key.text !== undefined) {
+    return !key.text.includes("\x1b");
+  }
+  return Boolean(
+    input ||
+      key.upArrow ||
+      key.downArrow ||
+      key.leftArrow ||
+      key.rightArrow ||
+      key.pageDown ||
+      key.pageUp ||
+      key.home ||
+      key.end ||
+      key.return ||
+      key.escape ||
+      key.tab ||
+      key.backspace ||
+      key.delete
+  );
 }
 
 // Map a "1".."9" keypress to a 0-based index (1 -> 0). Anything else -> undefined.

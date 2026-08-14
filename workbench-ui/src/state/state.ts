@@ -246,7 +246,9 @@ export function createInitialState(cwd: string): AppState {
     sidebarVisible: persisted.sidebarVisible ?? true,
     // A watched process restarts repeatedly. Re-showing the splash masks the
     // restored coding pane and consumes its first keypress after every edit.
-    splashVisible: Bun.env.WORKBENCH_CLI_HOT !== "1",
+    splashVisible:
+      Bun.env.WORKBENCH_UI_SPLASH_PREVIEW === "1" ||
+      Bun.env.WORKBENCH_CLI_HOT !== "1",
     themeName,
     workspaceSidePaneVisible: persisted.workspaceSidePaneVisible ?? true,
     workspaceSidePaneWidth: clampPaneWidth(
@@ -295,7 +297,9 @@ function createScreenshotState(cwd: string): AppState {
     sessionsSidebarWidth: DEFAULT_SESSIONS_SIDEBAR_WIDTH,
     sidebarVisible: true,
     // Show the splash in screenshots only when explicitly exercising it.
-    splashVisible: Bun.env.WORKBENCH_UI_FORCE_SPLASH === "1",
+    splashVisible:
+      Bun.env.WORKBENCH_UI_FORCE_SPLASH === "1" ||
+      Bun.env.WORKBENCH_UI_SPLASH_PREVIEW === "1",
     themeName: applyTheme(Bun.env.WORKBENCH_UI_THEME ?? DEFAULT_THEME),
     workspaceSidePaneVisible: true,
     workspaceSidePaneWidth: DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,

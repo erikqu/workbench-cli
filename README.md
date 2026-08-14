@@ -81,6 +81,7 @@ silently auto-update itself.
 work
 work path/to/project
 work --harness claude
+work --splash
 work path/to/project --harness codex --hot
 ```
 
@@ -93,6 +94,9 @@ For a new installation Workbench prefers the first installed CLI in this order:
 Codex, Cursor, then Claude Code; it falls back to Codex when none can be
 detected. Override the choice with `--harness`, `--agent`, or
 `WORKBENCH_UI_HARNESS_ID`.
+
+Use `work --splash` to hold the startup artwork on screen until the first key
+press or click, which is useful for previewing it at the current terminal size.
 
 Every new workspace starts with one harness and one shell terminal, both rooted
 in that workspace directory.

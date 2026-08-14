@@ -15,6 +15,10 @@ const args = process.argv.slice(2);
 let cwdArg: string | undefined;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
+  if (arg === "--splash") {
+    process.env.WORKBENCH_UI_SPLASH_PREVIEW = "1";
+    continue;
+  }
   if (arg === "--harness" || arg === "--agent") {
     const value = args[index + 1];
     if (value) {

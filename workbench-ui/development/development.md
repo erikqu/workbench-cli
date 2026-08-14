@@ -63,7 +63,7 @@ writes ignored artifacts to `artifacts/screenshots/`.
 ## Runtime and Harness Selection
 
 ```bash
-work [path] [--harness <id>] [--hot] [--terminal-trace]
+work [path] [--harness <id>] [--hot] [--terminal-trace] [--splash]
 ```
 
 - The path defaults to the current directory.
@@ -74,6 +74,7 @@ work [path] [--harness <id>] [--hot] [--terminal-trace]
   Codex.
 - `--hot`, `--dev`, and `--watch` are aliases for serialized process restart.
 - `--terminal-trace` enables metadata-only terminal diagnostics.
+- `--splash` holds the startup artwork until the first key press or click.
 
 Re-selecting the currently active harness is an intentional restart: Workbench
 kills that harness's private tmux session and recreates it in the same tab.

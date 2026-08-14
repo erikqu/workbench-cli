@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseKey } from "silvery";
 import {
   isHelpShortcut,
+  isSplashDismissKey,
   isThemeCycleKey,
   terminalGridSize,
   wheelGesture,
@@ -44,6 +45,27 @@ describe("isHelpShortcut", () => {
     const [input, key] = parsed("\x7f");
     expect(key.backspace).toBe(true);
     expect(isHelpShortcut(input, key)).toBe(false);
+  });
+});
+
+describe("isSplashDismissKey", () => {
+  test("accepts real keyboard input", () => {
+    for (const raw of ["a", "\r", "\x1b", "\x1b[A", "\x7f"]) {
+      const [input, key] = parsed(raw);
+      expect(isSplashDismissKey(input, key)).toBe(true);
+    }
+  });
+
+  test("ignores terminal capability replies", () => {
+    for (const raw of [
+      "\x1b[?1;2c",
+      "\x1b[>0;276;0c",
+      "\x1b[1;1R",
+      "\x1b]10;rgb:ffff/ffff/ffff\x1b\\",
+    ]) {
+      const [input, key] = parsed(raw);
+      expect(isSplashDismissKey(input, key)).toBe(false);
+    }
   });
 });
 
