@@ -56,9 +56,15 @@ function SplashArtwork() {
   const availCols = Math.max(1, Math.floor(windowSize.columns) - 4);
   const availRows = Math.max(1, Math.floor(windowSize.rows) - BANNER_ROWS - 2);
   const lines = buildReadmeSplashArt(availCols, availRows);
+  const artworkWidth = Math.max(1, ...lines.map((line) => line.length));
 
   return (
-    <Box alignItems="center" flexDirection="column" flexShrink={0}>
+    <Box
+      alignItems="flex-start"
+      flexDirection="column"
+      flexShrink={0}
+      width={artworkWidth}
+    >
       {lines.map((line, index) => (
         <Text key={index} wrap={false}>
           {line}
