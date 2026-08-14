@@ -60,8 +60,7 @@ try {
         () => {
           const text = (window as any).__bufferText();
           return (
-            text.includes("Starting up...") &&
-            (text.match(/[01]/g)?.length ?? 0) > 100
+            text.includes("Starting up...") && text.includes("888d88888b888")
           );
         },
         undefined,
@@ -69,8 +68,8 @@ try {
       )
       .catch(() => undefined);
     report(
-      "splash renders monochrome binary ASCII art",
-      await splashUsesBinaryArt(page)
+      "splash renders the README ASCII wordmark",
+      await splashUsesReadmeWordmark(page)
     );
     // xterm's buffer updates before its canvas paint. Wait through two browser
     // frames so this artifact proves what a user actually sees, not only what
@@ -650,11 +649,12 @@ async function bufferText(page: Page): Promise<string> {
   return page.evaluate(() => (window as any).__bufferText());
 }
 
-async function splashUsesBinaryArt(page: Page): Promise<boolean> {
+async function splashUsesReadmeWordmark(page: Page): Promise<boolean> {
   const text = await bufferText(page);
-  const binaryGlyphs = text.match(/[01]/g)?.length ?? 0;
   return (
-    text.includes("Starting up...") && binaryGlyphs > 100 && !text.includes("▀")
+    text.includes("Starting up...") &&
+    text.includes("888d88888b888") &&
+    text.includes('88888P"')
   );
 }
 

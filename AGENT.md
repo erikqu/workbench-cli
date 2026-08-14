@@ -171,11 +171,11 @@ with text already present in the agent composer.
 - Render `AnchoredOverlay` menus in Workbench's final overlay layer, after the
   main content. Rendering one inside the tab strip or sidebar allows later
   siblings to paint over it even though its state and layout are valid.
-- The startup splash is monochrome binary ASCII derived from the park-bench
-  image: only `0`, `1`, and spaces, with no per-glyph colors. Image previews
-  inside Changes use colored terminal-cell art. Neither surface may use
-  Kitty/Sixel/native graphics because native compositors can flash above the
-  TUI during redraws. Ordinary image tabs may use the best supported protocol.
+- The startup splash is the exact `888` ASCII wordmark from the root README,
+  rendered as ordinary monochrome text. Image previews inside Changes use
+  colored terminal-cell art. Neither surface may use Kitty/Sixel/native
+  graphics because native compositors can flash above the TUI during redraws.
+  Ordinary image tabs may use the best supported protocol.
 
 ## Performance — keep it fast (this was an explicit requirement)
 

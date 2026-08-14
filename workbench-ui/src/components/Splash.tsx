@@ -1,10 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Box, Text, useWindowSize } from "silvery";
-import {
-  buildBinarySplashArt,
-  SPLASH_MAX_COLS,
-  SPLASH_VERSION,
-} from "../media/splash";
+import { buildReadmeSplashArt, SPLASH_VERSION } from "../media/splash";
 import { colors } from "../ui/theme";
 import type { WorkbenchActions } from "./types";
 
@@ -56,29 +52,10 @@ export function Splash({ actions }: { actions: WorkbenchActions }) {
 }
 
 function SplashArtwork() {
-  // The artwork used to measure its own empty, shrink-wrapped Box. Silvery's
-  // first measurement is necessarily 0x0, which made that Box settle at 1x1
-  // and left the real image effectively invisible. The splash owns the full
-  // viewport, so size the source image directly against the terminal window.
   const windowSize = useWindowSize();
-  const availCols = Math.max(
-    1,
-    Math.min(SPLASH_MAX_COLS, Math.floor(windowSize.columns) - 4)
-  );
+  const availCols = Math.max(1, Math.floor(windowSize.columns) - 4);
   const availRows = Math.max(1, Math.floor(windowSize.rows) - BANNER_ROWS - 2);
-  const [lines, setLines] = useState<string[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    buildBinarySplashArt(availCols, availRows).then((art) => {
-      if (!cancelled) {
-        setLines(art);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [availCols, availRows]);
+  const lines = buildReadmeSplashArt(availCols, availRows);
 
   return (
     <Box alignItems="center" flexDirection="column" flexShrink={0}>
