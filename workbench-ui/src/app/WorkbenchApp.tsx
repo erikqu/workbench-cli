@@ -66,6 +66,10 @@ import {
   toggleDirectory,
 } from "../text/file-tree";
 import {
+  type GitHubRepositoryInput,
+  githubRepositoryInput,
+} from "../text/github-repo";
+import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
   COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
   clampPaneWidth,
@@ -131,6 +135,7 @@ export class ReactWorkbenchApp {
   private diffTick?: () => void;
   private diffRunning = false;
   private runningSessionIds = new Set<string>();
+  private workspaceCloneInProgress = false;
   private harnessActivityTimer?: ReturnType<typeof setTimeout>;
   private fullRedrawTimer?: ReturnType<typeof setTimeout>;
   private readonly workbenchActions: WorkbenchActions;
@@ -323,6 +328,7 @@ export class ReactWorkbenchApp {
         this.state.focus = focusForMainTab(this.activeSession().activeMainTab);
         this.render();
       },
+      cloneRepository: (repository) => this.createRepository(repository),
       createAgent: (path) => this.createAgent(path),
       openNewHarness: () => {
         this.state.newHarnessOpen = true;
@@ -857,7 +863,75 @@ export class ReactWorkbenchApp {
       });
       return;
     }
-    const cwd = resolved;
+    this.openWorkspace(resolved);
+  }
+
+  private createRepository(rawRepository: string) {
+    const repository = githubRepositoryInput(
+      rawRepository,
+      this.activeSession().cwd
+    );
+    if (!repository) {
+      emitToast({
+        title: "GitHub repository URL is not valid",
+        description:
+          "Paste a GitHub HTTPS URL, SSH URL, or github.com/owner/repository.",
+        variant: "error",
+      });
+      return;
+    }
+    void this.cloneWorkspace(repository);
+  }
+
+  private async cloneWorkspace(repository: GitHubRepositoryInput) {
+    if (this.workspaceCloneInProgress) {
+      emitToast({
+        title: "Repository clone already running",
+        description:
+          "Wait for the current clone to finish before starting another.",
+        variant: "warning",
+      });
+      return;
+    }
+    this.workspaceCloneInProgress = true;
+    emitToast({
+      title: `Cloning ${repository.name}`,
+      description: repository.destination,
+      variant: "info",
+    });
+    try {
+      const process = Bun.spawn(
+        ["git", "clone", "--", repository.cloneUrl, repository.destination],
+        {
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "pipe",
+        }
+      );
+      const stderr = new Response(process.stderr).text();
+      const exitCode = await process.exited;
+      const details = (await stderr).trim();
+      if (exitCode !== 0) {
+        emitToast({
+          title: "Repository could not be cloned",
+          description: details || `git clone exited with status ${exitCode}`,
+          variant: "error",
+        });
+        return;
+      }
+      this.openWorkspace(repository.destination);
+    } catch (error) {
+      emitToast({
+        title: "Repository could not be cloned",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "error",
+      });
+    } finally {
+      this.workspaceCloneInProgress = false;
+    }
+  }
+
+  private openWorkspace(cwd: string) {
     const session = createSession(cwd, this.state.sessions);
     this.state.sessions.push(session);
     this.state.activeSessionId = session.id;

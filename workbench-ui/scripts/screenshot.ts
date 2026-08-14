@@ -414,18 +414,28 @@ try {
     (await findCell(page, "\u25cf", 26));
   if (changesTab) {
     await click(page, changesTab.col + 2, changesTab.row + 2);
+    const changesSidebar = await findCell(page, "Changes", 26, 56);
+    for (let step = 0; changesSidebar && step < 30; step++) {
+      await send(page, "\x1b[A");
+    }
+    let patchShown = await waitForText(page, "@@", 250);
+    for (let step = 0; changesSidebar && !patchShown && step < 40; step++) {
+      await send(page, "\x1b[B");
+      patchShown = await waitForText(page, "@@", 250);
+    }
     const headerShown = await waitForText(page, "vs HEAD", 4000);
-    const patchShown = await waitForText(page, "@@", 4000);
     report("changes tab renders working-tree diff", headerShown && patchShown);
     await page.waitForTimeout(400);
     await page.screenshot({
       path: join(screenshotDir, "workbench-changes.png"),
     });
-    const changesSidebar = await findCell(page, "Changes", 26, 56);
+    for (let step = 0; changesSidebar && step < 40; step++) {
+      await send(page, "\x1b[A");
+    }
     let diffImage = changesSidebar
       ? await findCellBelow(page, "preview.png", 26, 56, changesSidebar.row + 1)
       : null;
-    for (let step = 0; changesSidebar && !diffImage && step < 30; step++) {
+    for (let step = 0; changesSidebar && !diffImage && step < 40; step++) {
       await send(page, "\x1b[B");
       await page.waitForTimeout(25);
       diffImage = await findCellBelow(
@@ -465,6 +475,19 @@ try {
     await click(page, newAgent.col + 2, newAgent.row + 1);
     const dialogOpen = await waitForText(page, "Workspace folder", 3000);
     if (dialogOpen) {
+      const cloneMode = await findCell(page, "Clone GitHub repo");
+      if (cloneMode) {
+        await click(page, cloneMode.col + 2, cloneMode.row + 1);
+        report(
+          "new workspace has a separate empty repository mode",
+          await waitForText(page, "GitHub repository URL or SSH address", 2000)
+        );
+      }
+      const localMode = await findCell(page, "Local folder");
+      if (localMode) {
+        await click(page, localMode.col + 2, localMode.row + 1);
+        await waitForText(page, "Workspace folder", 2000);
+      }
       await page.waitForTimeout(300);
       await page.screenshot({
         path: join(screenshotDir, "workbench-dialog.png"),

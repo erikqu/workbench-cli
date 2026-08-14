@@ -147,6 +147,12 @@ with text already present in the agent composer.
   input and creates the directory tree recursively before adding the session;
   creation failures keep the dialog open and surface an error instead of
   silently falling back to the active workspace.
+- New Workspace has separate Local folder and Clone GitHub repo modes so a
+  prefilled path never has to be cleared before pasting a URL. Local mode starts
+  at the active workspace's parent. Clone mode starts empty and accepts GitHub
+  HTTPS, SSH, or `github.com/owner/repo` input; it clones with argument-array
+  `git clone` into that parent and opens only after success. Never interpolate
+  repository input into a shell command.
 
 ## Overlay and close-control behavior
 

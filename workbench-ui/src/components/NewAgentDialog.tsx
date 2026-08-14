@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { useMemo, useState } from "react";
 import { Box, ModalDialog, Text, TextInput, useInput } from "silvery";
 import { completeDirectories } from "../text/file-tree";
@@ -11,18 +12,28 @@ export function NewAgentDialog({
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
 }) {
-  const [value, setValue] = useState(view.cwd);
+  const [mode, setMode] = useState<"local" | "repository">("local");
+  const [localValue, setLocalValue] = useState(
+    defaultWorkspaceDirectory(view.cwd)
+  );
+  const [repositoryValue, setRepositoryValue] = useState("");
   const suggestions = useMemo(
-    () => completeDirectories(value, view.cwd),
-    [value, view.cwd]
+    () => (mode === "local" ? completeDirectories(localValue, view.cwd) : []),
+    [localValue, mode, view.cwd]
   );
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (key.escape) {
       actions.cancelNewAgent();
     }
-    if (key.tab && suggestions[0]) {
-      setValue(withTrailingSlash(suggestions[0]));
+    if (key.ctrl && input === "l") {
+      setMode("local");
+    }
+    if (key.ctrl && input === "g") {
+      setMode("repository");
+    }
+    if (mode === "local" && key.tab && suggestions[0]) {
+      setLocalValue(withTrailingSlash(suggestions[0]));
     }
   });
 
@@ -40,20 +51,41 @@ export function NewAgentDialog({
       <Box onMouseDown={(event) => event.stopPropagation()}>
         <ModalDialog
           borderColor={colors.borderFocus}
-          footer="Enter create   Tab complete first suggestion   Esc cancel"
+          footer="Enter confirm   Ctrl+L/G mode   Esc cancel"
           onClose={() => actions.cancelNewAgent()}
           title="New workspace"
           titleColor={colors.accentAlt}
           width={70}
         >
-          <Text color={colors.dim}>Workspace folder:</Text>
+          <Box flexDirection="row" marginBottom={1}>
+            <WorkspaceMode
+              active={mode === "local"}
+              label="Local folder"
+              onSelect={() => setMode("local")}
+            />
+            <WorkspaceMode
+              active={mode === "repository"}
+              label="Clone GitHub repo"
+              onSelect={() => setMode("repository")}
+            />
+          </Box>
+          <Text color={colors.dim}>
+            {mode === "local"
+              ? "Workspace folder:"
+              : "GitHub repository URL or SSH address:"}
+          </Text>
           <TextInput
             color={colors.text}
             isActive
-            onChange={setValue}
-            onSubmit={(next) => actions.createAgent(next)}
+            key={mode}
+            onChange={mode === "local" ? setLocalValue : setRepositoryValue}
+            onSubmit={
+              mode === "local"
+                ? (next) => actions.createAgent(next)
+                : (next) => actions.cloneRepository(next)
+            }
             prompt="> "
-            value={value}
+            value={mode === "local" ? localValue : repositoryValue}
           />
           {suggestions.length > 0 ? (
             <Box flexDirection="column" marginTop={1}>
@@ -61,7 +93,7 @@ export function NewAgentDialog({
                 <SuggestionRow
                   key={suggestion}
                   onPick={() => {
-                    setValue(withTrailingSlash(suggestion));
+                    setLocalValue(withTrailingSlash(suggestion));
                   }}
                   suggestion={suggestion}
                 />
@@ -70,6 +102,32 @@ export function NewAgentDialog({
           ) : null}
         </ModalDialog>
       </Box>
+    </Box>
+  );
+}
+
+function WorkspaceMode({
+  label,
+  active,
+  onSelect,
+}: {
+  label: string;
+  active: boolean;
+  onSelect(): void;
+}) {
+  return (
+    <Box
+      backgroundColor={active ? colors.selected : colors.panel}
+      mouseCursor="pointer"
+      onClick={(event) => {
+        if (event.button === 0) {
+          onSelect();
+          event.stopPropagation();
+        }
+      }}
+      paddingX={1}
+    >
+      <Text color={active ? colors.onSelected : colors.dim}>{label}</Text>
     </Box>
   );
 }
@@ -95,4 +153,8 @@ function SuggestionRow({
 
 function withTrailingSlash(value: string) {
   return value.endsWith("/") ? value : `${value}/`;
+}
+
+export function defaultWorkspaceDirectory(cwd: string): string {
+  return withTrailingSlash(dirname(cwd));
 }
