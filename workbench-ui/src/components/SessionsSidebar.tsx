@@ -11,6 +11,7 @@ import {
   useBoxRectDangerously,
   useWindowSize,
 } from "silvery";
+import { buildVerticalWorkbenchArt } from "../media/splash";
 import type { AgentSession } from "../state/types";
 import type { SessionDiff } from "../text/diff";
 import {
@@ -82,26 +83,36 @@ export function SessionsSidebar({
         minWidth={1}
         onMouseDown={() => actions.focus("sessions")}
         overflow="hidden"
-        padding={1}
       >
-        <Box flexDirection="row" height={1} justifyContent="space-between">
-          <Box flexDirection="row" minWidth={1}>
-            <Text bold color={colors.text}>
-              Sessions
-            </Text>
-            <Text color={colors.dim}>{` ${view.state.sessions.length}`}</Text>
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          flexShrink={1}
+          minHeight={1}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+        >
+          <Box flexDirection="row" height={1} justifyContent="space-between">
+            <Box flexDirection="row" minWidth={1}>
+              <Text bold color={colors.text}>
+                Sessions
+              </Text>
+              <Text color={colors.dim}>{` ${view.state.sessions.length}`}</Text>
+            </Box>
+            <Box flexDirection="row">
+              <HelpButton compact={width < 26} onOpen={onOpenHelp} />
+              <CollapseButton actions={actions} />
+            </Box>
           </Box>
-          <Box flexDirection="row">
-            <HelpButton compact={width < 26} onOpen={onOpenHelp} />
-            <CollapseButton actions={actions} />
-          </Box>
+          <NewAgentRow actions={actions} compact={width < 22} />
+          <SessionList
+            actions={actions}
+            onContextMenuChange={onContextMenuChange}
+            view={view}
+          />
         </Box>
-        <NewAgentRow actions={actions} compact={width < 22} />
-        <SessionList
-          actions={actions}
-          onContextMenuChange={onContextMenuChange}
-          view={view}
-        />
+        <VerticalWorkbenchArt />
       </Box>
       <PaneResizeHandle
         maxWidth={maxWidth}
@@ -197,6 +208,29 @@ function SessionListBody({
 
 export const SESSION_CARD_HEIGHT = 3;
 export const SESSION_CARD_GAP = 0;
+
+function VerticalWorkbenchArt() {
+  const { rows } = useWindowSize();
+  const artRows = Math.min(32, Math.max(1, rows - 20));
+  const lines = buildVerticalWorkbenchArt(artRows, 1.5);
+  return (
+    <Box
+      alignItems="flex-end"
+      flexDirection="column"
+      flexShrink={1}
+      height={artRows}
+      justifyContent="flex-end"
+      minHeight={1}
+      overflow="hidden"
+    >
+      {lines.map((line, index) => (
+        <Text color={colors.accentAlt} key={`${index}-${line}`} wrap={false}>
+          {line}
+        </Text>
+      ))}
+    </Box>
+  );
+}
 
 function CollapsedSessionsRail({
   view,

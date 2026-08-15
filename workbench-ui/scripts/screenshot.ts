@@ -118,6 +118,10 @@ try {
     await sessionCardOutlined(page, "1 workbench-ui")
   );
   report(
+    "rotated Workbench art is enlarged and flush to the lower-right",
+    await verticalWorkbenchArtIsEnlargedAndFlushLowerRight(page)
+  );
+  report(
     "selected session surface fills only its card",
     await selectedSessionCardSurface(page)
   );
@@ -718,6 +722,30 @@ async function sessionCardOutlined(
     middle.includes("│") &&
     bottom.includes("╰") &&
     bottom.includes("╯")
+  );
+}
+
+async function verticalWorkbenchArtIsEnlargedAndFlushLowerRight(
+  page: Page
+): Promise<boolean> {
+  const lines = (await bufferText(page)).split("\n");
+  const artRows = lines
+    .map((line, row) => ({
+      glyphs: [...line.slice(0, 26)].filter((char) =>
+        /[\u2801-\u28ff]/u.test(char)
+      ).length,
+      right: Math.max(
+        ...[...line.slice(0, 26)].map((char, col) =>
+          /[\u2801-\u28ff]/u.test(char) ? col : -1
+        )
+      ),
+      row,
+    }))
+    .filter(({ glyphs }) => glyphs > 0);
+  return (
+    artRows.some(({ glyphs }) => glyphs >= 6) &&
+    artRows.some(({ right }) => right >= 23) &&
+    (artRows.at(-1)?.row ?? -1) >= lines.length - 3
   );
 }
 
