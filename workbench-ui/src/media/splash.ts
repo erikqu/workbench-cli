@@ -97,5 +97,8 @@ export function buildVerticalWorkbenchArt(
     }
     output.push(line.trimEnd());
   }
-  return output;
+  // At the enlarged sidebar scale, the narrow tip of the rotated `r` can land
+  // in a cell by itself and read as punctuation: `Wor.kbench`. The remaining
+  // rows retain the letterform, so omit only a truly solitary rendered cell.
+  return output.map((line) => (line.trim().length === 1 ? "" : line));
 }

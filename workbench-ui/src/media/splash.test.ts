@@ -36,3 +36,11 @@ test("vertical wordmark rotates and scales the real ASCII bitmap", () => {
     Math.max(...buildVerticalWorkbenchArt(40, 1.5).map((line) => line.length))
   ).toBe(6);
 });
+
+test("vertical wordmark omits the detached cell that reads as a period", () => {
+  const art = buildVerticalWorkbenchArt(40, 1.5);
+
+  expect(art[20]).toBe("");
+  expect(art[19]).toBe("⠿⠿⠿⠿⠿⠿");
+  expect(art[21]).toBe("  ⣿⣇⣀⣀");
+});
