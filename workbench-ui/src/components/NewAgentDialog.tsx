@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { useMemo, useState } from "react";
 import { Box, ModalDialog, Text, TextInput, useInput } from "silvery";
+import { requestClipboardPaste } from "../terminal/clipboard";
 import { completeDirectories } from "../text/file-tree";
 import { colors } from "../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
@@ -22,20 +23,37 @@ export function NewAgentDialog({
     [localValue, mode, view.cwd]
   );
 
-  useInput((input, key) => {
-    if (key.escape) {
-      actions.cancelNewAgent();
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        actions.cancelNewAgent();
+      }
+      if ((key.ctrl || key.super) && input.toLowerCase() === "v") {
+        requestClipboardPaste();
+      }
+      if (key.ctrl && input === "l") {
+        setMode("local");
+      }
+      if (key.ctrl && input === "g") {
+        setMode("repository");
+      }
+      if (mode === "local" && key.tab && suggestions[0]) {
+        setLocalValue(withTrailingSlash(suggestions[0]));
+      }
+    },
+    {
+      // Silvery's TextInput owns readline-style keystrokes but does not consume
+      // bracketed paste. Route the runtime's paste event into whichever field is
+      // visible so native paste and the OSC-52 Ctrl/Cmd+V path behave alike.
+      onPaste: (text) => {
+        if (mode === "local") {
+          setLocalValue((value) => value + text);
+        } else {
+          setRepositoryValue((value) => value + text);
+        }
+      },
     }
-    if (key.ctrl && input === "l") {
-      setMode("local");
-    }
-    if (key.ctrl && input === "g") {
-      setMode("repository");
-    }
-    if (mode === "local" && key.tab && suggestions[0]) {
-      setLocalValue(withTrailingSlash(suggestions[0]));
-    }
-  });
+  );
 
   return (
     <Box

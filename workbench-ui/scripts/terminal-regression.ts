@@ -260,6 +260,28 @@ try {
 async function runSimulatedAgentScenario(page: Page, initial: Location) {
   let location = initial;
   const originalAgentPid = location.fixture.pid;
+
+  const newWorkspace = await findCell(page, "+ New workspace");
+  if (!newWorkspace) {
+    throw new Error("could not locate New workspace for its paste regression");
+  }
+  await click(page, newWorkspace.x + 2, newWorkspace.y);
+  await waitForText(page, "Workspace folder", 3000);
+  const cloneMode = await findCell(page, "Clone GitHub repo");
+  if (!cloneMode) {
+    throw new Error("could not locate Clone GitHub repo mode");
+  }
+  await click(page, cloneMode.x + 2, cloneMode.y);
+  await waitForText(page, "GitHub repository URL or SSH address", 3000);
+  await page.evaluate(() =>
+    (window as any).__setClipboard("github.com/acme/demo.git")
+  );
+  await send(page, "\x16");
+  await waitForText(page, "github.com/acme/demo.git", 3000);
+  report("Ctrl+V pastes the host clipboard into the Git clone field");
+  await send(page, "\x1b");
+  await waitForTextAbsent(page, "GitHub repository URL or SSH address", 3000);
+
   await typeCharacters(page, "restart probe");
   location = await waitForReference(
     page,
@@ -1334,6 +1356,11 @@ async function rightMouseDown(page: Page, col: number, row: number) {
 
 async function rightMouseUp(page: Page, col: number, row: number) {
   await send(page, `\x1b[<2;${col + 1};${row + 1}m`);
+}
+
+async function click(page: Page, col: number, row: number) {
+  await send(page, `\x1b[<0;${col + 1};${row + 1}M`);
+  await send(page, `\x1b[<0;${col + 1};${row + 1}m`);
 }
 
 async function findCell(
