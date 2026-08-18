@@ -1016,8 +1016,8 @@ export class TerminalPanel implements TerminalReadable {
           this.transcriptFrameHold === "open"
         ) {
           // Still starting: shrink the queued rows instead of writing keys
-          // the pager would discard. The at-bottom grep is also unreliable
-          // here — the primary screen may contain a literal "100%".
+          // the pager would discard. The footer is not readable yet either —
+          // the primary screen may contain a literal "100%".
           this.transcriptPendingRows = Math.max(
             0,
             this.transcriptPendingRows -
@@ -1026,14 +1026,15 @@ export class TerminalPanel implements TerminalReadable {
           if (this.transcriptWheelDebt === 0) {
             this.scheduleTranscriptWheelClose(true);
           }
-        } else if (
-          this.transcriptWheelDebt === 0 ||
-          this.transcriptAtBottom()
-        ) {
-          this.scheduleTranscriptWheelClose(true);
         } else {
           data = transcriptWheelKeys("down", steps, this.terminal.rows);
-          this.scheduleTranscriptWheelClose(true);
+          // Wheel debt is only an estimate of how far the transcript moved:
+          // row clamps, coalesced gestures, and pager boundaries can all make
+          // it diverge from Codex's real position. Always deliver the down
+          // rows, then let the pager's 100% footer decide when to close.
+          if (this.transcriptAtBottom()) {
+            this.scheduleTranscriptWheelClose(true);
+          }
         }
       }
       terminalTrace("panel-wheel", {
@@ -1201,7 +1202,7 @@ export class TerminalPanel implements TerminalReadable {
       if (
         this.transcriptWheelOpen &&
         this.transcriptWheelMovingDown &&
-        (this.transcriptWheelDebt === 0 || this.transcriptAtBottom())
+        this.transcriptAtBottom()
       ) {
         this.closeWheelTranscript();
       }
@@ -1245,17 +1246,9 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   private transcriptAtBottom(): boolean {
-    const buffer = this.terminal.buffer.active;
-    for (let row = 0; row < this.terminal.rows; row += 1) {
-      if (
-        /(?:^|\s)100%(?:\s|$)/.test(
-          buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? ""
-        )
-      ) {
-        return true;
-      }
-    }
-    return false;
+    // Use the parsed footer rather than scanning the whole viewport. Message
+    // content may itself contain "100%", which must not close the transcript.
+    return this.transcriptPercent === 100;
   }
 
   // Thumb geometry for the pane's scroll overlay, or undefined when this pane
