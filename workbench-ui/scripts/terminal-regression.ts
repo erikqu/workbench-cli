@@ -282,6 +282,14 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   await send(page, "\x1b");
   await waitForTextAbsent(page, "GitHub repository URL or SSH address", 3000);
 
+  await send(page, "\x14");
+  await waitForText(page, "Terminal 2", 3000);
+  await send(page, "\x1bw");
+  await waitForTextAbsent(page, "Terminal 2", 3000);
+  report("Option+W closes the active tab while its terminal owns focus");
+  await send(page, "\x1b1");
+  location = await waitForReference(page, () => true, 5000);
+
   await typeCharacters(page, "restart probe");
   location = await waitForReference(
     page,

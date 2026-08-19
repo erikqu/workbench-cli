@@ -421,6 +421,11 @@ function handleKey(
     return;
   }
 
+  if (isCloseTabShortcut(input, key)) {
+    actions.closeActiveTab();
+    return;
+  }
+
   if (isThemeCycleKey(input, key)) {
     actions.cycleTheme(key.shift ? -1 : 1);
     return;
@@ -611,6 +616,16 @@ export function isThemeCycleKey(input: string, key: Key): boolean {
   // Legacy Alt/Option+Tab can arrive as ESC + Tab. silvery strips ESC and gives
   // us a literal tab input without setting key.meta/key.tab.
   return input === "\t" && !key.tab && !key.escape;
+}
+
+export function isCloseTabShortcut(input: string, key: Key): boolean {
+  return (
+    key.meta &&
+    !key.ctrl &&
+    !key.super &&
+    !key.shift &&
+    input.toLowerCase() === "w"
+  );
 }
 
 function HarnessView({

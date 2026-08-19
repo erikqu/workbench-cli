@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseKey } from "silvery";
 import {
+  isCloseTabShortcut,
   isHelpShortcut,
   isSplashDismissKey,
   isThemeCycleKey,
@@ -30,6 +31,22 @@ describe("isThemeCycleKey", () => {
   test("does not match plain Tab", () => {
     const [input, key] = parsed("\t");
     expect(isThemeCycleKey(input, key)).toBe(false);
+  });
+});
+
+describe("isCloseTabShortcut", () => {
+  test("matches legacy and enhanced Option+W encodings", () => {
+    for (const raw of ["\x1bw", "\x1b[119;3u"]) {
+      const [input, key] = parsed(raw);
+      expect(isCloseTabShortcut(input, key)).toBe(true);
+    }
+  });
+
+  test("does not claim plain, shifted, Ctrl, or Command+W", () => {
+    for (const raw of ["w", "\x1b[87;4u", "\x17", "\x1b[119;9u"]) {
+      const [input, key] = parsed(raw);
+      expect(isCloseTabShortcut(input, key)).toBe(false);
+    }
   });
 });
 
