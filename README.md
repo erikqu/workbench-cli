@@ -21,7 +21,7 @@ changes, and rich file previews in one full-screen TUI.
 curl -fsSL https://ehq.so/install | bash
 ```
 
-<video src="https://github.com/erikqu/workbench-cli/raw/main/workbench-ui/assets/video/demo.mov" controls></video>
+[![Workbench CLI](workbench-ui/assets/images/sample.png)](https://github.com/erikqu/workbench-cli/blob/main/workbench-ui/assets/video/demo.mp4)
 
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
