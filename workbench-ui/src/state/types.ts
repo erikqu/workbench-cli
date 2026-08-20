@@ -99,6 +99,7 @@ export interface AppState {
   pendingWorkspaceClone?: PendingWorkspaceClone;
   plusMenuOpen: boolean;
   sessions: AgentSession[];
+  sessionsLogoHeight: number;
   sessionsSidebarWidth: number;
   sidebarVisible: boolean;
   // Startup splash overlay; shown on launch, dismissed on first interaction.
@@ -141,6 +142,7 @@ export interface PersistedTerminalTab {
 export interface PersistedWorkbenchState {
   activeSessionIndex?: number;
   sessions?: PersistedSession[];
+  sessionsLogoHeight?: number;
   sessionsSidebarWidth?: number;
   sidebarVisible?: boolean;
   themeName?: string;

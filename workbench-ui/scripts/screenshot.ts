@@ -184,6 +184,37 @@ try {
     await screenIsAnchored(page)
   );
 
+  const logoGrip = await findCell(page, "──┼──", 0, 26);
+  if (logoGrip) {
+    await drag(
+      page,
+      logoGrip.col + 2,
+      logoGrip.row,
+      logoGrip.col + 2,
+      logoGrip.row + 4
+    );
+    await page.waitForTimeout(250);
+    const resizedGrip =
+      (await findCell(page, "──┼──", 0, 26)) ??
+      (await findCell(page, "╋", 0, 26));
+    report(
+      "sessions logo height is draggable",
+      Boolean(resizedGrip && resizedGrip.row >= logoGrip.row + 3)
+    );
+    if (resizedGrip) {
+      await drag(
+        page,
+        resizedGrip.col + 2,
+        resizedGrip.row,
+        resizedGrip.col + 2,
+        resizedGrip.row - 4
+      );
+      await page.waitForTimeout(250);
+    }
+  } else {
+    report("sessions logo resize grip renders", false);
+  }
+
   // 2. Clicking the Terminal 1 tab focuses its shell; typing should reach it.
   const terminalTab = await findCell(page, "Terminal 1");
   if (terminalTab) {

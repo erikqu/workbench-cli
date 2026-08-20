@@ -9,6 +9,8 @@ import { basename, dirname, join } from "node:path";
 import { openEditorTab } from "../text/editor";
 import {
   clampPaneWidth,
+  clampSessionsLogoHeight,
+  DEFAULT_SESSIONS_LOGO_HEIGHT,
   DEFAULT_SESSIONS_SIDEBAR_WIDTH,
   DEFAULT_WORKSPACE_SIDE_PANE_WIDTH,
   MAX_PERSISTED_PANE_WIDTH,
@@ -238,6 +240,9 @@ export function createInitialState(cwd: string): AppState {
     newHarnessOpen: false,
     plusMenuOpen: false,
     focus: focusForMainTab(activeSession.activeMainTab),
+    sessionsLogoHeight: clampSessionsLogoHeight(
+      persisted.sessionsLogoHeight ?? DEFAULT_SESSIONS_LOGO_HEIGHT
+    ),
     sessionsSidebarWidth: clampPaneWidth(
       persisted.sessionsSidebarWidth ?? DEFAULT_SESSIONS_SIDEBAR_WIDTH,
       MIN_SESSIONS_SIDEBAR_WIDTH,
@@ -294,6 +299,7 @@ function createScreenshotState(cwd: string): AppState {
     newHarnessOpen: false,
     plusMenuOpen: false,
     focus: "harness",
+    sessionsLogoHeight: DEFAULT_SESSIONS_LOGO_HEIGHT,
     sessionsSidebarWidth: DEFAULT_SESSIONS_SIDEBAR_WIDTH,
     sidebarVisible: true,
     // Show the splash in screenshots only when explicitly exercising it.
@@ -348,6 +354,7 @@ export function savePersistedState(state: AppState) {
     activeSessionIndex: state.sessions.findIndex(
       (session) => session.id === state.activeSessionId
     ),
+    sessionsLogoHeight: state.sessionsLogoHeight,
     sessionsSidebarWidth: state.sessionsSidebarWidth,
     sidebarVisible: state.sidebarVisible,
     themeName: state.themeName,

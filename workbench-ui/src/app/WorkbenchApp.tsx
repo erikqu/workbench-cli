@@ -73,6 +73,7 @@ import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
   COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
   clampPaneWidth,
+  clampSessionsLogoHeight,
   MIN_SESSIONS_SIDEBAR_WIDTH,
   MIN_WORKSPACE_SIDE_PANE_WIDTH,
   maxSessionsSidebarWidth,
@@ -266,6 +267,13 @@ export class ReactWorkbenchApp {
         }
         const panel = this.harnessPanel(harness);
         panel.resize(cols, rows);
+      },
+      resizeSessionsLogo: (height) => {
+        const next = clampSessionsLogoHeight(height);
+        if (next !== this.state.sessionsLogoHeight) {
+          this.state.sessionsLogoHeight = next;
+          this.persistAndRender();
+        }
       },
       resizeSessionsSidebar: (width) => {
         const maxWidth = maxSessionsSidebarWidth(

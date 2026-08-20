@@ -9,6 +9,7 @@ import {
   Text,
   truncateText,
   useBoxRectDangerously,
+  useMouseCursor,
   useWindowSize,
 } from "silvery";
 import { buildVerticalWorkbenchArt } from "../media/splash";
@@ -20,6 +21,7 @@ import {
   clampPaneWidth,
   MIN_SESSIONS_SIDEBAR_WIDTH,
   maxSessionsSidebarWidth,
+  visibleSessionsLogoHeight,
 } from "../ui/pane-layout";
 import { colors } from "../ui/theme";
 import { CloseButton } from "./CloseButton";
@@ -114,7 +116,7 @@ export function SessionsSidebar({
             view={view}
           />
         </Box>
-        <VerticalWorkbenchArt />
+        <VerticalWorkbenchArt actions={actions} view={view} />
       </Box>
       <PaneResizeHandle
         maxWidth={maxWidth}
@@ -239,25 +241,114 @@ export function sessionListItems(
 export const SESSION_CARD_HEIGHT = 3;
 export const SESSION_CARD_GAP = 0;
 
-function VerticalWorkbenchArt() {
+function VerticalWorkbenchArt({
+  actions,
+  view,
+}: {
+  actions: WorkbenchActions;
+  view: WorkbenchViewModel;
+}) {
   const { rows } = useWindowSize();
-  const artRows = Math.min(32, Math.max(1, rows - 20));
+  const artRows = visibleSessionsLogoHeight(
+    view.state.sessionsLogoHeight,
+    rows
+  );
   const lines = buildVerticalWorkbenchArt(artRows, 1.5);
   return (
+    <Box flexDirection="column" flexShrink={0}>
+      <SessionsLogoResizeHandle
+        height={artRows}
+        onResize={actions.resizeSessionsLogo}
+        preferredHeight={view.state.sessionsLogoHeight}
+      />
+      <Box
+        alignItems="flex-end"
+        flexDirection="column"
+        flexShrink={1}
+        height={artRows}
+        justifyContent="flex-end"
+        minHeight={1}
+        overflow="hidden"
+      >
+        {lines.map((line, index) => (
+          <Text color={colors.accentAlt} key={`${index}-${line}`} wrap={false}>
+            {line}
+          </Text>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+function SessionsLogoResizeHandle({
+  height,
+  onResize,
+  preferredHeight,
+}: {
+  height: number;
+  onResize(height: number): void;
+  preferredHeight: number;
+}) {
+  const dragStart = useRef<{
+    preferredHeight: number;
+    visibleHeight: number;
+    y: number;
+  } | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  useMouseCursor(hovered || dragging ? "move" : null);
+
+  const resizeFromPointer = (y: number) => {
+    const start = dragStart.current;
+    if (!start) {
+      return;
+    }
+    const delta = start.y - y;
+    if (delta === 0) {
+      return;
+    }
+    onResize((delta < 0 ? start.visibleHeight : start.preferredHeight) + delta);
+  };
+
+  return (
     <Box
-      alignItems="flex-end"
-      flexDirection="column"
-      flexShrink={1}
-      height={artRows}
-      justifyContent="flex-end"
-      minHeight={1}
-      overflow="hidden"
+      alignItems="center"
+      height={1}
+      justifyContent="center"
+      mouseCapture
+      onMouseDown={(event) => {
+        dragStart.current = {
+          preferredHeight,
+          visibleHeight: height,
+          y: event.y,
+        };
+        setDragging(true);
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onMouseMove={(event) => {
+        if (!dragStart.current) {
+          return;
+        }
+        resizeFromPointer(event.y);
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onMouseUp={(event) => {
+        resizeFromPointer(event.y);
+        dragStart.current = null;
+        setDragging(false);
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      userSelect="none"
+      width="100%"
     >
-      {lines.map((line, index) => (
-        <Text color={colors.accentAlt} key={`${index}-${line}`} wrap={false}>
-          {line}
-        </Text>
-      ))}
+      <Text color={hovered || dragging ? colors.borderFocus : colors.border}>
+        {hovered || dragging ? "━━╋━━" : "──┼──"}
+      </Text>
     </Box>
   );
 }

@@ -163,6 +163,8 @@ with text already present in the agent composer.
   three-row outlined cards separated by one blank row. Session names and
   Option+Shift number hints live inside the cards; do not reintroduce a topic
   row or footer shortcut legend. Selected and hovered cards use themed surfaces.
+  The vertical Workbench mark has a horizontal drag grip above it; its preferred
+  height is persisted and only temporarily clamped when the terminal is short.
 - `? Help` opens `SessionsHelpDialog`; enhanced-keyboard terminals also toggle
   it with Ctrl+?. Never interpret legacy DEL as Help because that breaks
   Backspace. Keep the clickable header action as the universal fallback.

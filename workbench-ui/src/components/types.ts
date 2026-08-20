@@ -41,6 +41,7 @@ export interface WorkbenchActions {
   openNewAgent(): void;
   openNewHarness(): void;
   resizeHarness(cols: number, rows: number): void;
+  resizeSessionsLogo(height: number): void;
   resizeSessionsSidebar(width: number): void;
   resizeTerminal(cols: number, rows: number): void;
   resizeWorkspaceSidePane(width: number): void;
