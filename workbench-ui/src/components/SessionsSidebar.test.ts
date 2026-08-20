@@ -7,6 +7,7 @@ import {
   sessionCloseTargets,
   sessionFlowOffset,
   sessionFlowStrengths,
+  sessionListItems,
 } from "./SessionsSidebar";
 
 test("session cards form a continuous list without gaps", () => {
@@ -18,6 +19,19 @@ test("large diff counts stay compact enough for narrow cards", () => {
   expect(compactDiffCount(999)).toBe("999");
   expect(compactDiffCount(12_345)).toBe("12k");
   expect(compactDiffCount(4_500_000)).toBe("4m");
+});
+
+test("a pending clone appears after real sessions until Git finishes", () => {
+  const items = sessionListItems(sessions("one", "two"), {
+    destination: "/tmp/demo",
+    id: "clone-demo",
+    name: "demo",
+  });
+  expect(items.map((item) => [item.kind, item.id])).toEqual([
+    ["session", "one"],
+    ["session", "two"],
+    ["clone", "clone-demo"],
+  ]);
 });
 
 function sessions(...ids: string[]): AgentSession[] {

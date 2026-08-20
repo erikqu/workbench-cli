@@ -74,6 +74,12 @@ export interface AgentSession {
   terminals: TerminalTab[];
 }
 
+export interface PendingWorkspaceClone {
+  destination: string;
+  id: string;
+  name: string;
+}
+
 export type FocusTarget =
   | "sessions"
   | "explorer"
@@ -88,6 +94,9 @@ export interface AppState {
   focus: FocusTarget;
   newAgentOpen: boolean;
   newHarnessOpen: boolean;
+  // Clone progress is deliberately ephemeral. It renders as a temporary
+  // session card and is replaced by a real session only after Git succeeds.
+  pendingWorkspaceClone?: PendingWorkspaceClone;
   plusMenuOpen: boolean;
   sessions: AgentSession[];
   sessionsSidebarWidth: number;

@@ -12,7 +12,7 @@ import {
   useWindowSize,
 } from "silvery";
 import { buildVerticalWorkbenchArt } from "../media/splash";
-import type { AgentSession } from "../state/types";
+import type { AgentSession, PendingWorkspaceClone } from "../state/types";
 import type { SessionDiff } from "../text/diff";
 import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
@@ -98,7 +98,9 @@ export function SessionsSidebar({
               <Text bold color={colors.text}>
                 Sessions
               </Text>
-              <Text color={colors.dim}>{` ${view.state.sessions.length}`}</Text>
+              <Text
+                color={colors.dim}
+              >{` ${view.state.sessions.length + (view.state.pendingWorkspaceClone ? 1 : 0)}`}</Text>
             </Box>
             <Box flexDirection="row">
               <HelpButton compact={width < 26} onOpen={onOpenHelp} />
@@ -180,30 +182,54 @@ function SessionListBody({
   const height = Math.max(1, Math.floor(rect.height));
   const cardWidth = Math.max(8, Math.floor(rect.width));
   const sessions = view.state.sessions;
+  const items = sessionListItems(sessions, view.state.pendingWorkspaceClone);
   return (
     <ListView
       active={false}
       estimateHeight={SESSION_CARD_HEIGHT + SESSION_CARD_GAP}
       gap={SESSION_CARD_GAP}
-      getKey={(session) => session.id}
+      getKey={(item) => item.id}
       height={height}
-      items={sessions}
+      items={items}
       ref={listRef}
-      renderItem={(session) => (
-        <SessionCard
-          actions={actions}
-          canClose={sessions.length > 1}
-          diff={view.diffs.get(session.cwd)}
-          index={sessions.indexOf(session)}
-          onContextMenuChange={onContextMenuChange}
-          running={view.runningSessionIds.has(session.id)}
-          selected={session.id === view.state.activeSessionId}
-          session={session}
-          width={cardWidth}
-        />
-      )}
+      renderItem={(item) =>
+        item.kind === "clone" ? (
+          <PendingCloneCard clone={item.clone} width={cardWidth} />
+        ) : (
+          <SessionCard
+            actions={actions}
+            canClose={sessions.length > 1}
+            diff={view.diffs.get(item.session.cwd)}
+            index={sessions.indexOf(item.session)}
+            onContextMenuChange={onContextMenuChange}
+            running={view.runningSessionIds.has(item.session.id)}
+            selected={item.session.id === view.state.activeSessionId}
+            session={item.session}
+            width={cardWidth}
+          />
+        )
+      }
     />
   );
+}
+
+type SessionListItem =
+  | { clone: PendingWorkspaceClone; id: string; kind: "clone" }
+  | { id: string; kind: "session"; session: AgentSession };
+
+export function sessionListItems(
+  sessions: readonly AgentSession[],
+  clone?: PendingWorkspaceClone
+): SessionListItem[] {
+  const items: SessionListItem[] = sessions.map((session) => ({
+    id: session.id,
+    kind: "session",
+    session,
+  }));
+  if (clone) {
+    items.push({ clone, id: clone.id, kind: "clone" });
+  }
+  return items;
 }
 
 export const SESSION_CARD_HEIGHT = 3;
@@ -466,6 +492,48 @@ function SessionCard({
             <Text color={colors.diffDelFg}>{`-${deleted}`}</Text>
           </>
         ) : null}
+        <Text color={border}>╯</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function PendingCloneCard({
+  clone,
+  width,
+}: {
+  clone: PendingWorkspaceClone;
+  width: number;
+}) {
+  const border = colors.borderFocus;
+  const title = truncateText(`Cloning ${clone.name}…`, Math.max(1, width - 4));
+  const titleFillWidth = Math.max(0, width - 4 - displayWidth(title));
+  const flowWidth = Math.max(1, width - 2);
+
+  return (
+    <Box
+      backgroundColor={colors.panel}
+      flexDirection="column"
+      flexShrink={0}
+      height={SESSION_CARD_HEIGHT}
+      width={width}
+    >
+      <Box flexDirection="row" height={1}>
+        <Text color={border}>╭</Text>
+        <Text color={border}>{"─".repeat(Math.max(0, width - 2))}</Text>
+        <Text color={border}>╮</Text>
+      </Box>
+      <Box flexDirection="row" height={1}>
+        <Text color={border}>│ </Text>
+        <Text bold color={colors.accentAlt} wrap={false}>
+          {title}
+        </Text>
+        <Text>{" ".repeat(titleFillWidth)}</Text>
+        <Text color={border}> │</Text>
+      </Box>
+      <Box flexDirection="row" height={1}>
+        <Text color={border}>╰</Text>
+        <RunningSessionFlow width={flowWidth} />
         <Text color={border}>╯</Text>
       </Box>
     </Box>

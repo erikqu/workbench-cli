@@ -894,6 +894,15 @@ export class ReactWorkbenchApp {
       return;
     }
     this.workspaceCloneInProgress = true;
+    const pendingClone = {
+      destination: repository.destination,
+      id: `clone-${crypto.randomUUID()}`,
+      name: repository.name,
+    };
+    this.state.pendingWorkspaceClone = pendingClone;
+    this.state.newAgentOpen = false;
+    this.state.focus = focusForMainTab(this.activeSession().activeMainTab);
+    this.persistAndRender();
     emitToast({
       title: `Cloning ${repository.name}`,
       description: repository.destination,
@@ -919,6 +928,7 @@ export class ReactWorkbenchApp {
         });
         return;
       }
+      this.state.pendingWorkspaceClone = undefined;
       this.openWorkspace(repository.destination);
     } catch (error) {
       emitToast({
@@ -928,6 +938,10 @@ export class ReactWorkbenchApp {
       });
     } finally {
       this.workspaceCloneInProgress = false;
+      if (this.state.pendingWorkspaceClone?.id === pendingClone.id) {
+        this.state.pendingWorkspaceClone = undefined;
+        this.render();
+      }
     }
   }
 
