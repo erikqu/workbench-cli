@@ -21,7 +21,7 @@ changes, and rich file previews in one full-screen TUI.
 curl -fsSL https://ehq.so/install | bash
 ```
 
-[![Workbench CLI](workbench-ui/assets/images/sample.png)](https://github.com/erikqu/workbench-cli/blob/main/workbench-ui/assets/video/demo.mp4)
+https://github.com/user-attachments/assets/c787e2aa-3209-4755-9327-a71e93fb0a52
 
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
@@ -98,7 +98,7 @@ detected. Override the choice with `--harness`, `--agent`, or
 Use Codex and Claude Code in the same Workbench workspace, with each agent kept
 alive in its own tab:
 
-![Codex and Claude Code running in Workbench CLI](workbench-ui/assets/images/sample_white_claude.png)
+![Claude Code running in Workbench CLI](workbench-ui/assets/images/sample.png)
 
 Use `work --splash` to hold the startup artwork on screen until the first key
 press or click, which is useful for previewing it at the current terminal size.
