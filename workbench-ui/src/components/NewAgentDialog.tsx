@@ -1,6 +1,13 @@
 import { dirname } from "node:path";
-import { useMemo, useState } from "react";
-import { Box, ModalDialog, Text, TextInput, useInput } from "silvery";
+import { useMemo, useRef, useState } from "react";
+import {
+  Box,
+  ModalDialog,
+  Text,
+  TextInput,
+  type TextInputHandle,
+  useInput,
+} from "silvery";
 import { requestClipboardPaste } from "../terminal/clipboard";
 import { completeDirectories } from "../text/file-tree";
 import { colors } from "../ui/theme";
@@ -18,6 +25,7 @@ export function NewAgentDialog({
     defaultWorkspaceDirectory(view.cwd)
   );
   const [repositoryValue, setRepositoryValue] = useState("");
+  const inputRef = useRef<TextInputHandle>(null);
   const suggestions = useMemo(
     () => (mode === "local" ? completeDirectories(localValue, view.cwd) : []),
     [localValue, mode, view.cwd]
@@ -46,11 +54,8 @@ export function NewAgentDialog({
       // bracketed paste. Route the runtime's paste event into whichever field is
       // visible so native paste and the OSC-52 Ctrl/Cmd+V path behave alike.
       onPaste: (text) => {
-        if (mode === "local") {
-          setLocalValue((value) => value + text);
-        } else {
-          setRepositoryValue((value) => value + text);
-        }
+        const input = inputRef.current;
+        input?.setValue(`${input.getValue()}${text}`);
       },
     }
   );
@@ -103,6 +108,7 @@ export function NewAgentDialog({
                 : (next) => actions.cloneRepository(next)
             }
             prompt="> "
+            ref={inputRef}
             value={mode === "local" ? localValue : repositoryValue}
           />
           {suggestions.length > 0 ? (

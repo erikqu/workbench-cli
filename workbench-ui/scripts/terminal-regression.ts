@@ -273,12 +273,19 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
   }
   await click(page, cloneMode.x + 2, cloneMode.y);
   await waitForText(page, "GitHub repository URL or SSH address", 3000);
-  await page.evaluate(() =>
-    (window as any).__setClipboard("github.com/acme/demo.git")
+  const sshRepository = "git@github.com:acme/demo.git";
+  await paste(page, sshRepository);
+  await waitForText(page, sshRepository, 3000);
+  report("native paste inserts a GitHub SSH URL into the Git clone field");
+  await send(page, "\x15");
+  await waitForTextAbsent(page, sshRepository, 3000);
+  await page.evaluate(
+    (repository) => (window as any).__setClipboard(repository),
+    sshRepository
   );
   await send(page, "\x16");
-  await waitForText(page, "github.com/acme/demo.git", 3000);
-  report("Ctrl+V pastes the host clipboard into the Git clone field");
+  await waitForText(page, sshRepository, 3000);
+  report("Ctrl+V pastes a GitHub SSH URL into the Git clone field");
   await send(page, "\x1b");
   await waitForTextAbsent(page, "GitHub repository URL or SSH address", 3000);
 
