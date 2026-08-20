@@ -21,7 +21,9 @@ changes, and rich file previews in one full-screen TUI.
 curl -fsSL https://ehq.so/install | bash
 ```
 
-<video src="https://github.com/user-attachments/assets/c787e2aa-3209-4755-9327-a71e93fb0a52" autoplay loop muted playsinline controls></video>
+![Workbench CLI demo](workbench-ui/assets/video/demo.gif)
+
+[Watch the full-quality demo](https://github.com/user-attachments/assets/c787e2aa-3209-4755-9327-a71e93fb0a52)
 
 Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
 [Silvery](https://www.npmjs.com/package/silvery).
