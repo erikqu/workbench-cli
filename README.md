@@ -95,6 +95,11 @@ Codex, Cursor, then Claude Code; it falls back to Codex when none can be
 detected. Override the choice with `--harness`, `--agent`, or
 `WORKBENCH_UI_HARNESS_ID`.
 
+Use Codex and Claude Code in the same Workbench workspace, with each agent kept
+alive in its own tab:
+
+![Codex and Claude Code running in Workbench CLI](workbench-ui/assets/images/sample_white_claude.png)
+
 Use `work --splash` to hold the startup artwork on screen until the first key
 press or click, which is useful for previewing it at the current terminal size.
 
