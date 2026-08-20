@@ -194,7 +194,11 @@ function SessionListBody({
       ref={listRef}
       renderItem={(item) =>
         item.kind === "clone" ? (
-          <PendingCloneCard clone={item.clone} width={cardWidth} />
+          <PendingCloneCard
+            actions={actions}
+            clone={item.clone}
+            width={cardWidth}
+          />
         ) : (
           <SessionCard
             actions={actions}
@@ -499,9 +503,11 @@ function SessionCard({
 }
 
 function PendingCloneCard({
+  actions,
   clone,
   width,
 }: {
+  actions: WorkbenchActions;
   clone: PendingWorkspaceClone;
   width: number;
 }) {
@@ -509,6 +515,7 @@ function PendingCloneCard({
   const title = truncateText(`Cloning ${clone.name}…`, Math.max(1, width - 4));
   const titleFillWidth = Math.max(0, width - 4 - displayWidth(title));
   const flowWidth = Math.max(1, width - 2);
+  const topFillWidth = Math.max(0, width - 5);
 
   return (
     <Box
@@ -520,7 +527,11 @@ function PendingCloneCard({
     >
       <Box flexDirection="row" height={1}>
         <Text color={border}>╭</Text>
-        <Text color={border}>{"─".repeat(Math.max(0, width - 2))}</Text>
+        <Text color={border}>{"─".repeat(topFillWidth)}</Text>
+        <CloseButton
+          color={colors.accentAlt}
+          onClose={() => actions.cancelWorkspaceClone(clone.id)}
+        />
         <Text color={border}>╮</Text>
       </Box>
       <Box flexDirection="row" height={1}>

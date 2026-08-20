@@ -153,7 +153,9 @@ with text already present in the agent composer.
   HTTPS, SSH, or `github.com/owner/repo` input; it clones with argument-array
   `git clone` into that parent. While Git runs, an ephemeral animated card is
   shown in Sessions; success replaces it with the real selected session and
-  failure removes it. Never interpolate repository input into a shell command.
+  failure removes it. Its X cancels Git and removes a partial destination only
+  when that destination did not exist before cloning. Never interpolate
+  repository input into a shell command.
 
 ## Overlay and close-control behavior
 

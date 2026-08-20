@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { relative } from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
@@ -112,6 +112,14 @@ export interface WorkbenchOptions {
   cwd: string;
 }
 
+interface WorkspaceCloneOperation {
+  cancelled: boolean;
+  destination: string;
+  destinationExisted: boolean;
+  id: string;
+  process?: ReturnType<typeof Bun.spawn>;
+}
+
 export class ReactWorkbenchApp {
   private instance?: RunHandle;
   private state: AppState;
@@ -135,7 +143,7 @@ export class ReactWorkbenchApp {
   private diffTick?: () => void;
   private diffRunning = false;
   private runningSessionIds = new Set<string>();
-  private workspaceCloneInProgress = false;
+  private workspaceCloneOperation?: WorkspaceCloneOperation;
   private harnessActivityTimer?: ReturnType<typeof setTimeout>;
   private fullRedrawTimer?: ReturnType<typeof setTimeout>;
   private readonly workbenchActions: WorkbenchActions;
@@ -328,6 +336,7 @@ export class ReactWorkbenchApp {
         this.state.focus = focusForMainTab(this.activeSession().activeMainTab);
         this.render();
       },
+      cancelWorkspaceClone: (id) => this.cancelWorkspaceClone(id),
       cloneRepository: (repository) => this.createRepository(repository),
       createAgent: (path) => this.createAgent(path),
       openNewHarness: () => {
@@ -884,7 +893,7 @@ export class ReactWorkbenchApp {
   }
 
   private async cloneWorkspace(repository: GitHubRepositoryInput) {
-    if (this.workspaceCloneInProgress) {
+    if (this.workspaceCloneOperation) {
       emitToast({
         title: "Repository clone already running",
         description:
@@ -893,21 +902,22 @@ export class ReactWorkbenchApp {
       });
       return;
     }
-    this.workspaceCloneInProgress = true;
     const pendingClone = {
       destination: repository.destination,
       id: `clone-${crypto.randomUUID()}`,
       name: repository.name,
     };
+    const operation: WorkspaceCloneOperation = {
+      cancelled: false,
+      destination: repository.destination,
+      destinationExisted: existsSync(repository.destination),
+      id: pendingClone.id,
+    };
+    this.workspaceCloneOperation = operation;
     this.state.pendingWorkspaceClone = pendingClone;
     this.state.newAgentOpen = false;
     this.state.focus = focusForMainTab(this.activeSession().activeMainTab);
     this.persistAndRender();
-    emitToast({
-      title: `Cloning ${repository.name}`,
-      description: repository.destination,
-      variant: "info",
-    });
     try {
       const process = Bun.spawn(
         ["git", "clone", "--", repository.cloneUrl, repository.destination],
@@ -917,9 +927,13 @@ export class ReactWorkbenchApp {
           stderr: "pipe",
         }
       );
+      operation.process = process;
       const stderr = new Response(process.stderr).text();
       const exitCode = await process.exited;
       const details = (await stderr).trim();
+      if (operation.cancelled) {
+        return;
+      }
       if (exitCode !== 0) {
         emitToast({
           title: "Repository could not be cloned",
@@ -937,12 +951,37 @@ export class ReactWorkbenchApp {
         variant: "error",
       });
     } finally {
-      this.workspaceCloneInProgress = false;
+      if (operation.cancelled && !operation.destinationExisted) {
+        try {
+          rmSync(operation.destination, { force: true, recursive: true });
+        } catch {
+          // Cancellation already succeeded; a locked partial directory can be
+          // removed manually without leaving Workbench stuck in clone mode.
+        }
+      }
+      if (this.workspaceCloneOperation?.id === operation.id) {
+        this.workspaceCloneOperation = undefined;
+      }
       if (this.state.pendingWorkspaceClone?.id === pendingClone.id) {
         this.state.pendingWorkspaceClone = undefined;
         this.render();
       }
     }
+  }
+
+  private cancelWorkspaceClone(id: string) {
+    const operation = this.workspaceCloneOperation;
+    if (!(operation && operation.id === id)) {
+      return;
+    }
+    operation.cancelled = true;
+    this.state.pendingWorkspaceClone = undefined;
+    try {
+      operation.process?.kill("SIGTERM");
+    } catch {
+      // The process may have exited between the click and this signal.
+    }
+    this.render();
   }
 
   private openWorkspace(cwd: string) {

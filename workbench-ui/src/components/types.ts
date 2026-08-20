@@ -24,6 +24,7 @@ export interface WorkbenchActions {
   addHarness(harnessId: string): void;
   cancelNewAgent(): void;
   cancelNewHarness(): void;
+  cancelWorkspaceClone(id: string): void;
   cloneRepository(repository: string): void;
   closeActiveTab(): void;
   closeHarness(id: string): void;
