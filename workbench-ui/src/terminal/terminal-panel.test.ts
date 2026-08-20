@@ -270,6 +270,12 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
     expect(writes.at(-1)).toBe("\x1b[B".repeat(3));
     expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(3));
+    // Balancing synthetic wheel debt must not discard the final movement or
+    // close early. Codex's footer is the source of truth for the live edge.
+    await Bun.sleep(450);
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(3));
+    await feed(panel, "\x1b[2J\x1b[HT R A N S C R I P T\r\n 100% ");
     await Bun.sleep(450);
     expect(writes.at(-1)).toBe("\x14");
 
@@ -323,6 +329,8 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(panel.sendMouseWheel(4, 9, "up", 1)).toBe(true);
     await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 99% ");
     expect(panel.sendMouseWheel(4, 9, "down", 1)).toBe(true);
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(3));
+    await feed(panel, "\x1b[2J\x1b[HT R A N S C R I P T\r\n 100% ");
     await Bun.sleep(450);
     expect(writes.at(-1)).toBe("\x14");
 
@@ -380,7 +388,7 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(writes).toEqual(["\x1b[<64;5;10M".repeat(2), "\x1b[<65;5;10M"]);
   });
 
-  test("returns to the composer when net wheel intent reaches the live edge", async () => {
+  test("returns to the composer when the transcript reaches the live edge", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24, {
       wheelNavigation: "transcript",
     });
@@ -389,9 +397,33 @@ describe("TerminalPanel.sendMouseWheel", () => {
     expect(panel.sendMouseWheel(4, 9, "up", 4)).toBe(true);
     await feed(panel, "\x1b[?1049h\x1b[2J\x1b[HT R A N S C R I P T\r\n 83% ");
     expect(panel.sendMouseWheel(4, 9, "down", 4)).toBe(true);
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(12));
+    await feed(panel, "\x1b[2J\x1b[HT R A N S C R I P T\r\n 100% ");
     await Bun.sleep(450);
 
-    expect(writes).toEqual(["\x14", "\x1b[A".repeat(12), "\x14"]);
+    expect(writes).toEqual([
+      "\x14",
+      "\x1b[A".repeat(12),
+      "\x1b[B".repeat(12),
+      "\x14",
+    ]);
+  });
+
+  test("does not mistake message content containing 100% for the live edge", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 24, {
+      wheelNavigation: "transcript",
+    });
+    const writes = capturePty(panel);
+
+    expect(panel.sendMouseWheel(4, 9, "up", 2)).toBe(true);
+    await feed(
+      panel,
+      "\x1b[?1049h\x1b[2J\x1b[H100% test coverage\r\nT R A N S C R I P T\r\n 50% "
+    );
+    expect(panel.sendMouseWheel(4, 9, "down", 2)).toBe(true);
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(6));
+    await Bun.sleep(450);
+    expect(writes.at(-1)).toBe("\x1b[B".repeat(6));
   });
 });
 
