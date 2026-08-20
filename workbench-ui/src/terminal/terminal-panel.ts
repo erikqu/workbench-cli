@@ -136,6 +136,10 @@ function ensureTmuxConf(): string {
 function interactiveShellCommand(shell: string, cwd: string): string {
   const shellName = shell.split("/").pop() ?? shell;
   const home = Bun.env.HOME ?? ".";
+  if (shellName === "fish") {
+    const fishCwd = `'${cwd.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+    return `${shellQuote(shell)} -i -C ${shellQuote(`cd ${fishCwd}`)}`;
+  }
   const digest = createHash("sha1").update(`${shell}\0${cwd}`).digest("hex");
   const initRoot = join(home, ".workbench", "shell-init", digest);
   try {
