@@ -2,12 +2,17 @@ import { describe, expect, test } from "bun:test";
 
 // workbench-paths resolves its namespace once at module load from the
 // environment, so each case runs a fresh child process with a controlled env.
-async function resolvePaths(
-  env: Record<string, string>
-): Promise<{ dir: string; isolated: boolean; socket: string; state: string }> {
+async function resolvePaths(env: Record<string, string>): Promise<{
+  attachesRealSessions: boolean;
+  dir: string;
+  isolated: boolean;
+  socket: string;
+  state: string;
+}> {
   const script = `
     const m = await import("${import.meta.dir}/workbench-paths.ts");
     console.log(JSON.stringify({
+      attachesRealSessions: m.hotAttachesRealSessions(),
       dir: m.workbenchDir(),
       isolated: m.isolatedInstance(),
       socket: m.tmuxSocketPath(),
@@ -31,7 +36,7 @@ async function resolvePaths(
   return JSON.parse(out);
 }
 
-describe("workbench namespace isolation", () => {
+describe("workbench namespace selection", () => {
   test("an ordinary launch uses the real ~/.workbench namespace", async () => {
     const paths = await resolvePaths({
       HOME: "/tmp/wb-paths-home",
@@ -43,9 +48,10 @@ describe("workbench namespace isolation", () => {
       "/tmp/wb-paths-home/.workbench/workbench-ui-state.json"
     );
     expect(paths.isolated).toBe(false);
+    expect(paths.attachesRealSessions).toBe(false);
   });
 
-  test("a hot launch never shares the real socket or state file", async () => {
+  test("a hot launch reuses the real socket and state file", async () => {
     const real = await resolvePaths({
       HOME: "/tmp/wb-paths-home",
       WORKBENCH_CLI_HOT: "0",
@@ -55,19 +61,17 @@ describe("workbench namespace isolation", () => {
       WORKBENCH_CLI_HOT: "1",
       WORKBENCH_CLI_HOT_ROOT: "/mnt/nvme/programs/workbench-cli",
     });
-    // This is the whole point: sharing either of these lets the two instances
-    // steal each other's tmux panes and clobber one another's layout.
-    expect(hot.socket).not.toBe(real.socket);
-    expect(hot.state).not.toBe(real.state);
-    expect(hot.isolated).toBe(true);
-    // Still under ~/.workbench so existing cleanup and docs apply.
-    expect(hot.dir.startsWith(`${real.dir}/hot-`)).toBe(true);
+    expect(hot.socket).toBe(real.socket);
+    expect(hot.state).toBe(real.state);
+    expect(hot.isolated).toBe(false);
+    expect(hot.attachesRealSessions).toBe(true);
   });
 
-  test("a hot namespace is stable across restarts of the same checkout", async () => {
+  test("an explicitly isolated hot namespace is stable across restarts", async () => {
     const env = {
       HOME: "/tmp/wb-paths-home",
       WORKBENCH_CLI_HOT: "1",
+      WORKBENCH_CLI_HOT_ISOLATED: "1",
       WORKBENCH_CLI_HOT_ROOT: "/mnt/nvme/programs/workbench-cli",
     };
     const first = await resolvePaths(env);
@@ -75,17 +79,21 @@ describe("workbench namespace isolation", () => {
     // Hot reload must reattach the same running agents after every restart, so
     // the namespace cannot be randomised per launch.
     expect(second.dir).toBe(first.dir);
+    expect(first.isolated).toBe(true);
+    expect(first.attachesRealSessions).toBe(false);
   });
 
-  test("different checkouts get different hot namespaces", async () => {
+  test("isolated hot checkouts get different namespaces", async () => {
     const a = await resolvePaths({
       HOME: "/tmp/wb-paths-home",
       WORKBENCH_CLI_HOT: "1",
+      WORKBENCH_CLI_HOT_ISOLATED: "1",
       WORKBENCH_CLI_HOT_ROOT: "/mnt/nvme/programs/workbench-cli",
     });
     const b = await resolvePaths({
       HOME: "/tmp/wb-paths-home",
       WORKBENCH_CLI_HOT: "1",
+      WORKBENCH_CLI_HOT_ISOLATED: "1",
       WORKBENCH_CLI_HOT_ROOT: "/home/someone/other-checkout",
     });
     expect(a.dir).not.toBe(b.dir);

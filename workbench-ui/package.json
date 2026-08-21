@@ -6,7 +6,7 @@
     "ignore": "^7.0.5",
     "jimp": "^1.6.1",
     "react": "^19.2.7",
-    "silvery": "0.21.1"
+    "silvery": "0.24.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
@@ -34,6 +34,6 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.45",
+  "version": "0.1.46",
   "private": true
 }

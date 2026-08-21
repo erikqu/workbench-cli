@@ -17,7 +17,11 @@ import type {
 } from "../components/types";
 import { Workbench } from "../components/Workbench";
 import { harnessSpec, harnessSpecs } from "../state/harnesses";
-import { claimInstanceLock, releaseInstanceLock } from "../state/instance-lock";
+import {
+  claimInstanceLock,
+  readInstanceOwner,
+  releaseInstanceLock,
+} from "../state/instance-lock";
 import {
   createHarness,
   createInitialState,
@@ -39,7 +43,11 @@ import {
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
-import { tmuxSocketPath, workbenchDir } from "../state/workbench-paths";
+import {
+  hotAttachesRealSessions,
+  tmuxSocketPath,
+  workbenchDir,
+} from "../state/workbench-paths";
 import {
   killPersistentTmuxSession,
   type PersistentTmuxSession,
@@ -91,8 +99,9 @@ import { emitToast } from "../ui/toast";
 // an explicit socket *path* under ~/.workbench (not a `-L` name in the shared
 // per-user tmux tmpdir). This guarantees they never collide with, or show up in,
 // the user's own tmux server.
-// Resolved via workbench-paths: a hot-reload launch gets its own socket so it
-// cannot detach the panes of the user's everyday instance.
+// Resolved via workbench-paths: `work --hot` deliberately uses the normal
+// socket so it can reattach the user's sessions. The startup owner guard below
+// prevents a hot and ordinary UI from mounting those sessions simultaneously.
 const TMUX_SOCKET_PATH = tmuxSocketPath();
 
 // Minimum gap between full-app repaints (~60fps) used by the leading-edge render
@@ -162,6 +171,19 @@ export class ReactWorkbenchApp {
     delete process.env.NO_COLOR;
     process.env.FORCE_COLOR = "1";
     process.env.COLORTERM ??= "truecolor";
+
+    // A shared hot launch is meant to replace an ordinary UI and exercise its
+    // real sessions for a long-running test. Require the previous UI to shut
+    // down and detach first; attaching anyway would steal each tmux client and
+    // recreate the stale-size/input-box corruption hot testing is meant to find.
+    const existingOwner = readInstanceOwner();
+    if (existingOwner && hotAttachesRealSessions()) {
+      console.error(
+        `work --hot cannot attach sessions while Workbench pid ${existingOwner.pid} on ${existingOwner.tty} is still open. Quit that Workbench first; its harnesses will keep running, then launch work --hot again.`
+      );
+      process.exitCode = 2;
+      return;
+    }
 
     // Claim this workbench namespace. A live previous owner means two instances
     // share one tmux server and one state file, which silently corrupts panes

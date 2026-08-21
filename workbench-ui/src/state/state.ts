@@ -37,8 +37,9 @@ import {
 } from "./types";
 import { persistedStatePath } from "./workbench-paths";
 
-// Resolved once via workbench-paths so a hot-reload launch persists into its own
-// isolated namespace instead of overwriting the real session layout.
+// Resolved once via workbench-paths. `work --hot` intentionally uses the real
+// layout so watched restarts reattach every existing user session; explicitly
+// isolated hot runs still get their checkout-specific state file.
 const statePath = persistedStatePath();
 
 export function createSession(

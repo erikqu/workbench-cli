@@ -214,10 +214,9 @@ export function Workbench({
             <Text bold color={colors.accent}>
               Workbench
             </Text>
-            {/* An isolated (hot-reload) instance runs its own tmux server and
-                state file, so label it — otherwise two open windows are
-                indistinguishable and it is not obvious which sessions you are
-                looking at. */}
+            {/* An explicitly isolated hot instance runs its own tmux server and
+                state file, so label it. Ordinary `work --hot` now attaches the
+                user's real sessions and intentionally has no isolated label. */}
             {isolatedInstance() ? (
               <Text color={colors.dim}>{"  hot — isolated sessions"}</Text>
             ) : null}
