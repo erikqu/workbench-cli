@@ -408,6 +408,10 @@ export function transcriptBurstRows(steps: number, paneRows: number): number {
 // milliseconds; the cap only exists so a wedged pager can never freeze the
 // pane.
 const TRANSCRIPT_TRANSITION_MAX_HOLD_MS = 500;
+// tmux updates a detached session's PTY size while a new client attaches, but
+// some long-lived TUIs miss that attach-time SIGWINCH and keep their composer
+// anchored to the old bottom row. Re-signal after ownership/geometry settle.
+const PERSISTENT_TUI_REDRAW_DELAY_MS = 400;
 // How often a scrolled persistent pane re-reads its tmux copy-mode offset, and
 // how many unchanged samples end the poll. Four ticks matches silvery's
 // SCROLLBAR_FADE_AFTER_MS (800ms) so the poll and the highlight fade retire
@@ -454,6 +458,7 @@ export class TerminalPanel implements TerminalReadable {
   private transcriptFrameHold?: "close" | "open";
   private transcriptFrameHoldTimer?: ReturnType<typeof setTimeout>;
   private synchronizedOutputRecovery?: ReturnType<typeof setTimeout>;
+  private persistentTuiRedrawTimer?: ReturnType<typeof setTimeout>;
   private resizeGeneration = 0;
   private resizeScheduled = false;
   private tmuxNativeMouseCache?: { active: boolean; at: number };
@@ -763,6 +768,7 @@ export class TerminalPanel implements TerminalReadable {
       env,
       terminal: pty,
     });
+    this.schedulePersistentTuiRedraw();
   }
 
   resize(cols: number, rows: number) {
@@ -808,6 +814,7 @@ export class TerminalPanel implements TerminalReadable {
       // Propagate the winning generation so the program (or tmux client) gets
       // one SIGWINCH and reflows to the same dimensions as the rendered box.
       this.pty?.resize(pending.cols, pending.rows);
+      this.schedulePersistentTuiRedraw();
       this.updateRevision = ++revisionCounter;
       this.emit();
     });
@@ -1383,6 +1390,47 @@ export class TerminalPanel implements TerminalReadable {
     this.pty?.write(data);
   }
 
+  private schedulePersistentTuiRedraw() {
+    const persist = this.persist;
+    if (!(persist && this.options.command)) {
+      return;
+    }
+    if (this.persistentTuiRedrawTimer) {
+      clearTimeout(this.persistentTuiRedrawTimer);
+    }
+    this.persistentTuiRedrawTimer = setTimeout(() => {
+      this.persistentTuiRedrawTimer = undefined;
+      try {
+        const result = Bun.spawnSync(
+          [
+            "tmux",
+            "-S",
+            persist.socketPath,
+            "display-message",
+            "-p",
+            "-t",
+            persist.name,
+            "#{pane_pid}",
+          ],
+          { stderr: "ignore", stdout: "pipe" }
+        );
+        const panePid = Number(new TextDecoder().decode(result.stdout).trim());
+        if (
+          result.exitCode === 0 &&
+          Number.isSafeInteger(panePid) &&
+          panePid > 1
+        ) {
+          // Harness commands run as the pane's process group, so the signal
+          // reaches the foreground TUI rather than only its shell wrapper.
+          process.kill(-panePid, "SIGWINCH");
+        }
+      } catch {
+        // The pane may have closed or changed owner before the delayed redraw.
+      }
+    }, PERSISTENT_TUI_REDRAW_DELAY_MS);
+    this.persistentTuiRedrawTimer.unref?.();
+  }
+
   getLines(): readonly (readonly TerminalCell[])[] {
     const buffer = this.terminal.buffer.active;
     const start = buffer.viewportY;
@@ -1482,6 +1530,10 @@ export class TerminalPanel implements TerminalReadable {
     this.transcriptPendingRows = 0;
     this.transcriptReopenSteps = 0;
     this.pendingTranscriptInput = "";
+    if (this.persistentTuiRedrawTimer) {
+      clearTimeout(this.persistentTuiRedrawTimer);
+      this.persistentTuiRedrawTimer = undefined;
+    }
     if (this.scrollPollTimer) {
       clearTimeout(this.scrollPollTimer);
       this.scrollPollTimer = undefined;

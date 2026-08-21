@@ -557,6 +557,19 @@ async function runSimulatedAgentScenario(page: Page, initial: Location) {
 async function runLiveCodexScenario(page: Page) {
   const draftMarker = `LIVE-CODEX-DRAFT-${process.pid}`;
   await waitForText(page, "OpenAI Codex (v", 20_000);
+  // Newer Codex builds may briefly mount the composer before replacing it
+  // with the workspace trust prompt. Clear that late handoff before treating
+  // the composer as ready for input.
+  await Bun.sleep(1000);
+  if (await findCell(page, "Do you trust the contents")) {
+    await send(page, "\r");
+    await waitForText(page, "OpenAI Codex (v", 20_000);
+  }
+  // The header can paint before Codex has mounted its composer (notably while
+  // an update notice is being laid out). Typing during that startup handoff is
+  // legitimately discarded by Codex's final redraw and does not exercise the
+  // Workbench input path we are trying to verify.
+  await waitForText(page, "Ask Codex to do anything", 20_000);
   await waitForOutputSettled(page, 5000);
   await Bun.sleep(100);
 
@@ -612,8 +625,8 @@ async function runLiveCodexScenario(page: Page) {
   await waitForText(page, "Codex  refresh", 3000);
   const replayTraceStart = latestTraceSequence(frameTracePath);
   await send(page, "\r");
-  await waitForText(page, "CLI: Codex", 5000);
-  await Bun.sleep(1500);
+  await waitForText(page, "OpenAI Codex (v", 20_000);
+  await waitForText(page, "Ask Codex to do anything", 20_000);
   const replayDraft = `LIVE-REPLAY-DRAFT-${process.pid}`;
   await typeCharacters(page, replayDraft, 6);
   await waitForText(page, replayDraft, 8000);
@@ -625,7 +638,7 @@ async function runLiveCodexScenario(page: Page) {
       await wheel(page, initialCols - 12, initialRows - 8, "down");
     }
   }
-  await Bun.sleep(250);
+  await waitForText(page, replayDraft, 5000);
   assertVisibleCount(await bufferGrid(page), replayDraft, 1);
   assertNoPersistentFrameMismatch(frameTracePath, replayTraceStart);
   report("resumed live Codex history returns to one editable composer");
@@ -724,7 +737,7 @@ async function exerciseLiveCodexResponse(
   let sawWorking = true;
   let sawResponseEnd = false;
   let cycle = 0;
-  while (Date.now() < deadline && !sawResponseEnd) {
+  while (Date.now() < deadline && cycle < 5) {
     for (let step = 0; step < 8; step += 1) {
       await wheel(page, wheelCol, wheelRow, "up");
     }
@@ -749,6 +762,23 @@ async function exerciseLiveCodexResponse(
     }
     sawWorking ||= workingCount === 1;
     sawResponseEnd = text.includes(responseEndMarker);
+    await Bun.sleep(75);
+  }
+  // A human scroll gesture eventually stops. Give the transcript close timer
+  // a quiet window, then require the live composer/response to come back; an
+  // endless wheel loop would prevent the designed 400ms settle close itself.
+  while (Date.now() < deadline && !sawResponseEnd) {
+    const grid = await bufferGrid(page);
+    const workingCount = grid.lines.filter((line) =>
+      line.includes("Working")
+    ).length;
+    if (workingCount > 1) {
+      throw new Error(
+        `live Codex duplicated its working row ${workingCount} times after scrolling`
+      );
+    }
+    sawWorking ||= workingCount === 1;
+    sawResponseEnd = grid.lines.join("\n").includes(responseEndMarker);
     await Bun.sleep(75);
   }
   if (!sawWorking) {

@@ -143,6 +143,63 @@ describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
     }
   });
 
+  test("re-signals a dormant TUI after attaching it at a new size", async () => {
+    const socketPath = join(suiteRoot, "reattach-redraw.sock");
+    const persist = { name: "reattach_redraw_test", socketPath };
+    const redrawPath = join(suiteRoot, "reattach-redraw-rows.txt");
+    const armedPath = join(suiteRoot, "reattach-redraw-armed");
+    const fixturePath = join(suiteRoot, "reattach-redraw.sh");
+    writeFileSync(
+      fixturePath,
+      [
+        "#!/bin/bash",
+        "redraw() {",
+        "  set -- $(stty size)",
+        `  printf %s "$1" > ${shellQuote(redrawPath)}`,
+        '  printf "\\033[2J\\033[%s;1HCOMPOSER" "$(( $1 - 2 ))"',
+        "}",
+        `trap '[ -f ${shellQuote(armedPath)} ] && redraw' WINCH`,
+        "redraw",
+        "while :; do sleep 1 & wait $!; done",
+      ].join("\n")
+    );
+    const created = Bun.spawnSync([
+      "tmux",
+      "-S",
+      socketPath,
+      "new-session",
+      "-d",
+      "-x",
+      "100",
+      "-y",
+      "24",
+      "-s",
+      persist.name,
+      `/bin/bash ${shellQuote(fixturePath)}`,
+    ]);
+    expect(created.exitCode).toBe(0);
+    await waitForFileContent(redrawPath, "24");
+
+    const panel = new TerminalPanel(suiteRoot, 80, 30, {
+      command: "sleep 30",
+      persist,
+    });
+    try {
+      panel.start();
+      await waitForClients(socketPath, persist.name, 1);
+      // Arm only after tmux's attach-time resize has settled. Workbench must
+      // send a second redraw signal once ownership and geometry are stable.
+      await Bun.sleep(150);
+      const expectedRows = String(paneHeight(socketPath, persist.name));
+      expect(expectedRows).not.toBe("24");
+      writeFileSync(armedPath, "ready");
+      await waitForFileContent(redrawPath, expectedRows);
+    } finally {
+      panel.kill();
+      killServer(socketPath);
+    }
+  });
+
   test("new panes prefer tmux-256color when its terminfo exists", async () => {
     const terminfo = Bun.spawnSync(["infocmp", "tmux-256color"], {
       stderr: "ignore",
@@ -357,6 +414,20 @@ async function waitForFile(path: string) {
   throw new Error(`fixture did not write ${path}`);
 }
 
+async function waitForFileContent(path: string, expected: string) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if (existsSync(path) && readFileSync(path, "utf8") === expected) {
+      return;
+    }
+    await Bun.sleep(25);
+  }
+  const actual = existsSync(path) ? readFileSync(path, "utf8") : "<missing>";
+  throw new Error(
+    `fixture ${path} remained ${JSON.stringify(actual)}; expected ${JSON.stringify(expected)}`
+  );
+}
+
 async function waitForPanePath(socketPath: string, sessionName: string) {
   let current = "";
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -423,6 +494,23 @@ function panePid(socketPath: string, session: string): string {
     return "";
   }
   return new TextDecoder().decode(result.stdout).trim();
+}
+
+function paneHeight(socketPath: string, session: string): number {
+  const result = Bun.spawnSync(
+    [
+      "tmux",
+      "-S",
+      socketPath,
+      "display-message",
+      "-p",
+      "-t",
+      session,
+      "#{pane_height}",
+    ],
+    { stderr: "ignore", stdout: "pipe" }
+  );
+  return Number(new TextDecoder().decode(result.stdout).trim());
 }
 
 function killServer(socketPath: string) {

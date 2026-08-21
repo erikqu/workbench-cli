@@ -330,6 +330,12 @@ with text already present in the agent composer.
   dimensions, buffer positions, opaque per-process row IDs, byte counts, and
   control-sequence counts -- never terminal text or raw ANSI. A custom path can
   be set with `WORKBENCH_TERMINAL_TRACE=/path/to/trace.ndjson`.
+- A detached harness can retain its old bottom-anchored composer after tmux
+  resizes the pane on reattach: the pane geometry changes, but a dormant TUI can
+  miss that attach-time `SIGWINCH` and leave blank rows below its old cursor.
+  Persistent harness panels therefore send one coalesced redraw signal to the
+  pane process group after attach/resizes settle. Do not remove it unless the
+  dormant-old-size integration regression is replaced with equivalent coverage.
 
 ## Viewers
 
