@@ -7,7 +7,13 @@ import {
 } from "../media/mermaid";
 import type { TerminalPanel } from "../terminal/terminal-panel";
 import { colors } from "../ui/theme";
-import { useSettledTerminalBlocks } from "./useSettledTerminalBlocks";
+import {
+  INLINE_MEDIA_HORIZONTAL_INSET,
+  inlineBlockViewportPlacement,
+  inlineMediaViewportWidth,
+  terminalBlocksForOverlay,
+  useSettledTerminalBlocks,
+} from "./useSettledTerminalBlocks";
 import { MeasuredImageContent } from "./viewers/ImageViewer";
 
 function mermaidBlockSignature(blocks: readonly MermaidBlock[]): string {
@@ -21,11 +27,11 @@ function mermaidBlockSignature(blocks: readonly MermaidBlock[]): string {
 export function MermaidInlineOverlay({
   panel,
   mode,
-  onStatusChange,
+  onLoadingChange,
 }: {
   panel: TerminalPanel;
   mode: "dark" | "light";
-  onStatusChange(status: string | null): void;
+  onLoadingChange(loading: boolean): void;
 }) {
   const stableBlocks = useSettledTerminalBlocks(
     panel,
@@ -38,45 +44,52 @@ export function MermaidInlineOverlay({
     let cancelled = false;
     if (stableBlocks.length === 0) {
       setPaths(new Map());
-      onStatusChange(null);
+      onLoadingChange(false);
       return;
     }
-    onStatusChange(
-      `Mermaid: rendering ${stableBlocks.length} visible diagram${stableBlocks.length === 1 ? "" : "s"}...`
-    );
+    onLoadingChange(true);
     Promise.all(
       stableBlocks.map(async (block) => ({
         key: blockKey(block),
         path: await renderMermaidToPng(block.source, mode),
       }))
-    ).then((results) => {
-      if (cancelled) {
-        return;
-      }
-      setPaths(
-        new Map(results.flatMap(({ key, path }) => (path ? [[key, path]] : [])))
-      );
-      onStatusChange(
-        results.some(({ path }) => !path)
-          ? "Mermaid: one or more diagrams could not be rendered"
-          : null
-      );
-    });
+    )
+      .then((results) => {
+        if (cancelled) {
+          return;
+        }
+        setPaths(
+          new Map(
+            results.flatMap(({ key, path }) => (path ? [[key, path]] : []))
+          )
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPaths(new Map());
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          onLoadingChange(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [stableBlocks, mode, onStatusChange]);
+  }, [stableBlocks, mode, onLoadingChange]);
 
   return (
     <>
-      {stableBlocks.map((block) => {
+      {terminalBlocksForOverlay(stableBlocks, panel.rows).map((block) => {
         const path = paths.get(blockKey(block));
         return path ? (
           <InlineDiagram
             block={block}
             key={`${block.startRow}:${block.endRow}:${block.source}`}
             path={path}
-            width={panel.cols}
+            viewportRows={panel.rows}
+            width={inlineMediaViewportWidth(panel.cols)}
           />
         ) : null;
       })}
@@ -85,28 +98,33 @@ export function MermaidInlineOverlay({
 }
 
 function blockKey(block: MermaidBlock): string {
-  return `${block.startRow}:${block.endRow}:${block.source}`;
+  return block.source;
 }
 
 function InlineDiagram({
   block,
   path,
+  viewportRows,
   width,
 }: {
   block: MermaidBlock;
   path: string;
+  viewportRows: number;
   width: number;
 }) {
-  const height = block.endRow - block.startRow + 1;
+  const placement = inlineBlockViewportPlacement(block, viewportRows);
+  if (!placement) {
+    return null;
+  }
   return (
     <Box
       backgroundColor={colors.termBg}
-      height={height}
-      left={0}
+      height={placement.height}
+      left={INLINE_MEDIA_HORIZONTAL_INSET}
       overflow="hidden"
       pointerEvents="none"
       position="absolute"
-      top={block.startRow + 2}
+      top={placement.top}
       userSelect="none"
       width={width}
     >

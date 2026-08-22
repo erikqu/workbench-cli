@@ -76,7 +76,8 @@ export function Workbench({
   const [sessionsHelpOpen, setSessionsHelpOpen] = useState(false);
   const [latexOverlay, setLatexOverlay] = useState(false);
   const [mermaidOverlay, setMermaidOverlay] = useState(false);
-  const [renderStatus, setRenderStatus] = useState<string | null>(null);
+  const [latexLoading, setLatexLoading] = useState(false);
+  const [mermaidLoading, setMermaidLoading] = useState(false);
   const selection = useSelection();
   const selectionActions = useSelectionActions();
   const selectionPresent = useRef(false);
@@ -235,11 +236,7 @@ export function Workbench({
               }}
               view={view}
             />
-            <WorkspaceSidePane
-              actions={actions}
-              renderStatus={renderStatus}
-              view={view}
-            />
+            <WorkspaceSidePane actions={actions} view={view} />
             <Box
               backgroundColor={colors.bg}
               flexDirection="column"
@@ -287,13 +284,16 @@ export function Workbench({
                 ) : harnessTab ? (
                   <HarnessView
                     actions={actions}
+                    latexLoading={latexLoading}
                     latexOverlay={latexOverlay}
+                    mermaidLoading={mermaidLoading}
                     mermaidOverlay={mermaidOverlay}
-                    onRenderStatusChange={setRenderStatus}
+                    onLatexLoadingChange={setLatexLoading}
+                    onMermaidLoadingChange={setMermaidLoading}
                     onToggleMath={() => {
                       if (latexOverlay) {
                         setLatexOverlay(false);
-                        setRenderStatus(null);
+                        setLatexLoading(false);
                         return;
                       }
                       setLatexOverlay(true);
@@ -301,7 +301,7 @@ export function Workbench({
                     onToggleMermaid={() => {
                       if (mermaidOverlay) {
                         setMermaidOverlay(false);
-                        setRenderStatus(null);
+                        setMermaidLoading(false);
                         return;
                       }
                       setMermaidOverlay(true);
@@ -644,8 +644,11 @@ function HarnessView({
   view,
   actions,
   latexOverlay,
+  latexLoading,
   mermaidOverlay,
-  onRenderStatusChange,
+  mermaidLoading,
+  onLatexLoadingChange,
+  onMermaidLoadingChange,
   onToggleMath,
   onToggleMermaid,
   selectionChanged,
@@ -653,8 +656,11 @@ function HarnessView({
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
   latexOverlay: boolean;
+  latexLoading: boolean;
   mermaidOverlay: boolean;
-  onRenderStatusChange(status: string | null): void;
+  mermaidLoading: boolean;
+  onLatexLoadingChange(loading: boolean): void;
+  onMermaidLoadingChange(loading: boolean): void;
   onToggleMath(): void;
   onToggleMermaid(): void;
   selectionChanged(selected: boolean): void;
@@ -700,11 +706,13 @@ function HarnessView({
           <InlinePreviewButton
             active={latexOverlay}
             label="math"
+            loading={latexLoading}
             onToggle={onToggleMath}
           />
           <InlinePreviewButton
             active={mermaidOverlay}
             label="mermaid"
+            loading={mermaidLoading}
             onToggle={onToggleMermaid}
           />
         </Box>
@@ -729,14 +737,14 @@ function HarnessView({
       {latexOverlay && view.harnessPanel ? (
         <LatexInlineOverlay
           mode={view.state.themeName === "light" ? "light" : "dark"}
-          onStatusChange={onRenderStatusChange}
+          onLoadingChange={onLatexLoadingChange}
           panel={view.harnessPanel}
         />
       ) : null}
       {mermaidOverlay && view.harnessPanel ? (
         <MermaidInlineOverlay
           mode={view.state.themeName === "light" ? "light" : "dark"}
-          onStatusChange={onRenderStatusChange}
+          onLoadingChange={onMermaidLoadingChange}
           panel={view.harnessPanel}
         />
       ) : null}
@@ -757,6 +765,7 @@ function WorkbenchUpdateControl({ actions }: { actions: WorkbenchActions }) {
         : status === "updated"
           ? "Updated"
           : "Failed";
+  const loadingGlyph = useLoadingGlyph(status === "updating");
   return (
     <Box flexDirection="row" height={1}>
       <Text color={colors.dim} wrap={false}>
@@ -784,7 +793,7 @@ function WorkbenchUpdateControl({ actions }: { actions: WorkbenchActions }) {
           color={hovered ? colors.onSelected : colors.accentAlt}
           wrap={false}
         >
-          {label}
+          {status === "updating" ? `${label} ${loadingGlyph}` : label}
         </Text>
       </Box>
     </Box>
@@ -794,13 +803,16 @@ function WorkbenchUpdateControl({ actions }: { actions: WorkbenchActions }) {
 function InlinePreviewButton({
   active,
   label,
+  loading,
   onToggle,
 }: {
   active: boolean;
   label: string;
+  loading: boolean;
   onToggle(): void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const loadingGlyph = useLoadingGlyph(loading);
   return (
     <Box
       backgroundColor={
@@ -832,10 +844,38 @@ function InlinePreviewButton({
           active ? colors.bg : hovered ? colors.onSelected : colors.accentAlt
         }
       >
-        {active ? `${label} on` : label}
+        {`${active ? `${label} on` : label}${loading ? ` ${loadingGlyph}` : ""}`}
       </Text>
     </Box>
   );
+}
+
+const LOADING_GLYPHS = [
+  "⠋",
+  "⠙",
+  "⠹",
+  "⠸",
+  "⠼",
+  "⠴",
+  "⠦",
+  "⠧",
+  "⠇",
+  "⠏",
+] as const;
+
+function useLoadingGlyph(loading: boolean): string {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (!loading) {
+      setFrame(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setFrame((current) => (current + 1) % LOADING_GLYPHS.length);
+    }, 80);
+    return () => clearInterval(interval);
+  }, [loading]);
+  return LOADING_GLYPHS[frame] ?? LOADING_GLYPHS[0];
 }
 
 function RestartHarnessButton({ onRestart }: { onRestart(): void }) {

@@ -24,7 +24,11 @@ import {
   terminalTracePresentedPanel,
   terminalTraceRowId,
 } from "./terminal-trace";
-import { type TmuxScrollPosition, tmuxScrollPosition } from "./tmux-activity";
+import {
+  captureTmuxPaneHistory,
+  type TmuxScrollPosition,
+  tmuxScrollPosition,
+} from "./tmux-activity";
 
 export interface PersistentTmuxSession {
   name: string;
@@ -1497,6 +1501,50 @@ export class TerminalPanel implements TerminalReadable {
       );
     }
     return lines;
+  }
+
+  async captureInlineMediaText(): Promise<{
+    lines: string[];
+    viewportRows: number;
+    viewportStart: number;
+  }> {
+    const buffer = this.terminal.buffer.active;
+    const lines: string[] = [];
+    // A diagram can be taller than the viewport. Scan the complete xterm
+    // buffer so its declaration and closing rows can still be parsed, then let
+    // the overlay layer retain only blocks intersecting the visible page.
+    for (let row = 0; row < buffer.length; row += 1) {
+      lines.push(buffer.getLine(row)?.translateToString(true) ?? "");
+    }
+    const fallback = {
+      lines,
+      viewportRows: this.terminal.rows,
+      viewportStart: buffer.viewportY,
+    };
+    const persist = this.options.persist;
+    if (!persist) {
+      return fallback;
+    }
+    const [history, scroll] = await Promise.all([
+      captureTmuxPaneHistory(persist.socketPath, persist.name),
+      tmuxScrollPosition(persist.socketPath, persist.name),
+    ]);
+    if (!history) {
+      return fallback;
+    }
+    const historyLines = history.replace(/\r/g, "").split("\n");
+    if (historyLines.at(-1) === "") {
+      historyLines.pop();
+    }
+    const scrollOffset = scroll?.scrollPosition ?? 0;
+    return {
+      lines: historyLines,
+      viewportRows: this.terminal.rows,
+      viewportStart: Math.max(
+        0,
+        historyLines.length - this.terminal.rows - scrollOffset
+      ),
+    };
   }
 
   private traceBuffer(event: string) {

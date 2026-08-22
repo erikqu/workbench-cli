@@ -77,6 +77,40 @@ export async function captureTmuxPane(
   }
 }
 
+// Capture the pane's complete retained grid without joining wrapped rows.
+// Physical row boundaries are required for positioning inline media over the
+// same cells in the outer terminal.
+export async function captureTmuxPaneHistory(
+  socketPath: string,
+  sessionName: string
+): Promise<string> {
+  try {
+    const child = Bun.spawn(
+      [
+        "tmux",
+        "-S",
+        socketPath,
+        "capture-pane",
+        "-p",
+        "-S",
+        "-",
+        "-E",
+        "-",
+        "-t",
+        sessionName,
+      ],
+      { stdout: "pipe", stderr: "ignore" }
+    );
+    const [output, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      child.exited,
+    ]);
+    return exitCode === 0 ? output : "";
+  } catch {
+    return "";
+  }
+}
+
 export interface TmuxScrollPosition {
   historySize: number;
   paneHeight: number;

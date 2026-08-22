@@ -7,7 +7,13 @@ import {
 } from "../media/latex";
 import type { TerminalPanel } from "../terminal/terminal-panel";
 import { colors } from "../ui/theme";
-import { useSettledTerminalBlocks } from "./useSettledTerminalBlocks";
+import {
+  INLINE_MEDIA_HORIZONTAL_INSET,
+  inlineBlockViewportPlacement,
+  inlineMediaViewportWidth,
+  terminalBlocksForOverlay,
+  useSettledTerminalBlocks,
+} from "./useSettledTerminalBlocks";
 import { MeasuredImageContent } from "./viewers/ImageViewer";
 
 function mathBlockSignature(blocks: readonly DisplayMathBlock[]): string {
@@ -23,11 +29,11 @@ function mathBlockSignature(blocks: readonly DisplayMathBlock[]): string {
 export function LatexInlineOverlay({
   panel,
   mode,
-  onStatusChange,
+  onLoadingChange,
 }: {
   panel: TerminalPanel;
   mode: "dark" | "light";
-  onStatusChange(status: string | null): void;
+  onLoadingChange(loading: boolean): void;
 }) {
   const stableBlocks = useSettledTerminalBlocks(
     panel,
@@ -40,45 +46,52 @@ export function LatexInlineOverlay({
     let cancelled = false;
     if (stableBlocks.length === 0) {
       setPaths(new Map());
-      onStatusChange(null);
+      onLoadingChange(false);
       return;
     }
-    onStatusChange(
-      `Math: rendering ${stableBlocks.length} visible equation${stableBlocks.length === 1 ? "" : "s"}...`
-    );
+    onLoadingChange(true);
     Promise.all(
       stableBlocks.map(async (block) => ({
         key: blockKey(block),
         path: await renderLatexToPng([block.formula], mode),
       }))
-    ).then((results) => {
-      if (cancelled) {
-        return;
-      }
-      setPaths(
-        new Map(results.flatMap(({ key, path }) => (path ? [[key, path]] : [])))
-      );
-      onStatusChange(
-        results.some(({ path }) => !path)
-          ? "Math: one or more equations could not be rendered"
-          : null
-      );
-    });
+    )
+      .then((results) => {
+        if (cancelled) {
+          return;
+        }
+        setPaths(
+          new Map(
+            results.flatMap(({ key, path }) => (path ? [[key, path]] : []))
+          )
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPaths(new Map());
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          onLoadingChange(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [stableBlocks, mode, onStatusChange]);
+  }, [stableBlocks, mode, onLoadingChange]);
 
   return (
     <>
-      {stableBlocks.map((block) => {
+      {terminalBlocksForOverlay(stableBlocks, panel.rows).map((block) => {
         const path = paths.get(blockKey(block));
         return path ? (
           <InlineFormula
             block={block}
             key={`${block.startRow}:${block.endRow}:${block.formula}`}
             path={path}
-            width={panel.cols}
+            viewportRows={panel.rows}
+            width={inlineMediaViewportWidth(panel.cols)}
           />
         ) : null;
       })}
@@ -87,28 +100,33 @@ export function LatexInlineOverlay({
 }
 
 function blockKey(block: DisplayMathBlock): string {
-  return `${block.startRow}:${block.endRow}:${block.formula}`;
+  return block.formula;
 }
 
 function InlineFormula({
   block,
   path,
+  viewportRows,
   width,
 }: {
   block: DisplayMathBlock;
   path: string;
+  viewportRows: number;
   width: number;
 }) {
-  const height = block.endRow - block.startRow + 1;
+  const placement = inlineBlockViewportPlacement(block, viewportRows);
+  if (!placement) {
+    return null;
+  }
   return (
     <Box
       backgroundColor={colors.termBg}
-      height={height}
-      left={0}
+      height={placement.height}
+      left={INLINE_MEDIA_HORIZONTAL_INSET}
       overflow="hidden"
       pointerEvents="none"
       position="absolute"
-      top={block.startRow + 2}
+      top={placement.top}
       userSelect="none"
       width={width}
     >

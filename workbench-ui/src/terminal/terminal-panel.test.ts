@@ -103,6 +103,27 @@ describe("TerminalPanel inline media settling", () => {
     expect(panel.viewportRenderDelay()).toBeLessThanOrEqual(afterScroll);
     expect(panel.viewportRenderDelay(performance.now() + 1001)).toBe(0);
   });
+
+  test("captures complete inline media source beyond the visible viewport", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 4);
+    await feed(
+      panel,
+      [
+        "```mermaid",
+        "flowchart TD",
+        "  A --> B",
+        "  B --> C",
+        "  C --> D",
+        "```",
+      ].join("\r\n")
+    );
+
+    const snapshot = await panel.captureInlineMediaText();
+    expect(snapshot.viewportRows).toBe(4);
+    expect(snapshot.lines.length).toBeGreaterThan(snapshot.viewportRows);
+    expect(snapshot.lines).toContain("```mermaid");
+    expect(snapshot.lines).toContain("```");
+  });
 });
 
 describe("TerminalPanel.getCursor", () => {

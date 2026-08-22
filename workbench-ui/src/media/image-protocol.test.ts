@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { encodeSixel } from "./image";
+import { encodeSixel, fitCells } from "./image";
 import {
   buildKittyPlaceholder,
   buildKittyTransmit,
@@ -26,6 +26,22 @@ describe("detectImageProtocol", () => {
     expect(detectImageProtocol()).toBe("halfblock");
     Bun.env.WORKBENCH_UI_IMAGE_PROTOCOL = prevProto;
     Bun.env.WORKBENCH_UI_SCREENSHOT = prevShot;
+  });
+});
+
+describe("inline image bounds", () => {
+  test("fits wide and tall renders inside the available cell rectangle", () => {
+    for (const [width, height] of [
+      [4000, 400],
+      [400, 4000],
+      [4000, 4000],
+    ]) {
+      const fit = fitCells(width, height, 80, 24, 80);
+      expect(fit.cols).toBeGreaterThan(0);
+      expect(fit.cols).toBeLessThanOrEqual(80);
+      expect(fit.rows).toBeGreaterThan(0);
+      expect(fit.rows).toBeLessThanOrEqual(24);
+    }
   });
 });
 
