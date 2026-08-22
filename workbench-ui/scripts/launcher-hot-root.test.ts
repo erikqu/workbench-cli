@@ -41,6 +41,7 @@ function setup(root: string): { installed: string; stubPath: string } {
     `#!/usr/bin/env bash
 if [ "$#" -gt 0 ] && [ "$1" = "-e" ]; then exit 0; fi
 echo "BUN-EXEC: $*"
+echo "RESTART-SUPERVISOR: \${WORKBENCH_CLI_RESTART_SUPERVISOR:-0}"
 if [[ -n "\${WORKBENCH_TEST_RESTART_FILE:-}" && ! -e "$WORKBENCH_TEST_RESTART_FILE" ]]; then
   touch "$WORKBENCH_TEST_RESTART_FILE"
   exit 75
@@ -102,6 +103,7 @@ describe("workbench-cli --hot source-checkout detection", () => {
       WORKBENCH_TEST_RESTART_FILE: restartMarker,
     });
     expect(run.stdout.match(/BUN-EXEC:/g)).toHaveLength(2);
+    expect(run.stdout.match(/RESTART-SUPERVISOR: 1/g)).toHaveLength(2);
     rmSync(root, { force: true, recursive: true });
   });
 

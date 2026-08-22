@@ -193,6 +193,7 @@ while true; do
     COLORTERM="${COLORTERM:-truecolor}" \
     FORCE_COLOR=1 \
     WORKBENCH_CLI_HOT="$hot" \
+    WORKBENCH_CLI_RESTART_SUPERVISOR=1 \
     WORKBENCH_TERMINAL_TRACE="$terminal_trace" \
     WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
     bun "$entry" "${args[@]}"

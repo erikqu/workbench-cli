@@ -132,6 +132,13 @@ to the shell. Keep the code synchronized between the TypeScript app, launcher,
 and hot runner, and never relaunch before shutdown has saved state, detached
 tmux clients, and restored the terminal.
 
+The launcher marks supervised children with
+`WORKBENCH_CLI_RESTART_SUPERVISOR=1`. A UI that was originally exec'd by a
+pre-v0.1.50 launcher has only the user's shell above it, so exit 75 cannot work;
+after updating, that UI completes the same shutdown and remains as a foreground
+compatibility supervisor for the newly installed launcher. Keep this fallback:
+it is what makes the first update from an old installation restart immediately.
+
 Hot-reload identity is part of that contract. Persist and restore both the
 stable `id` and `tmux` fields for every workspace, harness, and terminal:
 `activeMainTab` contains one of those IDs and cannot be restored if IDs are

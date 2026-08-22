@@ -95,6 +95,11 @@ import {
   themeTokens,
 } from "../ui/theme";
 import { emitToast } from "../ui/toast";
+import {
+  UPDATE_RESTART_EXIT_CODE,
+  updateRestartCommand,
+  updateRestartHasSupervisor,
+} from "./update-restart";
 
 // Persistent harness/terminal sessions run on a private tmux server addressed by
 // an explicit socket *path* under ~/.workbench (not a `-L` name in the shared
@@ -112,10 +117,6 @@ const HARNESS_ACTIVITY_POLL_MS = 750;
 // Long enough for a freshly mounted pane's first repaint burst to land, short
 // enough that a stale region is never visible for more than a blink.
 const FULL_REDRAW_DELAY_MS = 200;
-// The shell launcher treats this as a supervised relaunch request. Keep it in
-// sync with bin/workbench-cli; every other exit code returns to the user's
-// shell normally.
-const UPDATE_RESTART_EXIT_CODE = 75;
 const HARNESS_COLOR_ENV = {
   CLICOLOR: "1",
   CLICOLOR_FORCE: "1",
@@ -436,7 +437,12 @@ export class ReactWorkbenchApp {
       const updated = (await process.exited) === 0;
       captureAnalytics("manual_update_completed", { success: updated });
       if (updated) {
-        this.shutdown(UPDATE_RESTART_EXIT_CODE);
+        this.shutdown(
+          UPDATE_RESTART_EXIT_CODE,
+          updateRestartHasSupervisor()
+            ? undefined
+            : updateRestartCommand(command)
+        );
       }
       return updated;
     } catch {
@@ -1323,7 +1329,7 @@ export class ReactWorkbenchApp {
     }, 250);
   }
 
-  shutdown(code: number) {
+  shutdown(code: number, relaunch?: readonly string[]) {
     if (this.shuttingDown) {
       return;
     }
@@ -1365,7 +1371,31 @@ export class ReactWorkbenchApp {
     } catch {
       // Ignore shutdown races.
     }
-    void shutdownAnalytics().finally(() => process.exit(code));
+    void shutdownAnalytics().finally(async () => {
+      if (relaunch) {
+        try {
+          // A Workbench started by a launcher older than v0.1.50 has the shell
+          // as its parent, so nobody can consume exit 75. Keep this process as
+          // the shell's foreground job while the freshly installed launcher
+          // and UI run beneath it. New launchers advertise supervision and use
+          // the simpler exit-code handoff instead.
+          const replacement = Bun.spawn([...relaunch], {
+            cwd: process.cwd(),
+            env: {
+              ...Bun.env,
+              WORKBENCH_CLI_AUTO_UPDATE_DONE: "1",
+            },
+            stderr: "inherit",
+            stdin: "inherit",
+            stdout: "inherit",
+          });
+          process.exit(await replacement.exited);
+        } catch {
+          process.exit(1);
+        }
+      }
+      process.exit(code);
+    });
   }
 
   // Initial PTY size estimates only; the panes resize to exact dimensions via
