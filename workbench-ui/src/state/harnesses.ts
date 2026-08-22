@@ -65,17 +65,35 @@ export function codexNeedsHistoryReplayWorkaround(
   );
 }
 
+// Codex 0.149 keeps one clean rendered conversation in the primary tmux
+// history while its Ctrl+T transcript intentionally expands internal tool
+// activity. Modern panes should therefore scroll through tmux's rendered
+// history. Older releases retain the transcript fallback because their inline
+// redraws could leave stale footer/composer blocks in primary-buffer history.
+export function codexUsesRenderedTmuxHistory(versionOutput: string): boolean {
+  const version = parseCodexVersion(versionOutput);
+  if (!version) {
+    return false;
+  }
+  if (version.major !== 0) {
+    return version.major > 0;
+  }
+  return version.minor >= 149;
+}
+
 export function codexCommand(versionOutput: string): HarnessCommand {
   const replayOverride = codexNeedsHistoryReplayWorkaround(versionOutput)
     ? ` ${CODEX_HISTORY_REPLAY_OVERRIDE}`
     : "";
+  const renderedTmuxHistory = codexUsesRenderedTmuxHistory(versionOutput);
   return {
-    // Codex 0.146 accepts tui.alternate_screen=always but still renders inline
-    // under tmux. Sending wheel reports to tmux therefore exposes transient
-    // footer redraws in copy-mode history. Use Codex's native transcript pager
-    // instead of entering tmux copy mode.
     command: `codex resume --last${replayOverride} ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox || codex ${CODEX_STABLE_STATUS_OVERRIDE} --dangerously-bypass-approvals-and-sandbox`,
-    wheelNavigation: "transcript",
+    // Codex 0.146-0.148 accept tui.alternate_screen=always but still render
+    // inline under tmux, where copy mode can expose transient redraws. Their
+    // native transcript remains the safer fallback. Codex 0.149+ keeps clean
+    // rendered tmux history, while Ctrl+T expands raw tool-event details that
+    // are inappropriate for ordinary wheel scrolling.
+    ...(renderedTmuxHistory ? {} : { wheelNavigation: "transcript" as const }),
   };
 }
 

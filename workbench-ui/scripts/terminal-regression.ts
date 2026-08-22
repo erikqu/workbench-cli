@@ -866,8 +866,13 @@ async function runInlineAgentScenario(page: Page, initial: Location) {
       const at = wheelAt();
       await wheel(page, at.x, at.y, "up");
     }
-    const scrolledGrid = await waitForTranscriptGrid(page, 5000);
+    const scrolledGrid = await waitForCodexHistoryGrid(page, 5000);
     const scrolledText = scrolledGrid.lines.join("\n");
+    if (scrolledText.includes("[RAW_TOOL_")) {
+      throw new Error(
+        "Codex wheel-up exposed raw tool events instead of rendered conversation history"
+      );
+    }
     for (const marker of ["[META]", "[CMP0]", "[CMP1]", "[CMP2]", "[CMP3]"]) {
       const count = scrolledText.split(marker).length - 1;
       if (count !== 0) {
@@ -1300,7 +1305,7 @@ async function bufferGrid(page: Page): Promise<Grid> {
   return page.evaluate(() => (window as any).__bufferGrid());
 }
 
-async function waitForTranscriptGrid(page: Page, timeoutMs: number) {
+async function waitForCodexHistoryGrid(page: Page, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const grid = await bufferGrid(page);
@@ -1313,16 +1318,12 @@ async function waitForTranscriptGrid(page: Page, timeoutMs: number) {
       "[CMP2]",
       "[CMP3]",
     ].some((marker) => text.includes(marker));
-    if (
-      text.includes("T R A N S C R I P T") &&
-      !liveBlockVisible &&
-      new Set(markers).size >= 3
-    ) {
+    if (!liveBlockVisible && new Set(markers).size >= 3) {
       return grid;
     }
     await Bun.sleep(25);
   }
-  throw new Error("timed out waiting for a settled Codex transcript frame");
+  throw new Error("timed out waiting for settled Codex conversation history");
 }
 
 async function clipboardState(

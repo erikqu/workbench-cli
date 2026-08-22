@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${1:-}" == "--version" ]]; then
+  if [[ "${WORKBENCH_E2E_CODEX_STICKY_TRANSCRIPT:-}" == "1" ]]; then
+    echo "codex-cli 0.148.2"
+  else
+    echo "codex-cli 0.149.0"
+  fi
+  exit 0
+fi
+
 exec bun "${WORKBENCH_E2E_FIXTURE_ROOT:?}/test-harness/simulated-agent.ts"

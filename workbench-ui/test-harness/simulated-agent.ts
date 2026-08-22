@@ -319,11 +319,24 @@ async function renderInlineFrame(snapshot: SimulatedAgentState) {
   const fresh = conversation.slice(printedConversationRows);
   const block = renderSimulatedInlineBlock(snapshot, cols);
   if (codexLike && snapshot.transcriptOpen) {
+    // Current Codex's Ctrl+T view is a full event transcript, not a replay of
+    // the compact rendered conversation. Keep unmistakable raw-tool markers
+    // here so the Workbench regression rejects that surface for wheel scroll.
+    const transcriptRows = stickyCodexTranscript
+      ? conversation
+      : conversation.flatMap((row, index) =>
+          index % 4 === 0
+            ? [
+                row,
+                `[RAW_TOOL_${String(index).padStart(3, "0")}] function_call_output`,
+              ]
+            : [row]
+        );
     const contentRows = Math.max(1, rows - 2);
-    const maxOffset = Math.max(0, conversation.length - contentRows);
+    const maxOffset = Math.max(0, transcriptRows.length - contentRows);
     const offset = Math.min(snapshot.transcriptOffset, maxOffset);
-    const end = conversation.length - offset;
-    const visible = conversation.slice(Math.max(0, end - contentRows), end);
+    const end = transcriptRows.length - offset;
+    const visible = transcriptRows.slice(Math.max(0, end - contentRows), end);
     const percent =
       maxOffset === 0
         ? 100
@@ -344,20 +357,15 @@ async function renderInlineFrame(snapshot: SimulatedAgentState) {
   let ansi = "\x1b[?2026h\x1b[?25l" + (transcriptPainted ? "\x1b[?1049l" : "");
   transcriptPainted = false;
   if (blockPainted) {
-    if (codexLike) {
-      // Codex's inline transcript keeps differential footer redraws in the
-      // primary-buffer history. Keep the live viewport clean while retaining
-      // those stale blocks above it so the Workbench test detects tmux
-      // copy-mode exposing duplicated composers after a wheel gesture.
+    if (codexLike && stickyCodexTranscript) {
+      // Legacy Codex leaves differential footer redraws in primary history.
+      // Preserve that failure shape so its version-gated transcript fallback
+      // cannot accidentally be removed while fixing current releases.
       const rowsBelowCursor = block.lines.length - 1 - blockCursorRow;
       if (rowsBelowCursor > 0) {
         ansi += `\x1b[${rowsBelowCursor}B`;
       }
       ansi += "\r\n".repeat(block.lines.length);
-      // A full differential redraw restores one clean live viewport, but ED2
-      // deliberately leaves the primary-buffer scrollback intact. Scrolling
-      // through tmux would therefore reveal the stale footer copies above;
-      // application-owned transcript navigation never enters that history.
       ansi += "\x1b[2J\x1b[H";
       conversationToPaint = conversation.slice(
         -Math.max(0, rows - block.lines.length)

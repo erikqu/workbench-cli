@@ -243,9 +243,13 @@ with text already present in the agent composer.
 - Codex uses native SGR wheel events whenever its TUI enables mouse tracking.
   Older already-running Codex panes can remain inline after an update, leaving
   differential composer/status redraws in pane history with no mouse mode. Its
-  `HarnessCommand` therefore keeps `wheelNavigation: "transcript"` as a runtime
-  fallback only: mouse-aware panes receive native wheel reports, while inline
-  panes open Codex's Ctrl+T transcript pager and receive row-level Up/Down keys.
+  `HarnessCommand` therefore keeps `wheelNavigation: "transcript"` only for
+  Codex versions older than 0.149: mouse-aware panes receive native wheel
+  reports, while those legacy inline panes open Codex's Ctrl+T transcript pager
+  and receive row-level Up/Down keys. Codex 0.149+ must use tmux copy mode when
+  inline. Its primary history contains the compact rendered conversation, but
+  Ctrl+T intentionally expands internal tool-event details and is not a valid
+  wheel-scrolling surface.
   Scale each coalesced burst with the gesture (`transcriptBurstRows`, three rows
   per wheel tick) and cap it at one screenful, not at a small fixed number: the
   pager repaints ONCE per burst regardless of how many arrows arrive (measured
@@ -253,10 +257,11 @@ with text already present in the agent composer.
   repaint), so a low cap throttles scrolling without saving the agent any work.
   Do not use PageUp/PageDown because current Codex transcript layouts can jump
   into an unpainted blank region.
-  Balanced wheel-down closes the fallback pager and returns to the composer.
-  Do not map wheel input directly to PageUp/PageDown (the main composer does not
-  scroll), and do not enter tmux copy mode. Keep ordinary shell and other
-  harness wheel behavior intact.
+  For those legacy releases, balanced wheel-down closes the fallback pager and
+  returns to the composer. Do not map their wheel input directly to
+  PageUp/PageDown (the main composer does not scroll), and do not enter tmux
+  copy mode for them. Keep modern Codex, ordinary shell, and other harness wheel
+  behavior intact.
 - The pager transition protocol exists to make wheel scrolling feel continuous;
   measured against real Codex 0.147 (open <15ms, close <10ms, but arrow keys
   sent during the pager's startup window are silently DISCARDED):
@@ -314,11 +319,12 @@ with text already present in the agent composer.
   scrollback) so wheel gestures exercise tmux copy-mode enter/exit. The inline
   pass must include zero-delay wheel bursts in BOTH directions across several
   cycles — that is the shape that reproduced the stranded-in-scrollback
-  composer bug — and needs `--chunk-seed` to keep timing adversarial. The Codex
-  pass preserves stale differential footer blocks in primary-buffer history
-  while keeping the live viewport clean; it must prove that wheel navigation
-  uses the native transcript and never exposes duplicated, missing, or displaced
-  composer markers through tmux copy mode. It must also prove that wheel-up
+  composer bug — and needs `--chunk-seed` to keep timing adversarial. The legacy
+  Codex fixture preserves stale differential footer blocks in primary-buffer
+  history and must use the native transcript. The current Codex fixture models
+  0.149+ with clean rendered primary history and raw-tool markers in Ctrl+T;
+  wheel-up must reveal rendered history through tmux without exposing those
+  markers. It must also prove that wheel-up
   actually leaves the live composer for conversation history and wheel-down
   returns to exactly one composer; a stationary composer is broken scrolling.
 - If the deterministic fixture stays green, stop before applying a speculative

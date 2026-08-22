@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   codexCommand,
   codexNeedsHistoryReplayWorkaround,
+  codexUsesRenderedTmuxHistory,
   harnessSpec,
   selectDefaultHarnessId,
 } from "./harnesses";
@@ -72,5 +73,17 @@ describe("Codex resumed history compatibility", () => {
     // of tmux copy-mode and use Codex's native transcript pager.
     expect(spec.wheelNavigation).toBe("transcript");
     expect(command).not.toContain("tui.alternate_screen=always");
+  });
+
+  test("uses rendered tmux history instead of the expanded transcript on modern Codex", () => {
+    expect(codexUsesRenderedTmuxHistory("codex-cli 0.148.2")).toBe(false);
+    expect(codexUsesRenderedTmuxHistory("codex-cli 0.149.0")).toBe(true);
+    expect(codexUsesRenderedTmuxHistory("codex-cli 1.0.0")).toBe(true);
+    expect(codexUsesRenderedTmuxHistory("unknown")).toBe(false);
+
+    expect(codexCommand("codex-cli 0.148.2").wheelNavigation).toBe(
+      "transcript"
+    );
+    expect(codexCommand("codex-cli 0.149.0").wheelNavigation).toBeUndefined();
   });
 });
