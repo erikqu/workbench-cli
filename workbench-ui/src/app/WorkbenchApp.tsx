@@ -5,6 +5,7 @@ import chokidar, { type FSWatcher } from "chokidar";
 import { useEffect, useState } from "react";
 import { ThemeProvider } from "silvery";
 import { run } from "silvery/runtime";
+import { captureAnalytics, shutdownAnalytics } from "../analytics";
 import { tracedStdout } from "../terminal/terminal-trace";
 
 type RunHandle = Awaited<ReturnType<typeof run>>;
@@ -202,6 +203,10 @@ export class ReactWorkbenchApp {
     this.syncExplorerWatcher();
     this.startDiffPolling();
     this.startHarnessActivityPolling();
+    captureAnalytics("app_started", {
+      restored_session_count: this.state.sessions.length,
+      theme: this.state.themeName,
+    });
 
     process.once("SIGTERM", () => this.shutdown(0));
     process.once("SIGINT", () => this.shutdown(0));
@@ -236,6 +241,7 @@ export class ReactWorkbenchApp {
       closeTab: (value) => this.closeTab(value),
       updateFileContent: (path, content) =>
         this.updateFileContent(path, content),
+      updateWorkbench: () => this.updateWorkbench(),
       saveActiveFile: () => this.saveActiveFile(),
       setMarkdownView: (path, mode) => this.setMarkdownView(path, mode),
       focus: (target) => this.focus(target),
@@ -409,6 +415,27 @@ export class ReactWorkbenchApp {
       },
       getFilePatch: (path) => computeFilePatch(this.activeSession().cwd, path),
     };
+  }
+
+  private async updateWorkbench(): Promise<boolean> {
+    const command = Bun.which("workbench-cli") ?? Bun.which("work");
+    if (!command) {
+      return false;
+    }
+    try {
+      const process = Bun.spawn([command, "update"], {
+        cwd: this.activeSession().cwd,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      const updated = (await process.exited) === 0;
+      captureAnalytics("manual_update_completed", { success: updated });
+      return updated;
+    } catch {
+      captureAnalytics("manual_update_completed", { success: false });
+      return false;
+    }
   }
 
   buildView(): WorkbenchViewModel {
@@ -595,6 +622,7 @@ export class ReactWorkbenchApp {
     // below repaints all chrome, and touching panels forces the <Terminal>
     // subtrees (which only redraw on revision bumps) to repick default colors.
     this.state.themeName = applyTheme(next);
+    captureAnalytics("theme_changed", { theme: next });
     for (const panel of this.harnessPanels.values()) {
       panel.touch();
     }
@@ -965,6 +993,7 @@ export class ReactWorkbenchApp {
         return;
       }
       if (exitCode !== 0) {
+        captureAnalytics("repository_clone_completed", { success: false });
         emitToast({
           title: "Repository could not be cloned",
           description: details || `git clone exited with status ${exitCode}`,
@@ -973,8 +1002,10 @@ export class ReactWorkbenchApp {
         return;
       }
       this.state.pendingWorkspaceClone = undefined;
+      captureAnalytics("repository_clone_completed", { success: true });
       this.openWorkspace(repository.destination);
     } catch (error) {
+      captureAnalytics("repository_clone_completed", { success: false });
       emitToast({
         title: "Repository could not be cloned",
         description: error instanceof Error ? error.message : String(error),
@@ -1021,6 +1052,9 @@ export class ReactWorkbenchApp {
     this.state.newAgentOpen = false;
     this.state.focus = "harness";
     this.syncExplorerToActiveSession();
+    captureAnalytics("workspace_created", {
+      session_count: this.state.sessions.length,
+    });
     emitToast({
       title: "Workspace created",
       description: relative(homedir(), cwd) || cwd,
@@ -1037,6 +1071,10 @@ export class ReactWorkbenchApp {
       session.harnesses.find((harness) => harness.harnessId === harnessId);
     const harness =
       existing ?? createHarness(session.cwd, session.harnesses, harnessId);
+    captureAnalytics("harness_opened", {
+      harness: harnessId,
+      restarted: Boolean(existing && active?.id === existing.id),
+    });
     if (!existing) {
       session.harnesses.push(harness);
     } else if (active?.id === existing.id) {
@@ -1057,6 +1095,9 @@ export class ReactWorkbenchApp {
     const session = this.activeSession();
     const terminal = createTerminal(session.cwd, session.terminals);
     session.terminals.push(terminal);
+    captureAnalytics("terminal_opened", {
+      terminal_count: session.terminals.length,
+    });
     session.activeMainTab = `term:${terminal.id}`;
     this.state.plusMenuOpen = false;
     this.state.focus = "terminal";
@@ -1317,7 +1358,7 @@ export class ReactWorkbenchApp {
     } catch {
       // Ignore shutdown races.
     }
-    process.exit(code);
+    void shutdownAnalytics().finally(() => process.exit(code));
   }
 
   // Initial PTY size estimates only; the panes resize to exact dimensions via

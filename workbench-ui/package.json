@@ -5,6 +5,7 @@
     "chokidar": "^5.0.0",
     "ignore": "^7.0.5",
     "jimp": "^1.6.1",
+    "posthog-node": "^5.50.0",
     "react": "^19.2.7",
     "silvery": "0.24.0"
   },
@@ -34,6 +35,6 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "private": true
 }

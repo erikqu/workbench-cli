@@ -19,6 +19,14 @@ BIN_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PKG_DIR="$(cd -P "$BIN_DIR/.." && pwd)"
 UI_DIR="$PKG_DIR/workbench-ui"
 
+update_bin_dir() {
+  local bin_dir="${WORKBENCH_CLI_BIN:-$HOME/.local/bin}"
+  if [[ -L "$INVOKED_SOURCE" ]]; then
+    bin_dir="$(cd -P "$(dirname "$INVOKED_SOURCE")" && pwd)"
+  fi
+  printf '%s\n' "$bin_dir"
+}
+
 update_help() {
   cat <<'EOF'
 Usage: workbench-cli update
@@ -54,15 +62,55 @@ if [[ "${1:-}" == "update" ]]; then
     exit 1
   fi
 
-  update_bin_dir="${WORKBENCH_CLI_BIN:-$HOME/.local/bin}"
-  if [[ -L "$INVOKED_SOURCE" ]]; then
-    update_bin_dir="$(cd -P "$(dirname "$INVOKED_SOURCE")" && pwd)"
-  fi
+  target_bin_dir="$(update_bin_dir)"
   echo "Updating Workbench CLI in $PKG_DIR ..."
   exec env \
     WORKBENCH_CLI_HOME="$PKG_DIR" \
-    WORKBENCH_CLI_BIN="$update_bin_dir" \
+    WORKBENCH_CLI_BIN="$target_bin_dir" \
     bash "$PKG_DIR/install.sh"
+fi
+
+# Keep ordinary installations current before starting the UI. Only the
+# installer-owned checkout participates: a source checkout used for development
+# must never fetch or replace itself just because its launcher was executed.
+# Network failures and dirty installations are deliberately non-fatal so users
+# can still work offline or recover local edits manually.
+default_install_dir="${XDG_DATA_HOME:-$HOME/.local/share}/workbench-cli"
+auto_update_root="${WORKBENCH_CLI_HOME:-$default_install_dir}"
+if [[ "${WORKBENCH_CLI_AUTO_UPDATE:-1}" != "0" &&
+  "${WORKBENCH_CLI_AUTO_UPDATE_DONE:-0}" != "1" &&
+  "$PKG_DIR" == "$auto_update_root" &&
+  -f "$PKG_DIR/install.sh" &&
+  -d "$PKG_DIR/.git" ]] &&
+  command -v git >/dev/null 2>&1 &&
+  [[ -z "$(git -C "$PKG_DIR" status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+  update_repo="${WORKBENCH_CLI_REPO:-erikqu/workbench-cli}"
+  update_ref="${WORKBENCH_CLI_REF:-main}"
+  update_url="https://github.com/$update_repo.git"
+  current_revision="$(git -C "$PKG_DIR" rev-parse HEAD 2>/dev/null || true)"
+  latest_revision=""
+  if remote_refs="$(
+    GIT_TERMINAL_PROMPT=0 git ls-remote "$update_url" \
+      "refs/heads/$update_ref" \
+      "refs/tags/$update_ref^{}" \
+      "refs/tags/$update_ref" 2>/dev/null
+  )"; then
+    latest_revision="$(printf '%s\n' "$remote_refs" | awk 'NR == 1 { print $1 }')"
+  fi
+
+  if [[ -n "$latest_revision" && "$latest_revision" != "$current_revision" ]]; then
+    target_bin_dir="$(update_bin_dir)"
+    echo "A Workbench update is available; installing it now ..." >&2
+    if env \
+      WORKBENCH_CLI_HOME="$PKG_DIR" \
+      WORKBENCH_CLI_BIN="$target_bin_dir" \
+      bash "$PKG_DIR/install.sh"; then
+      # Reload the launcher from disk so launcher changes in the update take
+      # effect for this same invocation. The guard prevents a second check.
+      exec env WORKBENCH_CLI_AUTO_UPDATE_DONE=1 "$INVOKED_SOURCE" "$@"
+    fi
+    echo "warning: Workbench could not auto-update; continuing with the installed version." >&2
+  fi
 fi
 
 if ! command -v bun >/dev/null 2>&1; then

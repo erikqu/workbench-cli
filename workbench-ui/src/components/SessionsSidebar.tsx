@@ -78,6 +78,7 @@ export function SessionsSidebar({
           view.state.focus === "sessions" ? colors.borderFocus : colors.border
         }
         borderStyle="single"
+        borderTop={false}
         flexDirection="column"
         flexGrow={1}
         flexShrink={1}
@@ -93,16 +94,17 @@ export function SessionsSidebar({
           minHeight={1}
           paddingLeft={1}
           paddingRight={1}
-          paddingTop={1}
         >
-          <Box flexDirection="row" height={1} justifyContent="space-between">
+          <Box
+            alignItems="center"
+            flexDirection="row"
+            height={2}
+            justifyContent="space-between"
+          >
             <Box flexDirection="row" minWidth={1}>
               <Text bold color={colors.text}>
-                Sessions
+                Workbench
               </Text>
-              <Text
-                color={colors.dim}
-              >{` ${view.state.sessions.length + (view.state.pendingWorkspaceClone ? 1 : 0)}`}</Text>
             </Box>
             <Box flexDirection="row">
               <HelpButton compact={width < 26} onOpen={onOpenHelp} />

@@ -419,6 +419,7 @@ const PERSISTENT_TUI_REDRAW_DELAY_MS = 400;
 const SCROLL_POLL_MS = 200;
 const SCROLL_POLL_IDLE_TICKS = 4;
 const SCROLL_HIGHLIGHT_MS = 800;
+const INLINE_MEDIA_SCROLL_SETTLE_MS = 1000;
 
 function transcriptWheelKeys(
   direction: "up" | "down",
@@ -435,6 +436,7 @@ export class TerminalPanel implements TerminalReadable {
   private child?: ReturnType<typeof Bun.spawn>;
   private pty?: Bun.Terminal;
   private updateRevision = ++revisionCounter;
+  private lastViewportMovementAt = Number.NEGATIVE_INFINITY;
   private listeners = new Set<() => void>();
   private followOutput = true;
   private tmuxCopyModePossible = false;
@@ -666,6 +668,21 @@ export class TerminalPanel implements TerminalReadable {
     return this.terminal.rows;
   }
 
+  // Inline math/diagram previews should disappear immediately while the user
+  // moves through scrollback and return only after the viewport is stationary.
+  // Ordinary PTY redraws (for example a Working timer) do not extend this
+  // delay, so an active agent cannot starve previews indefinitely.
+  viewportRenderDelay(now = performance.now()): number {
+    return Math.max(
+      0,
+      INLINE_MEDIA_SCROLL_SETTLE_MS - (now - this.lastViewportMovementAt)
+    );
+  }
+
+  private markViewportMovement() {
+    this.lastViewportMovementAt = performance.now();
+  }
+
   // Bump the revision so the next render redraws this panel even though it
   // didn't emit output (used when it becomes the active pane). The tab switch
   // that calls this already re-renders the grid, which reads the new snapshot.
@@ -821,6 +838,7 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   scrollLines(lines: number) {
+    this.markViewportMovement();
     terminalTrace("panel-scroll", { lines, panel: this.traceId });
     this.terminal.scrollLines(lines);
     this.updateFollowOutput();
@@ -832,6 +850,7 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   scrollPages(pages: number) {
+    this.markViewportMovement();
     this.terminal.scrollPages(pages);
     this.updateFollowOutput();
     this.markScrollActive();
@@ -840,6 +859,7 @@ export class TerminalPanel implements TerminalReadable {
   }
 
   scrollToBottom() {
+    this.markViewportMovement();
     this.followOutput = true;
     this.terminal.scrollToBottom();
     this.updateRevision = ++revisionCounter;
@@ -965,6 +985,7 @@ export class TerminalPanel implements TerminalReadable {
     direction: "up" | "down",
     count = 1
   ): boolean {
+    this.markViewportMovement();
     // Prefer the application's native mouse protocol when an alternate-screen
     // TUI is active. tmux itself advertises mouse tracking even when its child
     // is an older inline Codex, so mouse mode alone cannot distinguish them.
@@ -1465,6 +1486,17 @@ export class TerminalPanel implements TerminalReadable {
       terminalTracePresentedPanel(this.traceId, this.updateRevision, rowIds);
     }
     return rows;
+  }
+
+  captureViewportText(): string[] {
+    const buffer = this.terminal.buffer.active;
+    const lines: string[] = [];
+    for (let row = 0; row < this.terminal.rows; row += 1) {
+      lines.push(
+        buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? ""
+      );
+    }
+    return lines;
   }
 
   private traceBuffer(event: string) {

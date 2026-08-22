@@ -16,14 +16,13 @@ import {
   useSelectionActions,
   useWindowSize,
 } from "silvery";
-import { harnessSpec } from "../state/harnesses";
+import { SPLASH_VERSION } from "../media/splash";
 import { focusForMainTab } from "../state/state";
 import {
   harnessIdFromTab,
   isChangesTab,
   terminalIdFromTab,
 } from "../state/types";
-import { isolatedInstance } from "../state/workbench-paths";
 import {
   type ClipboardFocus,
   requestClipboardPaste,
@@ -31,17 +30,22 @@ import {
 } from "../terminal/clipboard";
 import { terminalInputForKey } from "../terminal/terminal-panel";
 import { terminalTrace } from "../terminal/terminal-trace";
-import { COLLAPSED_SESSIONS_SIDEBAR_WIDTH } from "../ui/pane-layout";
+import {
+  COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
+  COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
+} from "../ui/pane-layout";
 import { colors } from "../ui/theme";
 import { ToastHost } from "../ui/toast";
 import { DiffDetailView } from "./ChangesView";
 import { FocusedTerminal } from "./FocusedTerminal";
+import { LatexInlineOverlay } from "./LatexInlineOverlay";
 import {
   MainTabs,
   TabContextMenuOverlay,
   type TabContextMenuState,
   tabIndexAtOffset,
 } from "./MainTabs";
+import { MermaidInlineOverlay } from "./MermaidInlineOverlay";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { NewHarnessDialog } from "./NewHarnessDialog";
 import { PaneScrollIndicator } from "./PaneScrollIndicator";
@@ -70,6 +74,9 @@ export function Workbench({
   const [sessionContextMenu, setSessionContextMenu] =
     useState<SessionContextMenuState | null>(null);
   const [sessionsHelpOpen, setSessionsHelpOpen] = useState(false);
+  const [latexOverlay, setLatexOverlay] = useState(false);
+  const [mermaidOverlay, setMermaidOverlay] = useState(false);
+  const [renderStatus, setRenderStatus] = useState<string | null>(null);
   const selection = useSelection();
   const selectionActions = useSelectionActions();
   const selectionPresent = useRef(false);
@@ -176,13 +183,16 @@ export function Workbench({
           flexDirection="column"
           height="100%"
           onMouseDown={(event) => {
-            if (event.button === 2 && event.y >= 1 && event.y < 3) {
+            if (event.button === 2 && event.y === 0) {
               const tabStart = view.state.sidebarVisible
                 ? view.state.sessionsSidebarWidth + 1
                 : COLLAPSED_SESSIONS_SIDEBAR_WIDTH;
+              const workspaceOffset = view.state.workspaceSidePaneVisible
+                ? view.state.workspaceSidePaneWidth
+                : COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH;
               const index = tabIndexAtOffset(
                 view.mainTabOptions,
-                Math.floor(event.x - tabStart),
+                Math.floor(event.x - tabStart - workspaceOffset),
                 view.session.harnesses.length > 1
               );
               const option = view.mainTabOptions[index];
@@ -205,23 +215,6 @@ export function Workbench({
           width="100%"
         >
           <Box
-            backgroundColor={colors.panel}
-            flexDirection="row"
-            flexShrink={0}
-            height={1}
-            paddingX={2}
-          >
-            <Text bold color={colors.accent}>
-              Workbench
-            </Text>
-            {/* An explicitly isolated hot instance runs its own tmux server and
-                state file, so label it. Ordinary `work --hot` now attaches the
-                user's real sessions and intentionally has no isolated label. */}
-            {isolatedInstance() ? (
-              <Text color={colors.dim}>{"  hot — isolated sessions"}</Text>
-            ) : null}
-          </Box>
-          <Box
             backgroundColor={colors.bg}
             flexDirection="row"
             flexGrow={1}
@@ -242,6 +235,11 @@ export function Workbench({
               }}
               view={view}
             />
+            <WorkspaceSidePane
+              actions={actions}
+              renderStatus={renderStatus}
+              view={view}
+            />
             <Box
               backgroundColor={colors.bg}
               flexDirection="column"
@@ -253,7 +251,7 @@ export function Workbench({
                 backgroundColor={colors.editor}
                 flexDirection="row"
                 flexShrink={0}
-                height={2}
+                height={1}
               >
                 <Box flexGrow={1} minWidth={10}>
                   <MainTabs
@@ -268,54 +266,69 @@ export function Workbench({
                 </Box>
                 <PlusButton actions={actions} view={view} />
               </Box>
-              {terminalTab ? (
-                <TerminalView
-                  actions={actions}
-                  selectionChanged={(selected) => {
-                    selectionPresent.current = selected;
-                    if (!selected) {
-                      rawSelectionCopy.current = false;
-                      selectionActions.clear?.();
-                    }
-                  }}
-                  view={view}
-                />
-              ) : (
-                <Box
-                  backgroundColor={colors.bg}
-                  flexDirection="row"
-                  flexGrow={1}
-                  minHeight={1}
-                  minWidth={1}
-                >
-                  <WorkspaceSidePane actions={actions} view={view} />
-                  {harnessTab ? (
-                    <HarnessView
-                      actions={actions}
-                      selectionChanged={(selected) => {
-                        selectionPresent.current = selected;
-                        if (!selected) {
-                          rawSelectionCopy.current = false;
-                          selectionActions.clear?.();
-                        }
-                      }}
-                      view={view}
-                    />
-                  ) : changesTab ? (
-                    <DiffDetailView actions={actions} view={view} />
-                  ) : (
-                    <Box
-                      backgroundColor={colors.editor}
-                      flexDirection="column"
-                      flexGrow={1}
-                      minHeight={1}
-                      minWidth={1}
-                    >
-                      <SyntaxViewer actions={actions} view={view} />
-                    </Box>
-                  )}
-                </Box>
-              )}
+              <Box
+                flexDirection="column"
+                flexGrow={1}
+                minHeight={1}
+                minWidth={1}
+              >
+                {terminalTab ? (
+                  <TerminalView
+                    actions={actions}
+                    selectionChanged={(selected) => {
+                      selectionPresent.current = selected;
+                      if (!selected) {
+                        rawSelectionCopy.current = false;
+                        selectionActions.clear?.();
+                      }
+                    }}
+                    view={view}
+                  />
+                ) : harnessTab ? (
+                  <HarnessView
+                    actions={actions}
+                    latexOverlay={latexOverlay}
+                    mermaidOverlay={mermaidOverlay}
+                    onRenderStatusChange={setRenderStatus}
+                    onToggleMath={() => {
+                      if (latexOverlay) {
+                        setLatexOverlay(false);
+                        setRenderStatus(null);
+                        return;
+                      }
+                      setLatexOverlay(true);
+                    }}
+                    onToggleMermaid={() => {
+                      if (mermaidOverlay) {
+                        setMermaidOverlay(false);
+                        setRenderStatus(null);
+                        return;
+                      }
+                      setMermaidOverlay(true);
+                    }}
+                    selectionChanged={(selected) => {
+                      selectionPresent.current = selected;
+                      if (!selected) {
+                        rawSelectionCopy.current = false;
+                        selectionActions.clear?.();
+                      }
+                    }}
+                    view={view}
+                  />
+                ) : changesTab ? (
+                  <DiffDetailView actions={actions} view={view} />
+                ) : (
+                  <Box
+                    backgroundColor={colors.editor}
+                    flexDirection="column"
+                    flexGrow={1}
+                    minHeight={1}
+                    minWidth={1}
+                  >
+                    <SyntaxViewer actions={actions} view={view} />
+                  </Box>
+                )}
+              </Box>
             </Box>
           </Box>
           <PlusMenu actions={actions} open={view.state.plusMenuOpen} />
@@ -630,19 +643,24 @@ export function isCloseTabShortcut(input: string, key: Key): boolean {
 function HarnessView({
   view,
   actions,
+  latexOverlay,
+  mermaidOverlay,
+  onRenderStatusChange,
+  onToggleMath,
+  onToggleMermaid,
   selectionChanged,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  latexOverlay: boolean;
+  mermaidOverlay: boolean;
+  onRenderStatusChange(status: string | null): void;
+  onToggleMath(): void;
+  onToggleMermaid(): void;
   selectionChanged(selected: boolean): void;
 }) {
   const activeHarness = view.session.harnesses.find(
     (harness) => `harness:${harness.id}` === view.session.activeMainTab
-  );
-  const activeSpec = harnessSpec(
-    activeHarness?.harnessId ??
-      view.session.harnesses[0]?.harnessId ??
-      "workbench"
   );
   const restart = () => {
     if (activeHarness) {
@@ -666,22 +684,37 @@ function HarnessView({
       }}
     >
       <Box
+        borderBottom
+        borderColor={colors.border}
+        borderLeft={false}
+        borderRight={false}
+        borderStyle="single"
+        borderTop={false}
         flexDirection="row"
         flexShrink={0}
-        height={1}
+        height={2}
         justifyContent="space-between"
-        paddingX={1}
       >
-        <Text
-          color={view.state.focus === "harness" ? colors.accent : colors.dim}
-        >{`CLI: ${activeSpec.label}`}</Text>
+        <Box flexDirection="row">
+          <WorkbenchUpdateControl actions={actions} />
+          <InlinePreviewButton
+            active={latexOverlay}
+            label="math"
+            onToggle={onToggleMath}
+          />
+          <InlinePreviewButton
+            active={mermaidOverlay}
+            label="mermaid"
+            onToggle={onToggleMermaid}
+          />
+        </Box>
         <Box flexDirection="row">
           <RestartHarnessButton onRestart={restart} />
           <SwitchHarnessButton onSwitch={actions.openNewHarness} />
         </Box>
       </Box>
       {view.harnessPanel ? (
-        <PaneScrollIndicator panel={view.harnessPanel} top={1} />
+        <PaneScrollIndicator panel={view.harnessPanel} top={2} />
       ) : null}
       {view.harnessPanel ? (
         <TerminalGrid
@@ -693,6 +726,114 @@ function HarnessView({
           selectionChanged={selectionChanged}
         />
       ) : null}
+      {latexOverlay && view.harnessPanel ? (
+        <LatexInlineOverlay
+          mode={view.state.themeName === "light" ? "light" : "dark"}
+          onStatusChange={onRenderStatusChange}
+          panel={view.harnessPanel}
+        />
+      ) : null}
+      {mermaidOverlay && view.harnessPanel ? (
+        <MermaidInlineOverlay
+          mode={view.state.themeName === "light" ? "light" : "dark"}
+          onStatusChange={onRenderStatusChange}
+          panel={view.harnessPanel}
+        />
+      ) : null}
+    </Box>
+  );
+}
+
+function WorkbenchUpdateControl({ actions }: { actions: WorkbenchActions }) {
+  const [hovered, setHovered] = useState(false);
+  const [status, setStatus] = useState<
+    "idle" | "updating" | "updated" | "failed"
+  >("idle");
+  const label =
+    status === "idle"
+      ? "Update"
+      : status === "updating"
+        ? "Updating"
+        : status === "updated"
+          ? "Updated"
+          : "Failed";
+  return (
+    <Box flexDirection="row" height={1}>
+      <Text color={colors.dim} wrap={false}>
+        {`Workbench v${SPLASH_VERSION}:`}
+      </Text>
+      <Box
+        backgroundColor={hovered ? colors.selected : undefined}
+        height={1}
+        mouseCursor={status === "updating" ? undefined : "pointer"}
+        onClick={(event) => {
+          if (event.button !== 0 || status === "updating") {
+            return;
+          }
+          setStatus("updating");
+          actions.updateWorkbench().then((updated) => {
+            setStatus(updated ? "updated" : "failed");
+          });
+          event.stopPropagation();
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        paddingX={1}
+      >
+        <Text
+          color={hovered ? colors.onSelected : colors.accentAlt}
+          wrap={false}
+        >
+          {label}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function InlinePreviewButton({
+  active,
+  label,
+  onToggle,
+}: {
+  active: boolean;
+  label: string;
+  onToggle(): void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Box
+      backgroundColor={
+        active
+          ? hovered
+            ? colors.accentAlt
+            : colors.accent
+          : hovered
+            ? colors.selected
+            : undefined
+      }
+      focusable={false}
+      height={1}
+      mouseCursor="pointer"
+      onClick={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        onToggle();
+        event.stopPropagation();
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      paddingX={1}
+    >
+      <Text
+        bold={active || hovered}
+        color={
+          active ? colors.bg : hovered ? colors.onSelected : colors.accentAlt
+        }
+      >
+        {active ? `${label} on` : label}
+      </Text>
     </Box>
   );
 }
@@ -1006,7 +1147,7 @@ function PlusButton({
       alignItems="center"
       anchorRef={PLUS_ANCHOR_ID}
       flexShrink={0}
-      height={2}
+      height={1}
       justifyContent="center"
       width={5}
     >

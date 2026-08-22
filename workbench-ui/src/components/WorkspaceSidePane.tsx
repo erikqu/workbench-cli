@@ -34,9 +34,11 @@ const maxTerminalRows = 6;
 export function WorkspaceSidePane({
   view,
   actions,
+  renderStatus,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
+  renderStatus?: string | null;
 }) {
   const rect = useBoxRectDangerously();
   const { columns } = useWindowSize();
@@ -112,7 +114,8 @@ export function WorkspaceSidePane({
         minHeight={1}
         minWidth={1}
         overflow="hidden"
-        padding={1}
+        paddingBottom={1}
+        paddingX={1}
       >
         <AgentButton actions={actions} view={view} />
         <ExplorerSection actions={actions} height={explorerRows} view={view} />
@@ -126,6 +129,23 @@ export function WorkspaceSidePane({
         onResize={actions.resizeWorkspaceSidePane}
         width={width}
       />
+      {renderStatus ? (
+        <Box
+          backgroundColor={colors.panelAlt}
+          bottom={1}
+          height={1}
+          left={1}
+          overflow="hidden"
+          paddingX={1}
+          pointerEvents="none"
+          position="absolute"
+          width={Math.max(1, width - 2)}
+        >
+          <Text color={colors.accentAlt} wrap={false}>
+            {renderStatus}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

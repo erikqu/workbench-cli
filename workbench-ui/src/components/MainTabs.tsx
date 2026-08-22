@@ -30,7 +30,7 @@ export function MainTabs({
     <Box
       backgroundColor={colors.editor}
       flexDirection="row"
-      height={2}
+      height={1}
       onMouseDown={(event) => {
         if (event.button !== 2) {
           return;
@@ -140,7 +140,8 @@ function Tab({
       anchorRef={anchorId}
       flexDirection="column"
       flexShrink={0}
-      height={2}
+      height={1}
+      onClick={select}
       onMouseDown={openContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -165,11 +166,6 @@ function Tab({
           <CloseButton onClose={() => actions.closeTab(value)} />
         ) : null}
       </Box>
-      <Box
-        backgroundColor={active ? colors.accent : colors.editor}
-        height={1}
-        width="100%"
-      />
     </Box>
   );
 }

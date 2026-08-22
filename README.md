@@ -66,16 +66,34 @@ The installer:
 3. Installs the package dependencies.
 4. Links both `workbench-cli` and `work` into `~/.local/bin`.
 
-Update an existing installation manually with either form:
+Workbench checks for a newer release when it starts and updates a clean,
+installer-managed checkout automatically. Network failures do not block
+startup, and checkouts with local changes are never overwritten. Set
+`WORKBENCH_CLI_AUTO_UPDATE=0` to disable the startup check.
+
+You can also update an existing installation immediately with either form:
 
 ```bash
 work update
 workbench-cli update
 ```
 
-The updater preserves the checkout and launcher locations. It refuses to
-overwrite an installation checkout with local changes. Workbench does not
-silently auto-update itself.
+The updater preserves the checkout and launcher locations and refuses to
+overwrite an installation checkout with local changes.
+
+## Anonymous analytics
+
+Workbench sends a small set of anonymous product-usage events to PostHog so the
+project can understand which features are useful. Events include app launches,
+workspace/harness/terminal creation, theme changes, repository-clone outcomes,
+and manual-update outcomes. Workbench does not send prompts, terminal content,
+file paths, filenames, repository URLs, or other workspace content. GeoIP and
+person-profile processing are disabled.
+
+Set `WORKBENCH_TELEMETRY=0` or `DO_NOT_TRACK=1` to disable analytics. Analytics
+are also disabled automatically for `work --hot`, tests, screenshots, and E2E
+runs. The PostHog host and public project token can be overridden with
+`WORKBENCH_POSTHOG_HOST` and `WORKBENCH_POSTHOG_KEY`.
 
 ## Run
 

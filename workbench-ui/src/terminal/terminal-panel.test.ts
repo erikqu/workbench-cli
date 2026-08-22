@@ -92,6 +92,19 @@ describe("TerminalPanel synchronized output", () => {
   });
 });
 
+describe("TerminalPanel inline media settling", () => {
+  test("waits after scrolling without letting ordinary output extend the delay", async () => {
+    const panel = new TerminalPanel("/tmp", 80, 8);
+    panel.scrollLines(-1);
+    const afterScroll = panel.viewportRenderDelay();
+
+    expect(afterScroll).toBeGreaterThan(900);
+    await feed(panel, "ordinary output");
+    expect(panel.viewportRenderDelay()).toBeLessThanOrEqual(afterScroll);
+    expect(panel.viewportRenderDelay(performance.now() + 1001)).toBe(0);
+  });
+});
+
 describe("TerminalPanel.getCursor", () => {
   test("reports a visible caret at the cursor position", async () => {
     const panel = new TerminalPanel("/tmp", 80, 24);

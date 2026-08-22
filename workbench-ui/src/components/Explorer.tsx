@@ -56,10 +56,7 @@ export function Explorer({
       padding={1}
       width={30}
     >
-      <ExplorerHeader
-        count={options.length}
-        onCollapse={actions.toggleWorkspaceSidePane}
-      />
+      <ExplorerHeader onCollapse={actions.toggleWorkspaceSidePane} />
       <ExplorerBody
         active={focused}
         expandedIds={expandedIds}
@@ -112,11 +109,7 @@ export function ExplorerSection({
       }}
       overflow="hidden"
     >
-      <ExplorerHeader
-        count={options.length}
-        onCollapse={actions.toggleWorkspaceSidePane}
-        section
-      />
+      <ExplorerHeader onCollapse={actions.toggleWorkspaceSidePane} section />
       <ExplorerBody
         active={focused}
         expandedIds={expandedIds}
@@ -128,11 +121,9 @@ export function ExplorerSection({
 }
 
 function ExplorerHeader({
-  count,
   onCollapse,
   section = false,
 }: {
-  count: number;
   onCollapse(): void;
   section?: boolean;
 }) {
@@ -147,7 +138,6 @@ function ExplorerHeader({
     >
       <Text color={section ? colors.accentAlt : colors.dim}>Explorer</Text>
       <Box flexDirection="row" flexShrink={0}>
-        <Text color={colors.dim}>{String(count)} </Text>
         <PanelCollapseButton onCollapse={onCollapse} />
       </Box>
     </Box>

@@ -58,6 +58,7 @@ export interface WorkbenchActions {
   toggleSidebar(): void;
   toggleWorkspaceSidePane(): void;
   updateFileContent(path: string, content: string): void;
+  updateWorkbench(): Promise<boolean>;
   writeHarness(input: string): void;
   writeTerminal(input: string): void;
 }

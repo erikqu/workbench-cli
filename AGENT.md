@@ -50,6 +50,20 @@ and refuses dirty source checkouts. Keep update dispatch ahead of Bun/UI
 validation so it can repair an installation whose runtime dependencies are
 missing or outdated.
 
+Anonymous product analytics live behind the single boundary in
+`workbench-ui/src/analytics.ts`. Never send paths, repository identifiers,
+prompts, terminal output, filenames, or file contents. Keep analytics
+best-effort and non-blocking, honor `WORKBENCH_TELEMETRY=0` and `DO_NOT_TRACK=1`,
+and keep hot/development and automated runs disabled. Use anonymous events with
+GeoIP and person-profile processing off.
+
+The launcher also checks GitHub for a newer revision before ordinary startup.
+This automatic path is limited to the installer-owned checkout, skips dirty
+trees, tolerates offline/network failures, and can be disabled with
+`WORKBENCH_CLI_AUTO_UPDATE=0`. After installing, it re-executes the launcher
+with `WORKBENCH_CLI_AUTO_UPDATE_DONE=1` so launcher changes take effect without
+checking twice. Do not broaden this to development/source checkouts.
+
 ### Build / check / run (from `workbench-ui/`)
 
 ```bash

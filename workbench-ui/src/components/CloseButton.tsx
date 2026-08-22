@@ -4,9 +4,11 @@ import { colors } from "../ui/theme";
 
 export function CloseButton({
   color = colors.text,
+  height = 1,
   onClose,
 }: {
   color?: string;
+  height?: number;
   onClose(): void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -15,7 +17,7 @@ export function CloseButton({
       alignItems="center"
       backgroundColor={hovered ? colors.error : undefined}
       focusable={false}
-      height={1}
+      height={height}
       justifyContent="center"
       mouseCursor="pointer"
       onClick={(event) => {
