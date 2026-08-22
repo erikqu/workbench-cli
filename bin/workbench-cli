@@ -183,10 +183,22 @@ if [[ "$hot" == "1" ]]; then
   entry="$UI_DIR/scripts/hot-runner.ts"
 fi
 
-exec env -u NO_COLOR \
-  COLORTERM="${COLORTERM:-truecolor}" \
-  FORCE_COLOR=1 \
-  WORKBENCH_CLI_HOT="$hot" \
-  WORKBENCH_TERMINAL_TRACE="$terminal_trace" \
-  WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
-  bun "$entry" ${args[@]+"${args[@]}"}
+# Keep the launcher alive as the terminal's foreground process. An in-app
+# update exits with 75 only after Workbench has saved its state, detached its
+# tmux clients, and restored the terminal; relaunching here then loads the new
+# files without losing the shell's foreground-process handoff.
+while true; do
+  set +e
+  env -u NO_COLOR \
+    COLORTERM="${COLORTERM:-truecolor}" \
+    FORCE_COLOR=1 \
+    WORKBENCH_CLI_HOT="$hot" \
+    WORKBENCH_TERMINAL_TRACE="$terminal_trace" \
+    WORKBENCH_UI_CWD="${WORKBENCH_UI_CWD:-$PWD}" \
+    bun "$entry" "${args[@]}"
+  exit_code=$?
+  set -e
+  if ((exit_code != 75)); then
+    exit "$exit_code"
+  fi
+done

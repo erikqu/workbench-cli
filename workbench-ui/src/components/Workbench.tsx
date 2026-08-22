@@ -736,6 +736,7 @@ function HarnessView({
       ) : null}
       {latexOverlay && view.harnessPanel ? (
         <LatexInlineOverlay
+          key={`math:${view.session.id}:${activeHarness?.id ?? "none"}`}
           mode={view.state.themeName === "light" ? "light" : "dark"}
           onLoadingChange={onLatexLoadingChange}
           panel={view.harnessPanel}
@@ -743,6 +744,7 @@ function HarnessView({
       ) : null}
       {mermaidOverlay && view.harnessPanel ? (
         <MermaidInlineOverlay
+          key={`mermaid:${view.session.id}:${activeHarness?.id ?? "none"}`}
           mode={view.state.themeName === "light" ? "light" : "dark"}
           onLoadingChange={onMermaidLoadingChange}
           panel={view.harnessPanel}

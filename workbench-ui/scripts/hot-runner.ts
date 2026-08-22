@@ -8,6 +8,10 @@ const entry = join(appRoot, "src", "index.ts");
 const bun = Bun.which("bun") ?? process.execPath;
 const args = process.argv.slice(2);
 const restartDelayMs = 100;
+// Keep synchronized with the app and bin/workbench-cli. This also lets a new
+// source hot runner restart correctly when it was launched by an older
+// installed launcher that does not supervise the handoff yet.
+const updateRestartExitCode = 75;
 
 let child: ReturnType<typeof Bun.spawn> | undefined;
 let closing = false;
@@ -58,6 +62,10 @@ function launch() {
       return;
     }
     child = undefined;
+    if (!(closing || restarting) && code === updateRestartExitCode) {
+      launch();
+      return;
+    }
     if (!(closing || restarting)) {
       void stop(code);
     }

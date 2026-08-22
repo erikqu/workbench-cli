@@ -79,7 +79,9 @@ workbench-cli update
 ```
 
 The updater preserves the checkout and launcher locations and refuses to
-overwrite an installation checkout with local changes.
+overwrite an installation checkout with local changes. The in-app Update
+button saves the layout, detaches the persistent panes, and restarts Workbench
+in the same terminal so the newly installed version takes effect immediately.
 
 ## Anonymous analytics
 

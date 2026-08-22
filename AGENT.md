@@ -123,6 +123,15 @@ The required handoff is serialized: the hot runner sends **SIGTERM** →
 the terminal → the runner waits for exit → only then does it launch the next UI,
 which reattaches the same sessions. Don't weaken or parallelize this sequence.
 
+The in-app updater uses the same lifecycle contract. After a successful
+`workbench-cli update`, the UI calls `shutdown(75)`; `bin/workbench-cli` remains
+the terminal's foreground supervisor and relaunches only for that dedicated
+code. The hot runner consumes the same code itself so `work --hot` also restarts
+even when invoked through an older installed launcher. Other exit codes return
+to the shell. Keep the code synchronized between the TypeScript app, launcher,
+and hot runner, and never relaunch before shutdown has saved state, detached
+tmux clients, and restored the terminal.
+
 Hot-reload identity is part of that contract. Persist and restore both the
 stable `id` and `tmux` fields for every workspace, harness, and terminal:
 `activeMainTab` contains one of those IDs and cannot be restored if IDs are

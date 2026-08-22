@@ -9,6 +9,8 @@ const MAX_FORMULA_CHARS = 4000;
 const MAX_TIKZ_CHARS = 30_000;
 const MAX_TIKZ_ROWS = 400;
 const COMPILE_TIMEOUT_MS = 12_000;
+// Bump whenever the generated document changes in a way that affects layout.
+const LATEX_RENDER_VERSION = 3;
 
 const unsafeTex =
   /\\(?:catcode|csname|def|documentclass|end\s*\{document|gdef|href|immediate|include|includegraphics|input|loop|newcommand|openin|openout|read|renewcommand|repeat|special|usepackage|write|xdef)\b|\^\^/i;
@@ -201,7 +203,7 @@ export async function renderLatexToPng(
     return null;
   }
   const key = createHash("sha256")
-    .update(`${mode}\0${safe.join("\0")}`)
+    .update(`${LATEX_RENDER_VERSION}\0${mode}\0${safe.join("\0")}`)
     .digest("hex");
   const pngPath = join(cacheDir, `${key}.png`);
   if (existsSync(pngPath)) {
@@ -229,7 +231,10 @@ export async function renderLatexToPng(
   return (await raster.exited) === 0 && existsSync(pngPath) ? pngPath : null;
 }
 
-function latexDocument(formulas: readonly string[], mode: "dark" | "light") {
+export function latexDocument(
+  formulas: readonly string[],
+  mode: "dark" | "light"
+) {
   const background = mode === "dark" ? "19191B" : "FFFFFF";
   const foreground = mode === "dark" ? "E4E2DC" : "171717";
   const tikz =
@@ -247,17 +252,16 @@ ${tikz.body}
 \\end{document}
 `;
   }
-  const body = formulas
-    .map((formula) => `\\[\n${formula}\n\\]`)
-    .join("\n\\vspace{0.8em}\n");
-  return `\\documentclass[border=18pt]{standalone}
+  // Let standalone.cls crop to the math itself. A fixed 18cm minipage made
+  // every short equation 1366px wide, so fitting it to the harness shrank the
+  // glyphs to roughly half the surrounding terminal font.
+  const body = `\\(\n\\displaystyle ${formulas.join("\\qquad\n")}\n\\)`;
+  return `\\documentclass[border=8pt]{standalone}
 \\usepackage{amsmath,amssymb,xcolor}
 \\pagecolor[HTML]{${background}}
 \\color[HTML]{${foreground}}
 \\begin{document}
-\\begin{minipage}{18cm}
 ${body}
-\\end{minipage}
 \\end{document}
 `;
 }

@@ -38,7 +38,14 @@ function setup(root: string): { installed: string; stubPath: string } {
   const stub = join(stubDir, "bun");
   writeFileSync(
     stub,
-    '#!/usr/bin/env bash\nif [ "$#" -gt 0 ] && [ "$1" = "-e" ]; then exit 0; fi\necho "BUN-EXEC: $*"\n'
+    `#!/usr/bin/env bash
+if [ "$#" -gt 0 ] && [ "$1" = "-e" ]; then exit 0; fi
+echo "BUN-EXEC: $*"
+if [[ -n "\${WORKBENCH_TEST_RESTART_FILE:-}" && ! -e "$WORKBENCH_TEST_RESTART_FILE" ]]; then
+  touch "$WORKBENCH_TEST_RESTART_FILE"
+  exit 75
+fi
+`
   );
   chmodSync(stub, 0o755);
   return {
@@ -86,6 +93,18 @@ function runLauncher(
 }
 
 describe("workbench-cli --hot source-checkout detection", () => {
+  test("restarts the current Workbench after an in-app update handoff", () => {
+    const root = "/tmp/wb-launcher-test-update-restart";
+    const { installed, stubPath } = setup(root);
+    const restartMarker = join(root, "restart-once");
+
+    const run = runLauncher(installed, stubPath, "/tmp", [], {
+      WORKBENCH_TEST_RESTART_FILE: restartMarker,
+    });
+    expect(run.stdout.match(/BUN-EXEC:/g)).toHaveLength(2);
+    rmSync(root, { force: true, recursive: true });
+  });
+
   test("runs and watches the dev checkout containing the cwd", () => {
     const root = "/tmp/wb-launcher-test-detect";
     const { installed, stubPath } = setup(root);

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { extractDisplayMath, extractDisplayMathBlocks } from "./latex";
+import {
+  extractDisplayMath,
+  extractDisplayMathBlocks,
+  latexDocument,
+} from "./latex";
 
 describe("terminal LaTeX extraction", () => {
   test("finds Codex display blocks whose slash delimiters were rendered away", () => {
@@ -131,5 +135,15 @@ after`;
     expect(blocks[0]?.startRow).toBe(0);
     expect(blocks[0]?.endRow).toBe(7);
     expect(blocks[0]?.formula).toEndWith(String.raw`\end{tikzpicture}`);
+  });
+});
+
+describe("LaTeX image sizing", () => {
+  test("uses the equation's natural width instead of a fixed page canvas", () => {
+    const document = latexDocument(["x_t=E(o_t)"], "dark");
+    expect(document).toContain("border=8pt");
+    expect(document).toContain("\\displaystyle x_t=E(o_t)");
+    expect(document).not.toContain("minipage");
+    expect(document).not.toContain("18cm");
   });
 });

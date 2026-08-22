@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { TerminalPanel } from "../terminal/terminal-panel";
 import {
   INLINE_MEDIA_LOOKBEHIND_VIEWPORTS,
   inlineBlockViewportPlacement,
   inlineMediaViewportWidth,
   terminalBlocksForOverlay,
   terminalBlocksNearViewport,
+  visibleSettledTerminalBlocks,
 } from "./useSettledTerminalBlocks";
 
 describe("terminalBlocksNearViewport", () => {
@@ -53,6 +55,27 @@ describe("terminalBlocksNearViewport", () => {
       { endRow: -30, id: "three-pages-up", startRow: -31 },
       { endRow: -1, id: "just-above", startRow: -2 },
     ]);
+  });
+});
+
+describe("visibleSettledTerminalBlocks", () => {
+  const firstPanel = {} as TerminalPanel;
+  const secondPanel = {} as TerminalPanel;
+  const blocks = [{ startRow: 2, endRow: 4 }];
+
+  test("hides native overlays immediately while the viewport is moving", () => {
+    expect(
+      visibleSettledTerminalBlocks(firstPanel, firstPanel, 1, blocks)
+    ).toEqual([]);
+  });
+
+  test("never carries an old panel's overlays into another session", () => {
+    expect(
+      visibleSettledTerminalBlocks(firstPanel, secondPanel, 0, blocks)
+    ).toEqual([]);
+    expect(
+      visibleSettledTerminalBlocks(firstPanel, firstPanel, 0, blocks)
+    ).toBe(blocks);
   });
 });
 

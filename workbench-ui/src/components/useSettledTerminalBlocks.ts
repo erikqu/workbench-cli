@@ -96,6 +96,18 @@ export function terminalBlocksNearViewport<T extends PositionedTerminalBlock>(
     }));
 }
 
+export function visibleSettledTerminalBlocks<T>(
+  owner: TerminalPanel | null,
+  panel: TerminalPanel,
+  renderDelay: number,
+  blocks: readonly T[]
+): readonly T[] {
+  // Native terminal graphics live outside the normal cell buffer. Never give
+  // React even one stale frame in which it can retain an old placement while
+  // the viewport is moving or the user has switched to another PTY.
+  return owner === panel && renderDelay <= 0 ? blocks : [];
+}
+
 export function useSettledTerminalBlocks<T extends PositionedTerminalBlock>(
   panel: TerminalPanel,
   extract: (lines: readonly string[]) => T[],
@@ -106,7 +118,10 @@ export function useSettledTerminalBlocks<T extends PositionedTerminalBlock>(
     panel.getSnapshot,
     panel.getSnapshot
   );
-  const [blocks, setBlocks] = useState<T[]>([]);
+  const [settled, setSettled] = useState<{
+    blocks: T[];
+    owner: TerminalPanel | null;
+  }>({ blocks: [], owner: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -131,14 +146,20 @@ export function useSettledTerminalBlocks<T extends PositionedTerminalBlock>(
       if (cancelled) {
         return;
       }
-      setBlocks((current) =>
-        signature(current) === signature(next) ? current : next
+      setSettled((current) =>
+        current.owner === panel && signature(current.blocks) === signature(next)
+          ? current
+          : { blocks: next, owner: panel }
       );
     };
 
     const delay = panel.viewportRenderDelay();
     if (delay > 0) {
-      setBlocks((current) => (current.length === 0 ? current : []));
+      setSettled((current) =>
+        current.owner === panel && current.blocks.length === 0
+          ? current
+          : { blocks: [], owner: panel }
+      );
       timer = setTimeout(scanWhenSettled, delay);
       timer.unref?.();
     } else {
@@ -153,5 +174,10 @@ export function useSettledTerminalBlocks<T extends PositionedTerminalBlock>(
     };
   }, [revision, panel, extract, signature]);
 
-  return blocks;
+  return visibleSettledTerminalBlocks(
+    settled.owner,
+    panel,
+    panel.viewportRenderDelay(),
+    settled.blocks
+  ) as T[];
 }

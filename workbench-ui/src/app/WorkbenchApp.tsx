@@ -112,6 +112,10 @@ const HARNESS_ACTIVITY_POLL_MS = 750;
 // Long enough for a freshly mounted pane's first repaint burst to land, short
 // enough that a stale region is never visible for more than a blink.
 const FULL_REDRAW_DELAY_MS = 200;
+// The shell launcher treats this as a supervised relaunch request. Keep it in
+// sync with bin/workbench-cli; every other exit code returns to the user's
+// shell normally.
+const UPDATE_RESTART_EXIT_CODE = 75;
 const HARNESS_COLOR_ENV = {
   CLICOLOR: "1",
   CLICOLOR_FORCE: "1",
@@ -431,6 +435,9 @@ export class ReactWorkbenchApp {
       });
       const updated = (await process.exited) === 0;
       captureAnalytics("manual_update_completed", { success: updated });
+      if (updated) {
+        this.shutdown(UPDATE_RESTART_EXIT_CODE);
+      }
       return updated;
     } catch {
       captureAnalytics("manual_update_completed", { success: false });
