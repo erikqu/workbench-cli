@@ -815,6 +815,11 @@ function InlinePreviewButton({
 }) {
   const [hovered, setHovered] = useState(false);
   const loadingGlyph = useLoadingGlyph(loading);
+  const buttonLabel = loading
+    ? `${label} ${loadingGlyph}`
+    : active
+      ? `${label} on`
+      : label;
   return (
     <Box
       backgroundColor={
@@ -828,9 +833,9 @@ function InlinePreviewButton({
       }
       focusable={false}
       height={1}
-      mouseCursor="pointer"
+      mouseCursor={loading ? undefined : "pointer"}
       onClick={(event) => {
-        if (event.button !== 0) {
+        if (event.button !== 0 || loading) {
           return;
         }
         onToggle();
@@ -846,7 +851,7 @@ function InlinePreviewButton({
           active ? colors.bg : hovered ? colors.onSelected : colors.accentAlt
         }
       >
-        {`${active ? `${label} on` : label}${loading ? ` ${loadingGlyph}` : ""}`}
+        {buttonLabel}
       </Text>
     </Box>
   );
