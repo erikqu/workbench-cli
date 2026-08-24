@@ -157,6 +157,10 @@ with text already present in the agent composer.
 - UI layout (sessions, harnesses, terminals, open tabs, active tab, sidebar) is
   saved via `savePersistedState` and restored by
   `loadPersistedState`/`createInitialState`.
+- State writes are atomic. A session-set change snapshots the prior valid
+  layout to `workbench-ui-state.json.bak`, and a corrupt primary falls back to
+  that backup. Never write the primary directly or silently discard a saved
+  session because its workspace is temporarily unavailable.
 - Explorer directory expansion is deliberately ephemeral: restored workspaces
   start with every directory collapsed.
 - The Explorer header's `<` action collapses the complete workspace side pane;

@@ -2,7 +2,8 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  statSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -41,6 +42,7 @@ import { persistedStatePath } from "./workbench-paths";
 // layout so watched restarts reattach every existing user session; explicitly
 // isolated hot runs still get their checkout-specific state file.
 const statePath = persistedStatePath();
+const stateBackupPath = `${statePath}.bak`;
 
 export function createSession(
   cwd: string,
@@ -112,14 +114,6 @@ export function createTerminal(
     name: `Terminal ${next}`,
     tmux: makeTmuxName("t"),
   };
-}
-
-function isDirectory(path: string) {
-  try {
-    return existsSync(path) && statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 export function restoreSession(
@@ -215,12 +209,7 @@ export function createInitialState(cwd: string): AppState {
 
   const persisted = loadPersistedState();
 
-  const sessions: AgentSession[] = [];
-  for (const entry of persisted.sessions ?? []) {
-    if (isDirectory(entry.cwd)) {
-      sessions.push(restoreSession(entry, sessions));
-    }
-  }
+  const sessions = restoreSessions(persisted.sessions ?? []);
   if (sessions.length === 0) {
     sessions.push(createSession(cwd, []));
   }
@@ -263,6 +252,19 @@ export function createInitialState(cwd: string): AppState {
       MAX_PERSISTED_PANE_WIDTH
     ),
   };
+}
+
+export function restoreSessions(
+  persisted: readonly PersistedSession[]
+): AgentSession[] {
+  const sessions: AgentSession[] = [];
+  for (const entry of persisted) {
+    // A removable drive, delayed network mount, or temporarily renamed folder
+    // must not erase a Work Session. Keep the card and its tmux identity; the
+    // workspace can become available again after startup.
+    sessions.push(restoreSession(entry, sessions));
+  }
+  return sessions;
 }
 
 export function focusForMainTab(tab: string): AppState["focus"] {
@@ -314,16 +316,7 @@ function createScreenshotState(cwd: string): AppState {
 }
 
 export function loadPersistedState(): PersistedWorkbenchState {
-  if (!existsSync(statePath)) {
-    return {};
-  }
-  try {
-    return JSON.parse(
-      readFileSync(statePath, "utf8")
-    ) as PersistedWorkbenchState;
-  } catch {
-    return {};
-  }
+  return readPersistedStateFile(statePath, stateBackupPath);
 }
 
 export function savePersistedState(state: AppState) {
@@ -363,8 +356,62 @@ export function savePersistedState(state: AppState) {
     workspaceSidePaneWidth: state.workspaceSidePaneWidth,
   };
 
-  mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, `${JSON.stringify(payload, null, 2)}\n`);
+  writePersistedStateFile(statePath, stateBackupPath, payload);
+}
+
+export function readPersistedStateFile(
+  path: string,
+  backupPath = `${path}.bak`
+): PersistedWorkbenchState {
+  return parsePersistedState(path) ?? parsePersistedState(backupPath) ?? {};
+}
+
+export function writePersistedStateFile(
+  path: string,
+  backupPath: string,
+  payload: PersistedWorkbenchState
+) {
+  const serialized = `${JSON.stringify(payload, null, 2)}\n`;
+  const previous = parsePersistedState(path);
+  if (
+    previous &&
+    sessionSetSignature(previous) !== sessionSetSignature(payload)
+  ) {
+    atomicWrite(backupPath, `${JSON.stringify(previous, null, 2)}\n`);
+  }
+  atomicWrite(path, serialized);
+}
+
+function parsePersistedState(path: string): PersistedWorkbenchState | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return parsed && typeof parsed === "object"
+      ? (parsed as PersistedWorkbenchState)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function sessionSetSignature(state: PersistedWorkbenchState): string {
+  return (state.sessions ?? [])
+    .map((session) => `${session.id ?? ""}\0${session.cwd}`)
+    .sort()
+    .join("\0");
+}
+
+function atomicWrite(path: string, contents: string) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, contents, { mode: 0o600 });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 function escapeRegex(value: string) {
