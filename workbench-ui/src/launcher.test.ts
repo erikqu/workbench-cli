@@ -57,7 +57,7 @@ exec ${resolveGit()} "$@"
         HOME: fixture.home,
         PATH: `${fakeBin}:/usr/bin:/bin`,
         UPDATE_CAPTURE: fixture.capture,
-        WORKBENCH_CLI_HOME: fixture.packageRoot,
+        WORKBENCH_CLI_HOME: realpathSync(fixture.packageRoot),
       },
       stderr: "pipe",
       stdout: "pipe",

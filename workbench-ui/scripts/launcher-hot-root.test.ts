@@ -17,6 +17,7 @@ import { join } from "node:path";
 const repoLauncher = join(import.meta.dir, "..", "..", "bin", "workbench-cli");
 
 interface LauncherRun {
+  exitCode: number;
   stderr: string;
   stdout: string;
 }
@@ -74,10 +75,11 @@ function runLauncher(
   stubPath: string,
   cwd: string,
   args: string[],
-  env: Record<string, string> = {}
+  env: Record<string, string> = {},
+  bash = "bash"
 ): LauncherRun {
   const result = Bun.spawnSync(
-    ["bash", join(installed, "bin", "workbench-cli"), ...args],
+    [bash, join(installed, "bin", "workbench-cli"), ...args],
     {
       cwd,
       env: {
@@ -88,10 +90,51 @@ function runLauncher(
     }
   );
   return {
+    exitCode: result.exitCode,
     stderr: result.stderr.toString(),
     stdout: result.stdout.toString(),
   };
 }
+
+describe("workbench-cli shell compatibility", () => {
+  test("launches with zero arguments under the system Bash", () => {
+    const root = "/tmp/wb-launcher-test-system-bash-empty-args";
+    const { installed, stubPath } = setup(root);
+
+    const run = runLauncher(installed, stubPath, "/tmp", [], {}, "/bin/bash");
+    expect(run.stderr).not.toContain("args[@]: unbound variable");
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toContain(
+      `BUN-EXEC: ${join(installed, "workbench-ui", "src", "index.ts")}`
+    );
+    rmSync(root, { force: true, recursive: true });
+  });
+
+  test("launches through its shebang with workspace arguments intact", () => {
+    const root = "/tmp/wb-launcher-test-caller-shell";
+    const { installed, stubPath } = setup(root);
+    const launcher = join(installed, "bin", "workbench-cli");
+    const workspace = join(root, "workspace with spaces");
+    mkdirSync(workspace, { recursive: true });
+
+    // zsh, fish, and Bash all launch `work` as an executable; the kernel then
+    // honors its Bash shebang. Invoke it the same way here to ensure the caller
+    // shell cannot affect parsing and forwarded arguments retain boundaries.
+    const result = Bun.spawnSync([launcher, workspace], {
+      cwd: "/tmp",
+      env: {
+        ...Bun.env,
+        PATH: `${stubPath}:${Bun.env.PATH ?? ""}`,
+      },
+    });
+    expect(result.stderr.toString()).toBe("");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toContain(
+      `BUN-EXEC: ${join(installed, "workbench-ui", "src", "index.ts")} ${workspace}`
+    );
+    rmSync(root, { force: true, recursive: true });
+  });
+});
 
 describe("workbench-cli --hot source-checkout detection", () => {
   test("restarts the current Workbench after an in-app update handoff", () => {
