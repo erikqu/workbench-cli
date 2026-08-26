@@ -124,4 +124,50 @@ describe("terminal Mermaid extraction", () => {
       },
     ]);
   });
+
+  test("stops a flowchart before a following indented table", () => {
+    expect(
+      extractMermaidBlocks([
+        "  flowchart LR",
+        "    W[Editable Task workspace] --> R[Task Revision]",
+        "    P[Project Setup head] --> E[Environment Version]",
+        "    R --> T[Task Version]",
+        "    R --> D[Data Bundle Version]",
+        "    R --> V[Verifier Version]",
+        "    V --> S[Verifier Set Version]",
+        "    E --> C[Challenge Version]",
+        "    T --> C",
+        "    D --> C",
+        "    S --> C",
+        "    C --> B[Derived Harbor bundle]",
+        "    B --> RS[Run Spec + model/config]",
+        "    RS --> A[Run Attempt + evidence]",
+        "",
+        "   Layer                              What it means",
+        "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━",
+        "   Stable Task identity               Durable catalog object",
+      ])
+    ).toEqual([
+      {
+        startRow: 0,
+        endRow: 13,
+        source: [
+          "flowchart LR",
+          "    W[Editable Task workspace] --> R[Task Revision]",
+          "    P[Project Setup head] --> E[Environment Version]",
+          "    R --> T[Task Version]",
+          "    R --> D[Data Bundle Version]",
+          "    R --> V[Verifier Version]",
+          "    V --> S[Verifier Set Version]",
+          "    E --> C[Challenge Version]",
+          "    T --> C",
+          "    D --> C",
+          "    S --> C",
+          "    C --> B[Derived Harbor bundle]",
+          "    B --> RS[Run Spec + model/config]",
+          "    RS --> A[Run Attempt + evidence]",
+        ].join("\n"),
+      },
+    ]);
+  });
 });

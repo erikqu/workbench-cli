@@ -67,12 +67,21 @@ function isRenderedBoundary(line: string, bodyIndent: number): boolean {
   if (renderedBullet.test(withoutGutter)) {
     return true;
   }
-  if (bodyIndent < 2 || /^\s/.test(withoutGutter)) {
+  if (bodyIndent < 2) {
     return false;
   }
-  return !(
-    isDiagramDeclaration(withoutGutter) || mermaidStatement.test(withoutGutter)
-  );
+  if (
+    isDiagramDeclaration(withoutGutter) ||
+    mermaidStatement.test(withoutGutter)
+  ) {
+    return false;
+  }
+  // Harness Markdown gives the contents of a rendered code block a stable
+  // indentation level. Prose and tables that follow it may still be indented,
+  // but less deeply. Treat that dedent as the end of the diagram; accepting
+  // every whitespace-prefixed line here made the renderer ingest the rest of
+  // a response and silently fail on otherwise valid Mermaid.
+  return leadingSpaces(withoutGutter) < bodyIndent;
 }
 
 function leadingSpaces(line: string): number {
