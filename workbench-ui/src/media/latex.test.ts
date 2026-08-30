@@ -49,6 +49,32 @@ $$\theta \leftarrow \theta-\eta\nabla_\theta L_{\mathrm{PPO}}$$
     ).toEqual([{ startRow: 1, endRow: 3, formula: "x_t=E(o_t)" }]);
   });
 
+  test("extracts equations beyond the renderer batch limit", () => {
+    const lines = Array.from({ length: 15 }, (_, index) => [
+      "[",
+      `x_${index}=${index}`,
+      "]",
+    ]).flat();
+
+    const blocks = extractDisplayMathBlocks(lines);
+
+    expect(blocks).toHaveLength(15);
+    expect(blocks.at(-1)).toEqual({
+      startRow: 42,
+      endRow: 44,
+      formula: "x_14=14",
+    });
+  });
+
+  test("keeps repeated equations at their distinct transcript rows", () => {
+    expect(
+      extractDisplayMathBlocks(["[", "x=1", "]", "[", "x=1", "]"])
+    ).toEqual([
+      { startRow: 0, endRow: 2, formula: "x=1" },
+      { startRow: 3, endRow: 5, formula: "x=1" },
+    ]);
+  });
+
   test("accepts text-only equations emitted by Codex", () => {
     const transcript = String.raw`But attention only solves:
 [

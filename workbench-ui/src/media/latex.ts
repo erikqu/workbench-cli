@@ -54,8 +54,7 @@ export function extractDisplayMathBlocks(
       !formula ||
       formula.length > MAX_FORMULA_CHARS ||
       unsafeTex.test(formula) ||
-      !mathSignal.test(formula) ||
-      blocks.some((block) => block.formula === formula)
+      !mathSignal.test(formula)
     ) {
       return;
     }
@@ -86,9 +85,6 @@ export function extractDisplayMathBlocks(
     }
     if (line === delimiter) {
       finish(row);
-      if (blocks.length >= MAX_FORMULAS) {
-        break;
-      }
       continue;
     }
     pending.push(line);
@@ -97,9 +93,9 @@ export function extractDisplayMathBlocks(
       delimiter = undefined;
     }
   }
-  return [...blocks, ...extractTikzBlocks(lines)]
-    .sort((left, right) => left.startRow - right.startRow)
-    .slice(0, MAX_FORMULAS);
+  return [...blocks, ...extractTikzBlocks(lines)].sort(
+    (left, right) => left.startRow - right.startRow
+  );
 }
 
 function extractTikzBlocks(lines: readonly string[]): DisplayMathBlock[] {
