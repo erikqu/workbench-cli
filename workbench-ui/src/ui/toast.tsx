@@ -34,5 +34,12 @@ export function ToastHost() {
     };
   }, [toast]);
 
-  return <ToastContainer toasts={toasts} />;
+  // ToastContainer is a normal flex child unless explicitly positioned. When
+  // mounted at the end of Workbench's full-screen column it used to steal rows
+  // from the active terminal while a toast appeared, then resize the PTY again
+  // when it closed. Only actionable warnings/errors reach this host; overlay
+  // them so notifications can never alter pane geometry.
+  return (
+    <ToastContainer bottom={0} left={0} position="absolute" toasts={toasts} />
+  );
 }

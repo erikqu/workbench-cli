@@ -190,6 +190,11 @@ with text already present in the agent composer.
 
 ## Overlay and close-control behavior
 
+- The app-level `ToastHost` is reserved for actionable warnings and errors and
+  its container must remain absolutely positioned. Never use a normal-flow
+  toast for routine open, close, theme, restart, loading, or success feedback:
+  a flex-layout toast steals terminal rows while visible and resizes every PTY
+  again when it disappears.
 - The sessions pane has a framed header, a full-width New Workspace action, and
   three-row outlined cards separated by one blank row. Session names and
   Option+Shift number hints live inside the cards; do not reintroduce a topic

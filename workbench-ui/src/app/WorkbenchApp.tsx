@@ -1,5 +1,4 @@
 import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { relative } from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import { useEffect, useState } from "react";
@@ -88,12 +87,7 @@ import {
   maxSessionsSidebarWidth,
   maxWorkspaceSidePaneWidth,
 } from "../ui/pane-layout";
-import {
-  applyTheme,
-  nextThemeName,
-  THEME_LABELS,
-  themeTokens,
-} from "../ui/theme";
+import { applyTheme, nextThemeName, themeTokens } from "../ui/theme";
 import { emitToast } from "../ui/toast";
 import {
   UPDATE_RESTART_EXIT_CODE,
@@ -642,11 +636,6 @@ export class ReactWorkbenchApp {
     for (const panel of this.shellPanels.values()) {
       panel.touch();
     }
-    emitToast({
-      title: `Theme: ${THEME_LABELS[next]}`,
-      variant: "accent",
-      duration: 1500,
-    });
     this.persistAndRender();
   }
 
@@ -921,11 +910,6 @@ export class ReactWorkbenchApp {
       }
       this.syncExplorerToActiveSession();
     }
-    emitToast({
-      title: "Workspace closed",
-      description: relative(homedir(), closing.cwd) || closing.cwd,
-      variant: "info",
-    });
     this.persistAndRender();
   }
 
@@ -1067,11 +1051,6 @@ export class ReactWorkbenchApp {
     this.syncExplorerToActiveSession();
     captureAnalytics("workspace_created", {
       session_count: this.state.sessions.length,
-    });
-    emitToast({
-      title: "Workspace created",
-      description: relative(homedir(), cwd) || cwd,
-      variant: "success",
     });
     this.persistAndRender();
   }

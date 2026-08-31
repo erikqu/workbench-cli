@@ -10,7 +10,6 @@ import type {
   TerminalReadable,
 } from "silvery";
 import { colors } from "../ui/theme";
-import { emitToast } from "../ui/toast";
 import {
   type PaneScrollPosition,
   parseTranscriptPercent,
@@ -255,12 +254,6 @@ export function restartServerIfPermissionStale(
   Bun.spawnSync(["tmux", "-S", socketPath, "kill-server"], {
     stderr: "ignore",
     stdout: "ignore",
-  });
-  emitToast({
-    title: "Agent session server restarted",
-    description:
-      "Its macOS folder permissions went stale; agents resume their last conversation.",
-    variant: "info",
   });
   return true;
 }
