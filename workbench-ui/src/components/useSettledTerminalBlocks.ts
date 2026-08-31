@@ -9,6 +9,8 @@ interface PositionedTerminalBlock {
   startRow: number;
 }
 
+const EMPTY_SETTLED_TERMINAL_BLOCKS: readonly never[] = Object.freeze([]);
+
 export const INLINE_MEDIA_LOOKBEHIND_VIEWPORTS = 3;
 export const INLINE_MEDIA_TOP_OFFSET = 2;
 export const INLINE_MEDIA_HORIZONTAL_INSET = 1;
@@ -105,7 +107,9 @@ export function visibleSettledTerminalBlocks<T>(
   // Native terminal graphics live outside the normal cell buffer. Never give
   // React even one stale frame in which it can retain an old placement while
   // the viewport is moving or the user has switched to another PTY.
-  return owner === panel && renderDelay <= 0 ? blocks : [];
+  return owner === panel && renderDelay <= 0
+    ? blocks
+    : EMPTY_SETTLED_TERMINAL_BLOCKS;
 }
 
 export function useSettledTerminalBlocks<T extends PositionedTerminalBlock>(

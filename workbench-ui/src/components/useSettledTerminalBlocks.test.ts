@@ -64,15 +64,29 @@ describe("visibleSettledTerminalBlocks", () => {
   const blocks = [{ startRow: 2, endRow: 4 }];
 
   test("hides native overlays immediately while the viewport is moving", () => {
+    const hidden = visibleSettledTerminalBlocks(
+      firstPanel,
+      firstPanel,
+      1,
+      blocks
+    );
+    expect(hidden).toEqual([]);
     expect(
       visibleSettledTerminalBlocks(firstPanel, firstPanel, 1, blocks)
-    ).toEqual([]);
+    ).toBe(hidden);
   });
 
   test("never carries an old panel's overlays into another session", () => {
+    const hidden = visibleSettledTerminalBlocks(
+      firstPanel,
+      secondPanel,
+      0,
+      blocks
+    );
+    expect(hidden).toEqual([]);
     expect(
       visibleSettledTerminalBlocks(firstPanel, secondPanel, 0, blocks)
-    ).toEqual([]);
+    ).toBe(hidden);
     expect(
       visibleSettledTerminalBlocks(firstPanel, firstPanel, 0, blocks)
     ).toBe(blocks);

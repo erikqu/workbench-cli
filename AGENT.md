@@ -393,6 +393,13 @@ on relaunch/hot-reload). File editing is not wired in the UI yet — text viewer
 are scrollable/read-only displays, though the state layer still carries dirty
 buffer/save plumbing for future editor work.
 
+Math and Mermaid terminal overlays intentionally disappear while the viewport
+is moving and return after it settles. The hidden value returned by
+`visibleSettledTerminalBlocks` must remain the shared stable empty array. A new
+`[]` on every render retriggers the overlay effects; their state updates then
+form an infinite React render loop (`Maximum update depth exceeded`) during
+scrolling.
+
 ## Silvery: authority + conformance
 
 The workbench is built on **silvery** (v0.24.0). Consult the installed package
