@@ -180,16 +180,33 @@ export async function tmuxScrollPosition(
   }
 }
 
+export function paneHasAgentBusyMarker(paneText: string): boolean {
+  // Match complete status rows, not arbitrary transcript prose. Agent output
+  // can quote phrases such as `Working (4s - esc to interrupt)` and used to
+  // leave the session rail animating even though the harness was idle.
+  const codexStatus =
+    /^\s*(?:[•·]\s*)?working\s*\([^\n)]*\b(?:esc|ctrl\+c|ctrl-c)\s+to\s+(?:interrupt|cancel)\b[^\n)]*\)\s*$/im;
+  const claudeFooter =
+    /^\s*⏵⏵[^\n]*\b(?:esc|ctrl\+c|ctrl-c)\s+to\s+(?:interrupt|cancel)\b[^\n]*$/im;
+  return codexStatus.test(paneText) || claudeFooter.test(paneText);
+}
+
+export function sessionAppearsRunning(
+  harnessStatuses: readonly boolean[],
+  terminalPaneTexts: readonly string[]
+): boolean {
+  return (
+    harnessStatuses.some(Boolean) ||
+    terminalPaneTexts.some(paneHasAgentBusyMarker)
+  );
+}
+
 export function harnessAppearsRunning(
   harnessId: string,
   paneText: string,
   recentlyActive: boolean
 ): boolean {
-  const hasBusyMarker =
-    /\bworking\s*\([^\n)]*\)|\b(?:esc|ctrl\+c|ctrl-c)\s+to\s+(?:interrupt|cancel)\b/i.test(
-      paneText
-    );
-  if (hasBusyMarker) {
+  if (paneHasAgentBusyMarker(paneText)) {
     return true;
   }
   // Codex exposes a stable busy marker even when animations are disabled and

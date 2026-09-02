@@ -57,6 +57,7 @@ import {
   captureTmuxPane,
   harnessAppearsRunning,
   recentTmuxActivity,
+  sessionAppearsRunning,
 } from "../terminal/tmux-activity";
 import {
   computeFilePatch,
@@ -508,16 +509,29 @@ export class ReactWorkbenchApp {
       const activeTmux = await recentTmuxActivity(TMUX_SOCKET_PATH);
       const statuses = await Promise.all(
         sessions.map(async (session) => {
-          const harnessStatuses = await Promise.all(
-            session.harnesses.map(async (harness) =>
-              harnessAppearsRunning(
-                harness.harnessId,
-                await captureTmuxPane(TMUX_SOCKET_PATH, harness.tmux),
-                activeTmux.has(harness.tmux)
+          const [harnessStatuses, terminalPaneTexts] = await Promise.all([
+            Promise.all(
+              session.harnesses.map(async (harness) =>
+                harnessAppearsRunning(
+                  harness.harnessId,
+                  await captureTmuxPane(TMUX_SOCKET_PATH, harness.tmux),
+                  activeTmux.has(harness.tmux)
+                )
               )
-            )
-          );
-          return [session.id, harnessStatuses.some(Boolean)] as const;
+            ),
+            Promise.all(
+              session.terminals.map((terminal) =>
+                captureTmuxPane(TMUX_SOCKET_PATH, terminal.tmux)
+              )
+            ),
+          ]);
+          // A coding agent can also be launched inside a regular terminal tab.
+          // Only explicit agent UI markers count there: ordinary shell output
+          // must not make the session rail look like a running agent.
+          return [
+            session.id,
+            sessionAppearsRunning(harnessStatuses, terminalPaneTexts),
+          ] as const;
         })
       );
       if (this.shuttingDown) {
