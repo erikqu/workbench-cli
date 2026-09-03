@@ -1,5 +1,65 @@
 import { describe, expect, test } from "bun:test";
-import { extractMermaidBlocks } from "./mermaid";
+import { extractMermaidBlocks, findBrowserExecutable } from "./mermaid";
+
+describe("Mermaid browser selection", () => {
+  test("prefers an explicit Puppeteer browser path", () => {
+    expect(
+      findBrowserExecutable(
+        "/opt/chrome",
+        () => "/usr/bin/google-chrome",
+        (path) => path === "/opt/chrome",
+        "linux"
+      )
+    ).toBe("/opt/chrome");
+  });
+
+  test("falls back to an installed browser on PATH", () => {
+    expect(
+      findBrowserExecutable(
+        undefined,
+        (command) => (command === "chromium" ? "/usr/bin/chromium" : null),
+        () => false,
+        "linux"
+      )
+    ).toBe("/usr/bin/chromium");
+  });
+
+  test("uses a standard macOS application path when needed", () => {
+    expect(
+      findBrowserExecutable(
+        undefined,
+        () => null,
+        (path) => path.includes("Google Chrome.app"),
+        "darwin"
+      )
+    ).toContain("Google Chrome.app");
+  });
+
+  test("uses a standard Linux path when the shell PATH is minimal", () => {
+    expect(
+      findBrowserExecutable(
+        undefined,
+        () => null,
+        (path) => path === "/snap/bin/chromium",
+        "linux"
+      )
+    ).toBe("/snap/bin/chromium");
+  });
+
+  test("does not depend on the user's shell", () => {
+    for (const shell of ["bash", "zsh", "fish"]) {
+      const expected = `/${shell}/bin/chromium`;
+      expect(
+        findBrowserExecutable(
+          undefined,
+          (command) => (command === "chromium" ? expected : null),
+          () => false,
+          "linux"
+        )
+      ).toBe(expected);
+    }
+  });
+});
 
 describe("terminal Mermaid extraction", () => {
   test("finds canonical fenced Markdown and reports its exact rows", () => {

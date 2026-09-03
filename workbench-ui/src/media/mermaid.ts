@@ -18,6 +18,58 @@ const RENDER_STYLES = {
 
 const cacheDir = join(Bun.env.HOME ?? homedir(), ".workbench", "mermaid-cache");
 
+const BROWSER_COMMANDS = [
+  "google-chrome-stable",
+  "google-chrome",
+  "chromium",
+  "chromium-browser",
+  "brave-browser-stable",
+  "brave-browser",
+  "microsoft-edge-stable",
+  "microsoft-edge",
+  "chrome",
+] as const;
+
+const BROWSER_PATHS = {
+  darwin: [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  ],
+  linux: [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+  ],
+} as const;
+
+export function findBrowserExecutable(
+  explicitPath = Bun.env.PUPPETEER_EXECUTABLE_PATH,
+  which: (command: string) => string | null = Bun.which,
+  fileExists: (path: string) => boolean = existsSync,
+  platform = process.platform
+): string | undefined {
+  if (explicitPath && fileExists(explicitPath)) {
+    return explicitPath;
+  }
+  for (const command of BROWSER_COMMANDS) {
+    const path = which(command);
+    if (path) {
+      return path;
+    }
+  }
+  const knownPaths =
+    platform === "darwin"
+      ? BROWSER_PATHS.darwin
+      : platform === "linux"
+        ? BROWSER_PATHS.linux
+        : [];
+  return knownPaths.find(fileExists);
+}
+
 export interface MermaidBlock {
   endRow: number;
   source: string;
@@ -226,11 +278,13 @@ function ensurePuppeteerConfig(): string {
     const path = join(cacheDir, "puppeteer.json");
     // --no-sandbox keeps Chromium happy under containers / root; the headless
     // "new" mode avoids the deprecated-headless warning on stderr.
+    const executablePath = findBrowserExecutable();
     writeFileSync(
       path,
       JSON.stringify({
         headless: "new",
         args: ["--no-sandbox", "--disable-gpu"],
+        ...(executablePath ? { executablePath } : {}),
       })
     );
     puppeteerConfigPath = path;
