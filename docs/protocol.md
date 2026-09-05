@@ -25,7 +25,34 @@ SSH control channel: subsystem `workbench-control-v1`. UTF-8 newline-delimited J
 {"id":"request-4","method":"setPhoneLayout","sessionId":"workbench_h_example","enabled":true}
 ```
 
-Events: `hello` with version 1, `snapshot`, `sessionState`, `ok`, or `error`. Snapshots include workspaces and live/saved panes; session state includes writable, local-attached and geometry information. `watch` refreshes snapshots periodically. See `services/shared/protocol.ts` and the Swift models for the concrete shapes.
+Events: `hello` with version 1, `snapshot`, `sessionState`, `ok`, `workspaceCreated`, `directory`, `fileChunk`, or `error`. The hello advertises optional `createWorkspace` and `files` capabilities; the iPhone disables unavailable features on older hosts. Snapshots include workspaces and live/saved panes; session state includes writable, local-attached and geometry information. `watch` refreshes snapshots every two seconds. See `services/shared/protocol.ts` and the Swift models for concrete shapes.
+
+Pane `harnessId` and `activity` are optional. Activity is `working` for recognized full-line busy markers, `recent` for recent output from other harnesses, or `idle`. Codex requires its explicit busy marker so a blinking idle cursor is not reported as work. The companion scans up to 64 live agent panes with bounded concurrency; captured text stays on the host. This is a heuristic, not an agent lifecycle API.
+
+### Workspace creation
+
+```json
+{"id":"2ac568f6-5e9f-496e-908b-ef482048e7d1","method":"createWorkspace","name":"my-project","parentDirectory":"~/projects","agent":"codex"}
+```
+
+Creation requires an approved SSH device key. `id` must be a UUID, `name` a single folder basename, `parentDirectory` an existing absolute or home-relative directory, and `agent` either `codex` (Codex plus terminal) or `terminal`. Existing folders are never reused or overwritten. The agent executable is checked before folder creation and is launched without permission-bypass flags. Arguments are quoted and tmux format expansion is escaped.
+
+The companion serializes creation and saves stable request, workspace, and tmux identities in its own `remote-workspaces.json` before starting processes. The response is `{id,type:"workspaceCreated",workspace}`, followed by a snapshot. Retrying the same UUID with the same normalized fields resumes an incomplete operation or returns the saved workspace; changing fields with a reused UUID fails. The phone retains that UUID while its creation form stays open with unchanged fields. Connection loss cannot prove creation failed: refresh or retry unchanged before starting another request. Failed operations never delete the folder or terminate already-started sessions.
+
+Phone-created workspaces are merged into discovery, not written into Workbench's desktop layout. The running desktop CLI does not auto-import this registry. A companion restart preserves tmux; successful creation records do not automatically restart exited sessions or sessions lost in a machine reboot.
+
+### Read-only workspace files
+
+```json
+{"id":"list-1","method":"listFiles","workspaceId":"workspace-id","path":"images"}
+{"id":"read-1","method":"readFile","workspaceId":"workspace-id","path":"images/photo.png","offset":0}
+```
+
+`path` is workspace-relative; the empty string lists its root. Directory replies contain `{id,type:"directory",directory:{path,entries:[{name,path,kind,size}],truncated}}`. Kinds are `directory`, `file`, or `symlink`. Listings stop at 500 entries or 512 KiB of entry JSON; links are visible but cannot be opened. Root lookup uses the authenticated workspace snapshot, and traversal, absolute paths, control characters, and symbolic-link components are rejected. On Linux, open descriptors are verified through `/proc/self/fd` before reading.
+
+File replies contain `{id,type:"fileChunk",fileChunk:{path,version,size,offset,nextOffset,data,eof}}`. `data` is base64 for at most 192 KiB; files larger than 20 MiB and non-regular files are rejected. `version` fingerprints descriptor identity, size, and nanosecond modification/change times. The host checks for changes during a chunk; the phone rejects changes in version or size between chunks and validates offsets, base64, and EOF. The channel allows four concurrent file operations. There are no file-write, upload, delete, or generic SFTP operations.
+
+The iPhone displays at most 256 KiB of UTF-8/UTF-16 text and downsampled raster images. File bytes travel through the encrypted control stream; the relay does not decode or persist them. Previews are held in app memory, not synchronized as a local workspace.
 
 SSH terminal channel: PTY request followed by exec `workbench-attach:<discovered-tmux-name>`. Channel bytes are terminal input/output, not structured agent messages. Window-change requests are gated by current ownership/local-attachment state. Arbitrary names not discovered from Workbench's private tmux server are rejected.
 
@@ -35,7 +62,7 @@ The first remote attachment becomes writer when no remote writer exists. Viewers
 
 Remote tmux clients initially attach with `ignore-size`. The host excludes its own attachment TTYs when detecting local clients. While a local client is attached, remote sizing remains ignored. Without a local client, only the remote writer contributes to terminal size; viewers mirror that size. Local input remains possible at all times.
 
-The writer can explicitly select **Fit to iPhone**. The companion saves the window's sizing setting and uses the phone's requested dimensions until that mode is disabled, the writer disconnects, or another device takes control. The desktop sees this smaller layout too. The previous sizing setting is restored on normal teardown. Session state includes `phoneLayout`; older hosts omit it and clients treat it as false. An abrupt host process crash (such as SIGKILL) can leave the tmux window manually sized; crash recovery is not yet persisted.
+The iPhone requests **Fit to iPhone** on the first writable state when opening or reconnecting to a session; the writer can then choose Desktop size. The companion saves the window's sizing setting and uses the phone's requested dimensions until that mode is disabled, the writer disconnects, or another device takes control. The desktop sees this smaller layout too. The previous sizing setting is restored on normal teardown. Session state includes `phoneLayout`; older hosts omit it and clients treat it as false. An abrupt host process crash (such as SIGKILL) can leave the tmux window manually sized; crash recovery is not yet persisted.
 
 The application does not promise exactly-once delivery: an SSH write succeeding does not prove an agent consumed the input. Nothing is resent on reconnect. Compose drafts are local, may contain sensitive text, and are not a synchronized offline coding workspace. Backgrounding closes the active client connection; the app reconnects on foreground and reattaches to a still-live session.
 

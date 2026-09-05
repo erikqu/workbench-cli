@@ -38,6 +38,7 @@ export function parseSnapshot(raw: string, liveNames: string[], warning?: string
         if (typeof tab.tmux !== 'string' || !/^workbench_[A-Za-z0-9_-]+$/.test(tab.tmux)) continue;
         mapped.add(tab.tmux);
         panes.push({ id: tab.tmux, tmux: tab.tmux, kind, live: live.has(tab.tmux),
+          ...(typeof tab.harnessId === 'string' ? { harnessId: tab.harnessId } : {}),
           name: typeof tab.name === 'string' ? tab.name : kind === 'agent' ? String(tab.harnessId || 'Agent') : 'Terminal' });
       }
     }

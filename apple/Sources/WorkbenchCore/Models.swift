@@ -20,11 +20,34 @@ public struct Pane: Codable, Identifiable, Hashable, Sendable {
     public let tmux: String
     public let kind: String
     public let live: Bool
+    public let harnessId: String?
+    public let activity: String?
 }
 public struct Snapshot: Codable, Sendable {
     public let workspaces: [Workspace]
     public let warning: String?
     public let updatedAt: Double
+}
+public struct RemoteFile: Codable, Identifiable, Hashable, Sendable {
+    public var id: String { path }
+    public let name: String
+    public let path: String
+    public let kind: String
+    public let size: Int
+}
+public struct DirectoryListing: Codable, Sendable {
+    public let path: String
+    public let entries: [RemoteFile]
+    public let truncated: Bool
+}
+public struct FileChunk: Decodable, Sendable {
+    public let path: String
+    public let version: String
+    public let size: Int
+    public let offset: Int
+    public let nextOffset: Int
+    public let data: String
+    public let eof: Bool
 }
 public struct SessionState: Codable, Sendable {
     public let sessionId: String
@@ -35,9 +58,14 @@ public struct SessionState: Codable, Sendable {
     public let rows: Int
 }
 public struct ControlEvent: Decodable, Sendable {
+    public let id: String?
     public let type: String
     public let version: Int?
     public let snapshot: Snapshot?
+    public let workspace: Workspace?
+    public let capabilities: [String]?
+    public let directory: DirectoryListing?
+    public let fileChunk: FileChunk?
     public let message: String?
     public let sessionId: String?
     public let writable: Bool?

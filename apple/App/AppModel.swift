@@ -15,6 +15,8 @@ import WorkbenchCore
     @Published var sessionState: SessionState?
     @Published var connected = false
     @Published var connecting = false
+    @Published var canCreateWorkspace = false
+    @Published var canBrowseFiles = false
     @Published var status = "Ready to connect"
     @Published var error: String?
     @Published var pairing: PairingQR?
@@ -31,6 +33,7 @@ import WorkbenchCore
     var terminalSize = (cols: 80, rows: 24)
     private var attachment = UUID()
     private var fitOnNextWritableState = false
+    private var lastWorkspaceDirectory: String?
     var isPreview: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--terminal-render-fixture")
@@ -60,6 +63,8 @@ import WorkbenchCore
             machines = [PreviewSession.machine]
             workspaces = [PreviewSession.workspace]
             login = PreviewSession.login
+            canCreateWorkspace = true
+            canBrowseFiles = true
             return
         }
 #endif
@@ -168,8 +173,10 @@ import WorkbenchCore
         reconnectTask?.cancel(); connectTask?.cancel(); connection?.close()
         let attempt = UUID(); generation = attempt
         disconnectHandled = false; reconnectTask = nil
-        if activeMachine?.id != machine.id { desiredSession = nil; activePane = nil; workspaces = [] }
+        if activeMachine?.id != machine.id { desiredSession = nil; activePane = nil; workspaces = []; lastWorkspaceDirectory = nil }
         activeMachine = machine; connected = false; connecting = true; sessionState = nil; status = "Connecting…"
+        canCreateWorkspace = false
+        canBrowseFiles = false
         connectTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -188,6 +195,10 @@ import WorkbenchCore
         }
     }
     private func handle(_ event: ControlEvent) {
+        if event.type == "hello" {
+            canCreateWorkspace = event.capabilities?.contains("createWorkspace") == true
+            canBrowseFiles = event.capabilities?.contains("files") == true
+        }
         if let snapshot = event.snapshot { workspaces = snapshot.workspaces; if let warning = snapshot.warning { status = warning } }
         if let state = event.sessionState, state.sessionId == activePane?.id { receiveSessionState(state) }
         if event.type == "error" { error = event.message }
@@ -205,12 +216,14 @@ import WorkbenchCore
         }
     }
     func open(_ pane: Pane) async {
+        lastWorkspaceDirectory = workspaces.first { $0.panes.contains { $0.id == pane.id } }?.cwd ?? lastWorkspaceDirectory
 #if DEBUG
         if isPreview {
             activePane = pane; connected = true; status = "Preview · sample session"
             fitOnNextWritableState = !ProcessInfo.processInfo.arguments.contains("--desktop-preview")
-            receiveSessionState(PreviewSession.state(phoneLayout: false, cols: 120, rows: 40))
+            receiveSessionState(PreviewSession.state(sessionId: pane.id, phoneLayout: false, cols: 120, rows: 40))
             try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled, activePane?.id == pane.id else { return }
             resetTerminal.send(())
             output.send(Data(PreviewSession.sample.utf8))
             return
@@ -231,7 +244,61 @@ import WorkbenchCore
             }, ended: { [weak self] in
                 Task { @MainActor in guard let self, self.generation == attempt, self.attachment == opened, self.activePane?.id == paneId else { return }; self.sessionState = nil; self.status = "Session detached. Reopen it to reconnect." }
             })
-        } catch { self.error = error.localizedDescription }
+        } catch { if generation == attempt, attachment == opened, !(error is CancellationError) { self.error = error.localizedDescription } }
+    }
+    var defaultWorkspaceParent: String {
+        let cwd = lastWorkspaceDirectory ?? workspaces.first(where: { !$0.cwd.isEmpty })?.cwd
+        return cwd.map { ($0 as NSString).deletingLastPathComponent }.flatMap { $0.isEmpty ? nil : $0 } ?? "~"
+    }
+    func createWorkspace(requestId: String, name: String, parentDirectory: String, agent: String) async throws -> Workspace {
+        guard connected else { throw WorkbenchError.disconnected }
+#if DEBUG
+        if isPreview {
+            let workspace = PreviewSession.newWorkspace(name: name, parentDirectory: parentDirectory, agent: agent)
+            workspaces.append(workspace)
+            return workspace
+        }
+#endif
+        guard let connection, canCreateWorkspace else { throw WorkbenchError.message("Update the host companion to create workspaces from this iPhone.") }
+        let attempt = generation
+        let workspace = try await connection.createWorkspace(requestId: requestId, name: name, parentDirectory: parentDirectory, agent: agent)
+        guard generation == attempt else { throw WorkbenchError.disconnected }
+        if !workspaces.contains(where: { $0.id == workspace.id }) { workspaces.append(workspace) }
+        return workspace
+    }
+    func listFiles(workspaceId: String, path: String) async throws -> DirectoryListing {
+#if DEBUG
+        if isPreview { return PreviewSession.files(path: path) }
+#endif
+        guard connected, let connection, canBrowseFiles else { throw WorkbenchError.message("Connect to an updated host companion to browse files.") }
+        let attempt = generation
+        let listing = try await connection.listFiles(workspaceId: workspaceId, path: path)
+        guard generation == attempt else { throw WorkbenchError.disconnected }
+        return listing
+    }
+    func readFile(workspaceId: String, path: String, progress: @escaping (Double) -> Void) async throws -> Data {
+#if DEBUG
+        if isPreview { progress(1); return PreviewSession.fileData(path: path) }
+#endif
+        guard connected, let connection, canBrowseFiles else { throw WorkbenchError.message("Connect to an updated host companion to preview files.") }
+        let attempt = generation
+        var result = Data(), expectedSize: Int?, expectedVersion: String?
+        while true {
+            try Task.checkCancellation()
+            let chunk = try await connection.readFile(workspaceId: workspaceId, path: path, offset: result.count)
+            guard generation == attempt else { throw WorkbenchError.disconnected }
+            guard chunk.path == path, chunk.size >= 0, chunk.size <= 20 * 1024 * 1024,
+                  !chunk.version.isEmpty, expectedVersion == nil || expectedVersion == chunk.version,
+                  expectedSize == nil || expectedSize == chunk.size,
+                  chunk.offset == result.count, let bytes = Data(base64Encoded: chunk.data), bytes.count <= 192 * 1024,
+                  chunk.nextOffset == chunk.offset + bytes.count, chunk.nextOffset <= chunk.size,
+                  chunk.eof == (chunk.nextOffset == chunk.size), !bytes.isEmpty || chunk.eof else {
+                throw WorkbenchError.message("The file changed while loading or its response was invalid. Try opening it again.")
+            }
+            expectedSize = chunk.size; expectedVersion = chunk.version; result.append(bytes)
+            progress(chunk.size == 0 ? 1 : Double(result.count) / Double(chunk.size))
+            if chunk.eof { return result }
+        }
     }
     func send(_ data: Data) {
 #if DEBUG
@@ -266,7 +333,7 @@ import WorkbenchCore
     func setPhoneLayout(_ enabled: Bool) async {
 #if DEBUG
         if isPreview {
-            sessionState = PreviewSession.state(phoneLayout: enabled, cols: enabled ? terminalSize.cols : 120, rows: enabled ? terminalSize.rows : 40)
+            sessionState = PreviewSession.state(sessionId: activePane?.id ?? "workbench_h_preview", phoneLayout: enabled, cols: enabled ? terminalSize.cols : 120, rows: enabled ? terminalSize.rows : 40)
             return
         }
 #endif

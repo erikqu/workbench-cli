@@ -73,7 +73,7 @@ export class HostSSH {
     channel.write(JSON.stringify(value) + '\n');
   }
   private control(channel: ServerChannel, connectionId: string) {
-    let buffer = '', watching = false, busy = false;
+    let buffer = '', watching = false, busy = false, fileRequests = 0;
     const controls = this.controls.get(connectionId) || new Set(); controls.add(channel); this.controls.set(connectionId, controls);
     const sendSnapshot = async (id?: string) => {
       if (busy) return; busy = true;
@@ -81,7 +81,14 @@ export class HostSSH {
       catch { this.send(channel, { ...(id ? { id } : {}), type: 'error', message: 'Could not read Workbench sessions on the host.' }); }
       finally { busy = false; }
     };
-    const timer = setInterval(() => { if (watching) void sendSnapshot(); }, 5000); timer.unref();
+    const fileOperation = async (id: string, operation: () => Promise<object>) => {
+      if (fileRequests >= 4) { this.send(channel, { id, type: 'error', message: 'Too many file requests. Try again shortly.' }); return; }
+      fileRequests++;
+      try { this.send(channel, { id, ...await operation() }); }
+      catch (error) { this.send(channel, { id, type: 'error', message: error instanceof Error ? error.message : 'Could not read this file or folder.' }); }
+      finally { fileRequests--; }
+    };
+    const timer = setInterval(() => { if (watching) void sendSnapshot(); }, 2000); timer.unref();
     channel.setEncoding('utf8');
     channel.on('data', (data: string) => {
       buffer += data;
@@ -99,13 +106,24 @@ export class HostSSH {
               .then(() => this.send(channel, { id: request.id, type: 'ok' }))
               .catch(() => this.send(channel, { id: request.id, type: 'error', message: 'Could not change layout. Take control and try again.' }));
           }
+          else if (request.method === 'createWorkspace') {
+            void this.sessions.createWorkspace({ requestId: request.id, name: request.name, parentDirectory: request.parentDirectory, agent: request.agent })
+              .then(result => { this.send(channel, { id: request.id, type: 'workspaceCreated', workspace: result.workspace }); this.send(channel, { type: 'snapshot', snapshot: result.snapshot }); })
+              .catch(error => this.send(channel, { id: request.id, type: 'error', message: error instanceof Error ? error.message : 'Could not create the workspace.' }));
+          }
+          else if (request.method === 'listFiles') {
+            void fileOperation(request.id, async () => ({ type: 'directory', directory: await this.sessions.listFiles(request.workspaceId, request.path) }));
+          }
+          else if (request.method === 'readFile') {
+            void fileOperation(request.id, async () => ({ type: 'fileChunk', fileChunk: await this.sessions.readFile(request.workspaceId, request.path, request.offset) }));
+          }
           else this.send(channel, { id: request.id, type: 'error', message: 'Unsupported operation' });
         } catch { this.send(channel, { type: 'error', message: 'Invalid control request' }); }
       }
     });
     channel.on('error', () => channel.close());
     channel.on('close', () => { clearInterval(timer); controls.delete(channel); });
-    this.send(channel, { type: 'hello', protocol: PROTOCOL, version: 1 });
+    this.send(channel, { type: 'hello', protocol: PROTOCOL, version: 1, capabilities: ['createWorkspace', 'files'] });
   }
   revoke(deviceId: string) { for (const value of this.connections.values()) if (value.deviceId === deviceId) value.client.end(); }
   close() { for (const value of this.connections.values()) value.client.end(); this.sessions.off('state', this.listener); }

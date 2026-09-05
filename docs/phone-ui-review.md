@@ -26,26 +26,49 @@ of vendored dependencies.
 - Reattachment resets resize deduplication and ignores callbacks from older
   terminal attachments. Text-size preferences persist on the phone.
 - macOS installs and host packaging repair node-pty's executable spawn helper.
+- Added New workspace: exclusive host folder creation with Codex + terminal or
+  Terminal only. Stable request/session identities make unchanged retries safe;
+  the desktop layout is never overwritten. Phone-created workspaces have their
+  own companion registry.
+- Added a persistent horizontal session tab strip and busy/recent-activity
+  indicators. Busy tabs animate unless Reduce Motion is enabled. Switching tabs
+  invalidates stale attachment callbacks and preserves per-session drafts.
+- Added Files from the workspace list and terminal, with folder navigation,
+  selectable text, downsampled images, pinch zoom, retry/empty/error states, and
+  strict read-only access. File versions detect changes between download chunks.
+- Fixed a large-transfer disconnect found by the actual Swift client: NIOSSH's
+  packet size can exceed the WebSocket limit. Host encrypted writes are now split
+  into ordered, backpressured 64 KiB frames without raising the tunnel limits.
 
 ## Verification
 
 - TypeScript typecheck and diff whitespace checks passed.
-- Six Node tests passed, including real PTYs and inherited/manual sizing restore.
+- 23 Node tests passed, including real PTYs, geometry restore, idempotent folder
+  creation, tmux quoting, activity, traversal/symlink guards, file versions/limits,
+  and binary reconstruction. Seven file tests also passed on isolated Linux.
 - Four platform tests passed: relay authentication/pairing, encrypted SSH, real
   tmux, leases, geometry, reconnect, and revocation.
-- Four Swift package tests passed.
+- The platform suite also passed with the actual Swift transport executable:
+  workspace creation/retry, concurrent listing/PNG/chunk requests, byte-identical
+  multi-chunk transfer, file versions, and recovery after a rejected request.
+- Six Swift package tests passed, including new capability/activity/file models.
 - Desktop UI automation passed onboarding, terminal input, tabs, resize,
   filtering, offline panes, reconnect, and disconnect.
 - iPhone simulator UI automation passed vertical swipe-to-wheel handling without
   a Copy menu, menu presentation, text-size changes, keyboard shortcuts/Ctrl,
   Compose editing, landscape rotation, and phone/desktop layout switching.
   The preview uses a steady cursor so XCTest does not wait on its blink animation.
+- Three simulator UI tests passed in `workbench-features-ui-2.xcresult`. In
+  addition to existing controls they exercise workspace creation, tab switching,
+  a working-agent indicator, directory/text/image previews, image zoom, and
+  rotation. Exported screenshots were visually inspected; short text previews
+  are top-aligned, and double-tap restores image fit after zoom/rotation.
 - Production dependency audit reported no known vulnerabilities.
-- Signed device builds installed successfully on the paired iPhone; the swipe
-  fix was also launched successfully. The latest auto-fit/workspace-title update
-  installed, but reopening was blocked by the phone's lock screen. Live device
-  interaction needs the user's confirmation; UI automation uses the simulator.
-- Supernova companion updated to `phone-layout-20260905`; service and relay health
+- Signed device builds installed successfully on the paired iPhone. The latest
+  workspace/tabs/files build installed, but reopening was blocked by the phone's
+  lock screen. Live device interaction needs the user's confirmation; UI
+  automation uses the simulator.
+- Supernova companion updated to `workspace-files-20260905`; service and relay health
   checks passed. The previous companion release remains available for rollback.
 
 ## Remaining limits
@@ -54,3 +77,9 @@ Forced process termination (SIGKILL) cannot restore a temporary tmux sizing
 override. Normal detach, disconnect, and control handoff are covered. A preview
 screenshot or simulator test does not prove a live phone-to-host connection;
 transport behavior is tested separately by the integration suite.
+
+The running desktop Workbench CLI does not automatically import the phone's
+workspace registry into its sidebar. Existing stopped sessions are not restarted
+automatically. Agent status is inferred from terminal markers/activity, not an
+agent lifecycle API. File previews allow at most 20 MiB, display 256 KiB of text,
+and do not follow symlinks. Large directories are truncated at 500 entries.

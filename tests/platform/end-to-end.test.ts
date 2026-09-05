@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { Pool } from 'pg';
 import { Client, utils, type ClientChannel } from 'ssh2';
 import { WebSocket, createWebSocketStream } from 'ws';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync, execFile } from 'node:child_process';
-import { createPrivateKey } from 'node:crypto';
+import { createPrivateKey, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import * as pty from 'node-pty';
 import { Store } from '../../services/relay/store';
@@ -69,12 +69,28 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
       const parsed = utils.parseKey(key1.private) as any;
       const seed = createPrivateKey(parsed.getPrivatePEM()).export({ type: 'pkcs8', format: 'der' }).subarray(-32);
       const fixture = path.resolve('apple/.transport-fixture.json');
-      await writeFile(fixture, JSON.stringify({ relay: origin, machineId, hostKey: canonicalKey(hostKey.public), login: user1, privateKey: seed.toString('base64'), sessionId: session }), { mode: 0o600 });
+      const imagePath = 'swift-preview.png', binaryPath = 'swift-chunks.bin';
+      const imageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+      const binarySize = 300_123;
+      await writeFile(path.join(directory, imagePath), Buffer.from(imageBase64, 'base64'));
+      await writeFile(path.join(directory, binaryPath), Buffer.from(Array.from({ length: binarySize }, (_, index) => index % 256)));
+      const desktopBeforeSwift = await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8');
+      await writeFile(fixture, JSON.stringify({ relay: origin, machineId, hostKey: canonicalKey(hostKey.public), login: user1, privateKey: seed.toString('base64'), sessionId: session,
+        workspaceId: 'fixture', parentDirectory: await realpath(directory), imagePath, imageBase64, binaryPath, binarySize }), { mode: 0o600 });
       try {
         const { stdout } = await promisify(execFile)(command[0], [...command.slice(1), process.env.WORKBENCH_SWIFT_FIXTURE || fixture], { timeout: 25_000 });
         assert.match(stdout, /EVENT snapshot/);
         assert.match(stdout, /OUTPUT/);
+        assert.match(stdout, /SWIFT_WORKSPACE_RETRY_OK/);
+        assert.match(stdout, /SWIFT_FILE_IMAGE_AND_CHUNKS_OK/);
+        assert.match(stdout, /SWIFT_CONTROL_ERROR_RECOVERY_OK/);
         assert.match(tmux(['capture-pane', '-p', '-t', session]), /^SWIFT_TRANSPORT_OK$/m);
+        assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopBeforeSwift);
+        const phoneRegistry = JSON.parse(await readFile(path.join(directory, 'remote-workspaces.json'), 'utf8'));
+        assert.equal(phoneRegistry.workspaces.length, 1, 'Swift creation retry must not duplicate folders or sessions');
+        const swiftWorkspace = phoneRegistry.workspaces[0].layout;
+        assert.equal(swiftWorkspace.cwd, path.join(await realpath(directory), 'Swift transport workspace'));
+        tmux(['has-session', '-t', '=' + swiftWorkspace.terminals[0].tmux]);
       } finally { await rm(fixture, { force: true }); }
     }
     async function ssh(user: typeof user1, key: typeof key1) {
@@ -95,6 +111,48 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
       return { client, control, events };
     }
     const first = await ssh(user1, key1);
+    assert.deepEqual(first.events.find(event => event.type === 'hello').capabilities, ['createWorkspace', 'files']);
+    async function control(request: Record<string, unknown> & { id: string }) {
+      const start = first.events.length;
+      first.control.write(JSON.stringify(request) + '\n');
+      await until(() => first.events.slice(start).some(event => event.id === request.id));
+      return first.events.slice(start).find(event => event.id === request.id);
+    }
+    const desktopLayout = await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8');
+    const createRequest = { id: randomUUID(), method: 'createWorkspace', name: 'Phone-created project', parentDirectory: directory, agent: 'terminal' };
+    const created = await control(createRequest);
+    assert.equal(created.type, 'workspaceCreated', JSON.stringify(created));
+    assert.equal(created.workspace.name, createRequest.name);
+    assert.equal(created.workspace.cwd, path.join(await realpath(directory), createRequest.name));
+    assert.equal(created.workspace.panes.length, 1);
+    assert.equal(created.workspace.panes[0].live, true);
+    assert.equal(created.workspace.panes[0].kind, 'terminal');
+    const createdSession = created.workspace.panes[0].tmux;
+    const createdPid = tmux(['display-message', '-p', '-t', '=' + createdSession + ':', '#{pane_pid}']);
+    assert.match(createdPid, /^\d+$/);
+    assert.deepEqual((await control(createRequest)).workspace, created.workspace, 'a lost-response retry reuses the saved folder and sessions');
+    assert.equal(tmux(['display-message', '-p', '-t', '=' + createdSession + ':', '#{pane_pid}']), createdPid);
+    const reused = await control({ ...createRequest, name: 'Different project' });
+    assert.equal(reused.type, 'error'); assert.match(reused.message, /already used/);
+    const collision = await control({ ...createRequest, id: randomUUID() });
+    assert.equal(collision.type, 'error'); assert.match(collision.message, /already exists/);
+    const traversal = await control({ ...createRequest, id: randomUUID(), name: '../escape' });
+    assert.equal(traversal.type, 'error');
+    assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopLayout);
+    // Exercise the same authenticated file transport used by the phone, including
+    // an actual PNG payload and rejected traversal outside the new workspace.
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+    await writeFile(path.join(created.workspace.cwd, 'preview.png'), png);
+    await writeFile(path.join(created.workspace.cwd, 'README.md'), '# Phone workspace\n');
+    const files = await control({ id: randomUUID(), method: 'listFiles', workspaceId: created.workspace.id, path: '' });
+    assert.equal(files.type, 'directory', JSON.stringify(files));
+    assert.deepEqual(files.directory.entries.map((entry: any) => entry.name).sort(), ['README.md', 'preview.png']);
+    const preview = await control({ id: randomUUID(), method: 'readFile', workspaceId: created.workspace.id, path: 'preview.png', offset: 0 });
+    assert.equal(preview.type, 'fileChunk', JSON.stringify(preview));
+    assert.equal(preview.fileChunk.eof, true);
+    assert.deepEqual(Buffer.from(preview.fileChunk.data, 'base64'), png);
+    const outside = await control({ id: randomUUID(), method: 'readFile', workspaceId: created.workspace.id, path: '../workbench-ui-state.json', offset: 0 });
+    assert.equal(outside.type, 'error');
     await assert.rejects(new Promise((resolve, reject) => first.client.exec('echo unauthorized', (err, channel) => err ? reject(err) : resolve(channel))), /Unable to exec/);
     async function attach(client: Client) {
       const stream = await new Promise<ClientChannel>((resolve, reject) => client.exec(`workbench-attach:${session}`, { pty: { term: 'xterm-256color', cols: 80, rows: 24 } }, (err, channel) => err ? reject(err) : resolve(channel)));

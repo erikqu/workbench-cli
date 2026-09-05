@@ -1,16 +1,41 @@
 #if DEBUG
 import Foundation
+import UIKit
 import WorkbenchCore
 
 // Sample data only: the UI is always RootView -> WorkspaceList -> TerminalScreen.
 // Preview mode never reads credentials or opens a network connection.
 enum PreviewSession {
     static let machine: Machine = decode(#"{"id":"preview","name":"Supernova preview","hostKey":"","online":true}"#)
-    static let workspace: Workspace = decode(#"{"id":"preview","name":"workbench-app","cwd":"~/workbench-app","panes":[{"id":"workbench_h_preview","tmux":"workbench_h_preview","name":"Workbench","kind":"agent","live":true}]}"#)
+    static let workspace: Workspace = decode(#"{"id":"preview","name":"workbench-app","cwd":"~/workbench-app","panes":[{"id":"workbench_h_preview","tmux":"workbench_h_preview","name":"Codex","kind":"agent","live":true,"harnessId":"codex","activity":"idle"},{"id":"workbench_t_preview","tmux":"workbench_t_preview","name":"Terminal 1","kind":"terminal","live":true}]}"#.replacingOccurrences(of: "\"activity\":\"idle\"", with: ProcessInfo.processInfo.arguments.contains("--busy-preview") ? "\"activity\":\"working\"" : "\"activity\":\"idle\""))
     static let login: Login = decode(#"{"accessToken":"preview-only","deviceId":"preview","expiresAt":0}"#)
 
-    static func state(phoneLayout: Bool, cols: Int = 48, rows: Int = 30) -> SessionState {
-        decode("{\"sessionId\":\"workbench_h_preview\",\"writable\":true,\"localAttached\":true,\"phoneLayout\":\(phoneLayout),\"cols\":\(cols),\"rows\":\(rows)}")
+    static func state(sessionId: String = "workbench_h_preview", phoneLayout: Bool, cols: Int = 48, rows: Int = 30) -> SessionState {
+        decode("{\"sessionId\":\"\(sessionId)\",\"writable\":true,\"localAttached\":true,\"phoneLayout\":\(phoneLayout),\"cols\":\(cols),\"rows\":\(rows)}")
+    }
+    static func newWorkspace(name: String, parentDirectory: String, agent: String) -> Workspace {
+        let id = UUID().uuidString
+        var panes: [[String: Any]] = [["id": "workbench_t_" + id, "tmux": "workbench_t_" + id, "name": "Terminal 1", "kind": "terminal", "live": true]]
+        if agent == "codex" { panes.insert(["id": "workbench_h_" + id, "tmux": "workbench_h_" + id, "name": "Codex", "kind": "agent", "live": true, "harnessId": "codex", "activity": "idle"], at: 0) }
+        let value: [String: Any] = ["id": id, "name": name, "cwd": (parentDirectory as NSString).appendingPathComponent(name), "panes": panes]
+        return try! JSONDecoder().decode(Workspace.self, from: JSONSerialization.data(withJSONObject: value))
+    }
+    static func files(path: String) -> DirectoryListing {
+        if path == "images" {
+            return decode(#"{"path":"images","truncated":false,"entries":[{"name":"preview.png","path":"images/preview.png","kind":"file","size":1000}]}"#)
+        }
+        return decode(#"{"path":"","truncated":false,"entries":[{"name":"images","path":"images","kind":"directory","size":0},{"name":"README.md","path":"README.md","kind":"file","size":80}]}"#)
+    }
+    static func fileData(path: String) -> Data {
+        if path == "images/preview.png" {
+            return UIGraphicsImageRenderer(size: CGSize(width: 600, height: 360)).image { context in
+                UIColor(red: 0.07, green: 0.16, blue: 0.12, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 600, height: 360))
+                ("Image preview" as NSString).draw(at: CGPoint(x: 50, y: 130), withAttributes: [.font: UIFont.systemFont(ofSize: 44, weight: .semibold), .foregroundColor: UIColor.systemGreen])
+                ("Sample file · no live connection" as NSString).draw(at: CGPoint(x: 50, y: 205), withAttributes: [.font: UIFont.systemFont(ofSize: 24), .foregroundColor: UIColor.white])
+            }.pngData()!
+        }
+        return Data("# Workbench\n\nRead-only text preview. Files stay on your computer.\n".utf8)
     }
 
     static let sample = ([

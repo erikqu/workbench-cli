@@ -60,7 +60,7 @@ struct RootView: View {
             if model.isPreview, path.isEmpty, let machine = model.machines.first,
                let pane = model.workspaces.first?.panes.first {
                 path.append(machine)
-                path.append(pane)
+                if !ProcessInfo.processInfo.arguments.contains("--workspace-list-preview") { path.append(pane) }
             }
         }
     }
@@ -96,11 +96,19 @@ struct WorkspaceList: View {
     let machine: Machine
     @State private var query = ""
     @State private var devices = false
+    @State private var newWorkspace = false
+    @State private var createdPane: Pane?
+    @State private var fileWorkspace: Workspace?
     var body: some View {
         List {
             Section {
                 HStack { if model.connecting { ProgressView() }; Text(model.status).font(.footnote).foregroundStyle(.secondary) }
                 if !model.connected { Button("Reconnect") { model.connect(machine) }.disabled(model.connecting) }
+                Button { newWorkspace = true } label: { Label("New workspace", systemImage: "folder.badge.plus") }
+                    .disabled(!model.connected || !model.canCreateWorkspace).accessibilityIdentifier("workspace.new")
+                if model.connected && !model.canCreateWorkspace {
+                    Text("Update the host companion to create workspaces here.").font(.caption).foregroundStyle(.secondary)
+                }
             }
             ForEach(model.workspaces.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.cwd.localizedCaseInsensitiveContains(query) }) { workspace in
                 Section {
@@ -110,12 +118,27 @@ struct WorkspaceList: View {
                                 icon: { Image(systemName: pane.kind == "agent" ? "sparkle" : "terminal") }
                         }.disabled(!pane.live || !model.connected)
                     }
+                    if !workspace.cwd.isEmpty {
+                        Button { fileWorkspace = workspace } label: { Label("Files", systemImage: "folder") }
+                            .disabled(!model.connected || !model.canBrowseFiles)
+                    }
                 } header: { Text(workspace.name) } footer: { Text(workspace.cwd).font(.caption2) }
             }
         }
         .navigationTitle(machine.name).searchable(text: $query, prompt: "Find a workspace")
         .task { if model.activeMachine?.id != machine.id || (!model.connected && !model.connecting) { model.connect(machine) } }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { devices = true } label: { Image(systemName: "iphone.and.arrow.forward") }.accessibilityLabel("Paired devices") } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { Button { newWorkspace = true } label: { Label("New", systemImage: "plus") }.disabled(!model.connected || !model.canCreateWorkspace) }
+            ToolbarItem(placement: .topBarTrailing) { Button { devices = true } label: { Image(systemName: "iphone.and.arrow.forward") }.accessibilityLabel("Paired devices") }
+        }
+        .sheet(isPresented: $newWorkspace) {
+            NewWorkspaceView(model: model) { workspace in
+                query = ""
+                createdPane = workspace.panes.first(where: { $0.live })
+            }
+        }
+        .navigationDestination(item: $createdPane) { pane in TerminalScreen(model: model, pane: pane) }
+        .sheet(item: $fileWorkspace) { workspace in WorkspaceFilesView(model: model, workspace: workspace) }
         .sheet(isPresented: $devices) {
             NavigationStack {
                 List(model.grants) { grant in

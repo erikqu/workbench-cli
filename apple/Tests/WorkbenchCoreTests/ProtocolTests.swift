@@ -1,6 +1,26 @@
 import XCTest
 @testable import WorkbenchCore
 final class ProtocolTests: XCTestCase {
+    func testWorkspaceCapabilitiesAndActivity() throws {
+        let decoder = JSONDecoder()
+        let hello = try decoder.decode(ControlEvent.self, from: Data(#"{"type":"hello","version":1,"capabilities":["createWorkspace","files"]}"#.utf8))
+        XCTAssertEqual(hello.capabilities, ["createWorkspace", "files"])
+        let created = try decoder.decode(ControlEvent.self, from: Data(#"{"id":"request","type":"workspaceCreated","workspace":{"id":"ws","name":"project","cwd":"/tmp/project","panes":[{"id":"workbench_h_test","tmux":"workbench_h_test","name":"Codex","kind":"agent","live":true,"harnessId":"codex","activity":"working"}]}}"#.utf8))
+        XCTAssertEqual(created.id, "request")
+        XCTAssertEqual(created.workspace?.name, "project")
+        XCTAssertEqual(created.workspace?.panes.first?.activity, "working")
+    }
+
+    func testDirectoryAndBinaryChunkProtocol() throws {
+        let decoder = JSONDecoder()
+        let directory = try decoder.decode(ControlEvent.self, from: Data(#"{"id":"request","type":"directory","directory":{"path":"images","entries":[{"name":"photo.png","path":"images/photo.png","kind":"file","size":3}],"truncated":false}}"#.utf8))
+        XCTAssertEqual(directory.directory?.entries.first?.path, "images/photo.png")
+        XCTAssertEqual(directory.directory?.truncated, false)
+        let file = try decoder.decode(ControlEvent.self, from: Data(#"{"id":"request","type":"fileChunk","fileChunk":{"path":"images/photo.png","version":"test-version","size":3,"offset":0,"nextOffset":3,"data":"AP+A","eof":true}}"#.utf8))
+        XCTAssertEqual(file.fileChunk?.nextOffset, 3)
+        XCTAssertEqual(Data(base64Encoded: file.fileChunk!.data), Data([0, 255, 128]))
+    }
+
     func testIdentityRoundTrip() throws {
         let identity = try DeviceIdentity()
         XCTAssertEqual(identity.publicKey, try DeviceIdentity(rawPrivateKey: identity.rawPrivateKey).publicKey)

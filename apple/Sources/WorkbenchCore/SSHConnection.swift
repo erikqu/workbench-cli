@@ -14,6 +14,9 @@ import NIOSSH
     private var terminal: Channel?
     private var closed = false
     private var disconnected: (@Sendable (Error) -> Void)?
+    private var requests: [String: CheckedContinuation<ControlEvent, Error>] = [:]
+    private var requestTimeouts: [String: Task<Void, Never>] = [:]
+    private var attachmentGeneration = UUID()
     public init() {}
     public func connect(origin: URL, machineId: String, hostKey: String, login: Login, identity: DeviceIdentity,
                         onEvent: @escaping @Sendable (ControlEvent) -> Void,
@@ -42,19 +45,30 @@ import NIOSSH
             }.takingOwnershipOfDescriptor(inputOutput: bridge.nioDescriptor).get()
             parent?.closeFuture.whenComplete { [weak self] _ in Task { @MainActor in self?.fail(WorkbenchError.disconnected) } }
             bridge.start()
-            control = try await makeChannel(request: .control, output: { _ in }, event: onEvent, ended: { [weak self] in Task { @MainActor in self?.fail(WorkbenchError.disconnected) } })
+            control = try await makeChannel(request: .control, output: { _ in }, event: { [weak self] event in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let id = event.id, self.requests[id] != nil {
+                        if event.type == "error" { self.finishRequest(id, result: .failure(WorkbenchError.message(event.message ?? "The operation failed."))) }
+                        else { self.finishRequest(id, result: .success(event)) }
+                        return
+                    }
+                    onEvent(event)
+                }
+            }, ended: { [weak self] in Task { @MainActor in self?.fail(WorkbenchError.disconnected) } })
             try await command(method: "watch")
         } catch { if parent == nil { bridge.bootstrapFailed() }; close(); throw error }
     }
     private func makeChannel(request: StreamHandler.Request, output: @escaping @Sendable (Data) -> Void, event: @escaping @Sendable (ControlEvent) -> Void, ended: @escaping @Sendable () -> Void) async throws -> Channel {
         guard let parent else { throw WorkbenchError.disconnected }
+        let failed: @Sendable (Error) -> Void = { [weak self] error in Task { @MainActor in self?.fail(error) } }
         let promise = parent.eventLoop.makePromise(of: Channel.self)
         parent.eventLoop.execute {
             do {
                 let ssh = try parent.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
                 ssh.createChannel(promise) { channel, type in
                     guard type == .session else { return channel.eventLoop.makeFailedFuture(WorkbenchError.unsupportedProtocol) }
-                    return channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(StreamHandler(request: request, output: output, event: event, ended: ended)) }
+                    return channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(StreamHandler(request: request, output: output, event: event, ended: ended, failed: failed)) }
                 }
             } catch { promise.fail(error) }
         }
@@ -62,8 +76,13 @@ import NIOSSH
     }
     public func attach(sessionId: String, cols: Int, rows: Int, output: @escaping @Sendable (Data) -> Void, ended: @escaping @Sendable () -> Void) async throws {
         guard sessionId.range(of: "^workbench_[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { throw WorkbenchError.message("Invalid session identifier.") }
-        if let terminal { try? await terminal.close().get() }
-        terminal = try await makeChannel(request: .terminal(sessionId, cols, rows), output: output, event: { _ in }, ended: ended)
+        let attempt = UUID(); attachmentGeneration = attempt
+        let previous = terminal; terminal = nil
+        if let previous { try? await previous.close().get() }
+        guard attachmentGeneration == attempt, !Task.isCancelled else { throw CancellationError() }
+        let channel = try await makeChannel(request: .terminal(sessionId, cols, rows), output: output, event: { _ in }, ended: ended)
+        guard attachmentGeneration == attempt, !Task.isCancelled else { channel.close(promise: nil); throw CancellationError() }
+        terminal = channel
     }
     public func input(_ data: Data) async throws {
         guard data.count <= 1_048_576, let terminal, terminal.isActive else { throw WorkbenchError.disconnected }
@@ -76,27 +95,82 @@ import NIOSSH
     }
     public func takeControl(sessionId: String) async throws { try await command(method: "takeControl", sessionId: sessionId) }
     public func setPhoneLayout(sessionId: String, enabled: Bool) async throws { try await command(method: "setPhoneLayout", sessionId: sessionId, enabled: enabled) }
-    public func detachTerminal() { terminal?.close(promise: nil); terminal = nil }
+    public func detachTerminal() { attachmentGeneration = UUID(); terminal?.close(promise: nil); terminal = nil }
     public func refresh() async throws { try await command(method: "list") }
     private struct Command: Encodable {
         let id: String
         let method: String
         let sessionId: String?
         let enabled: Bool?
+        var name: String? = nil
+        var parentDirectory: String? = nil
+        var agent: String? = nil
+        var workspaceId: String? = nil
+        var path: String? = nil
+        var offset: Int? = nil
     }
     private func command(method: String, sessionId: String? = nil, enabled: Bool? = nil) async throws {
+        try await writeCommand(Command(id: UUID().uuidString, method: method, sessionId: sessionId, enabled: enabled))
+    }
+    private func writeCommand(_ command: Command) async throws {
         guard let control else { throw WorkbenchError.disconnected }
-        var data = try JSONEncoder().encode(Command(id: UUID().uuidString, method: method, sessionId: sessionId, enabled: enabled)); data.append(10)
+        var data = try JSONEncoder().encode(command); data.append(10)
         var buffer = control.allocator.buffer(capacity: data.count); buffer.writeBytes(data)
         try await control.writeAndFlush(buffer).get()
+    }
+    public func createWorkspace(requestId: String, name: String, parentDirectory: String, agent: String) async throws -> Workspace {
+        let event = try await request(Command(id: requestId, method: "createWorkspace", sessionId: nil, enabled: nil, name: name, parentDirectory: parentDirectory, agent: agent))
+        guard let workspace = event.workspace else { throw WorkbenchError.unsupportedProtocol }
+        return workspace
+    }
+    public func listFiles(workspaceId: String, path: String) async throws -> DirectoryListing {
+        let event = try await request(Command(id: UUID().uuidString, method: "listFiles", sessionId: nil, enabled: nil, workspaceId: workspaceId, path: path))
+        guard let directory = event.directory else { throw WorkbenchError.unsupportedProtocol }
+        return directory
+    }
+    public func readFile(workspaceId: String, path: String, offset: Int) async throws -> FileChunk {
+        let event = try await request(Command(id: UUID().uuidString, method: "readFile", sessionId: nil, enabled: nil, workspaceId: workspaceId, path: path, offset: offset))
+        guard let chunk = event.fileChunk else { throw WorkbenchError.unsupportedProtocol }
+        return chunk
+    }
+    private func request(_ command: Command) async throws -> ControlEvent {
+        guard !closed, control != nil else { throw WorkbenchError.disconnected }
+        let id = command.id
+        guard requests[id] == nil else { throw WorkbenchError.message("This operation is already in progress.") }
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                requests[id] = continuation
+                requestTimeouts[id] = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                    self?.finishRequest(id, result: .failure(WorkbenchError.message("The operation has not been confirmed. If creating a workspace, retry without changing its fields to check safely.")))
+                }
+                Task { [weak self] in
+                    guard let self, requests[id] != nil else { return }
+                    do { try await writeCommand(command) }
+                    catch { finishRequest(id, result: .failure(error)) }
+                }
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in self?.finishRequest(id, result: .failure(CancellationError())) }
+        }
+    }
+    private func finishRequest(_ id: String, result: Result<ControlEvent, Error>) {
+        requestTimeouts.removeValue(forKey: id)?.cancel()
+        requests.removeValue(forKey: id)?.resume(with: result)
+    }
+    private func cancelRequests() {
+        for id in Array(requests.keys) { finishRequest(id, result: .failure(WorkbenchError.message("Connection lost. If creating a workspace, retry with the same fields to check safely."))) }
     }
     private func fail(_ error: Error) {
         let notify = !closed; closed = true
         guard notify else { return }
+        cancelRequests()
         bridge?.close(); parent?.close(promise: nil); disconnected?(error)
     }
     public func close() {
         closed = true
+        attachmentGeneration = UUID(); cancelRequests()
         bridge?.close(); parent?.close(promise: nil)
     }
     deinit { bridge?.close(); parent?.close(promise: nil); group.shutdownGracefully { _ in } }
@@ -127,9 +201,10 @@ private final class StreamHandler: ChannelDuplexHandler {
     let output: @Sendable (Data) -> Void
     let event: @Sendable (ControlEvent) -> Void
     let ended: @Sendable () -> Void
+    let failed: @Sendable (Error) -> Void
     var pending = Data()
-    init(request: Request, output: @escaping @Sendable (Data) -> Void, event: @escaping @Sendable (ControlEvent) -> Void, ended: @escaping @Sendable () -> Void) {
-        self.request = request; self.output = output; self.event = event; self.ended = ended
+    init(request: Request, output: @escaping @Sendable (Data) -> Void, event: @escaping @Sendable (ControlEvent) -> Void, ended: @escaping @Sendable () -> Void, failed: @escaping @Sendable (Error) -> Void) {
+        self.request = request; self.output = output; self.event = event; self.ended = ended; self.failed = failed
     }
     func channelActive(context: ChannelHandlerContext) {
         switch request {
@@ -154,16 +229,16 @@ private final class StreamHandler: ChannelDuplexHandler {
                 let line = pending[..<newline]; pending.removeSubrange(...newline)
                 do {
                     let value = try JSONDecoder().decode(ControlEvent.self, from: line)
-                    if value.type == "hello" && value.version != 1 { context.fireErrorCaught(WorkbenchError.unsupportedProtocol); context.close(promise: nil); return }
+                    if value.type == "hello" && value.version != 1 { failed(WorkbenchError.unsupportedProtocol); context.close(promise: nil); return }
                     event(value)
-                } catch { context.fireErrorCaught(error); context.close(promise: nil); return }
+                } catch { failed(error); context.close(promise: nil); return }
             }
         }
     }
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         context.write(wrapOutboundOut(SSHChannelData(type: .channel, data: .byteBuffer(unwrapOutboundIn(data)))), promise: promise)
     }
-    func errorCaught(context: ChannelHandlerContext, error: Error) { context.close(promise: nil) }
+    func errorCaught(context: ChannelHandlerContext, error: Error) { failed(error); context.close(promise: nil) }
     func channelInactive(context: ChannelHandlerContext) { ended(); context.fireChannelInactive() }
 }
 private final class ConnectionErrors: ChannelInboundHandler {

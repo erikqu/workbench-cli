@@ -37,7 +37,18 @@ export interface HostConfiguration {
 export type ControlRequest =
   | { id: string; method: 'list' | 'watch' }
   | { id: string; method: 'takeControl'; sessionId: string }
+  | { id: string; method: 'createWorkspace'; name: string; parentDirectory: string; agent: 'codex' | 'terminal' }
+  | { id: string; method: 'listFiles'; workspaceId: string; path: string }
+  | { id: string; method: 'readFile'; workspaceId: string; path: string; offset: number }
   | { id: string; method: 'setPhoneLayout'; sessionId: string; enabled: boolean };
+export interface DirectoryListing {
+  path: string;
+  entries: { name: string; path: string; kind: 'directory' | 'file' | 'symlink'; size: number }[];
+  truncated: boolean;
+}
+export interface FileChunk {
+  path: string; size: number; version: string; offset: number; nextOffset: number; data: string; eof: boolean;
+}
 export function text(value: unknown, name: string, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw new Error(`Invalid ${name}`);
   return value.trim();

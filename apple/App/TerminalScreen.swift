@@ -10,11 +10,44 @@ struct TerminalScreen: View {
     @State private var composing = false
     @State private var settings = false
     @State private var keyboardShown = false
+    @State private var selectedPane: Pane?
+    @State private var showingFiles = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var currentPane: Pane { selectedPane ?? pane }
+    private var workspace: Workspace? {
+        model.workspaces.first { workspace in workspace.panes.contains { $0.id == currentPane.id } }
+    }
     private var workspaceName: String {
-        model.workspaces.first { workspace in workspace.panes.contains { $0.id == pane.id } }?.name ?? "Terminal"
+        workspace?.name ?? "Terminal"
     }
     var body: some View {
         VStack(spacing: 0) {
+            if let workspace {
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(workspace.panes) { tab in
+                                let active = model.connected && tab.live && ["working", "recent"].contains(tab.activity ?? "")
+                                Button { selectedPane = tab } label: {
+                                    HStack(spacing: 6) {
+                                        if active && !reduceMotion { ProgressView().controlSize(.mini).tint(.green) }
+                                        else { Image(systemName: tab.kind == "agent" ? "sparkle" : "terminal").foregroundStyle(active ? Color.green : Color.secondary) }
+                                        Text(tab.name).lineLimit(1)
+                                    }.font(.subheadline.weight(currentPane.id == tab.id ? .semibold : .regular))
+                                        .padding(.horizontal, 12).frame(height: 38)
+                                        .background(currentPane.id == tab.id ? Color.accentColor.opacity(0.18) : Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(currentPane.id == tab.id ? Color.accentColor : Color.clear))
+                                }.buttonStyle(.plain).disabled(!tab.live || !model.connected)
+                                    .accessibilityLabel(tab.name)
+                                    .accessibilityIdentifier("terminal.tab.\(tab.id)")
+                                    .accessibilityValue("\(currentPane.id == tab.id ? "Selected" : "Not selected"), \(active ? (tab.activity == "working" ? "Working" : "Recent activity") : (tab.live ? "Idle" : "Stopped"))")
+                                    .id(tab.id)
+                            }
+                        }.padding(.horizontal, 10).padding(.vertical, 6)
+                    }
+                    .onChange(of: currentPane.id) { _, id in reader.scrollTo(id, anchor: .center) }
+                }
+            }
             HStack(spacing: 8) {
                 Circle().fill(model.connected && !model.isPreview ? Color.green : Color.orange).frame(width: 6, height: 6)
                 Text(model.status).font(.caption).lineLimit(2)
@@ -38,13 +71,17 @@ struct TerminalScreen: View {
             }
             NativeTerminal(model: model).background(Color(red: 0.06, green: 0.08, blue: 0.07))
             if !model.connected || model.sessionState == nil {
-                Button("Reconnect") { if model.connected { Task { await model.open(pane) } } else if let machine = model.activeMachine { model.connect(machine) } }
+                Button("Reconnect") { if model.connected { Task { await model.open(currentPane) } } else if let machine = model.activeMachine { model.connect(machine) } }
                     .buttonStyle(.bordered).padding(8).disabled(model.connecting)
             }
             HStack {
                 Button { model.keyboardVisibility.send(!keyboardShown) } label: {
                     Label(keyboardShown ? "Hide keyboard" : "Keyboard", systemImage: keyboardShown ? "keyboard.chevron.compact.down" : "keyboard")
                 }.accessibilityIdentifier("terminal.keyboard")
+                Spacer()
+                Button { model.keyboardVisibility.send(false); showingFiles = true } label: {
+                    Label("Files", systemImage: "folder")
+                }.accessibilityIdentifier("terminal.files").disabled(workspace == nil || !model.connected || !model.canBrowseFiles)
                 Spacer()
                 Button { model.keyboardVisibility.send(false); composing = true } label: {
                     Label("Compose", systemImage: "square.and.pencil")
@@ -64,8 +101,11 @@ struct TerminalScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
-        .task { await model.open(pane) }
+        .task(id: currentPane.id) { await model.open(currentPane) }
         .onDisappear { model.leaveTerminal() }
+        .sheet(isPresented: $showingFiles) {
+            if let workspace { WorkspaceFilesView(model: model, workspace: workspace) }
+        }
         .sheet(isPresented: $composing) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 12) {

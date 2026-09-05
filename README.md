@@ -6,9 +6,9 @@ The public relay supports separate accounts and independently paired machines. U
 
 ## Implementation status
 
-Implemented: iOS app source, shared Swift transport, host companion, authenticated public relay, encrypted terminal transport, pairing and revocation, installation packaging, deployment configuration, and automated integration tests. Linux host packaging and Swift-to-host interoperability have been exercised locally.
+Implemented: native iPhone app, shared Swift transport, host companion, authenticated relay, encrypted terminal transport, pairing and revocation, folder-based workspace creation, live session tabs, read-only text/image browsing, installation packaging, and automated integration tests.
 
-The iPhone interface has **not** been built with Xcode or tested on a physical iPhone in this Linux workspace. No public service has been deployed and no TestFlight build has been uploaded. Follow the [release checklist](docs/release-checklist.md) before distributing this as a public app. Apple account deletion/revocation integration and production hardening remain release gates.
+The app has been built with Xcode, installed on a paired iPhone, and exercised with native simulator UI automation. A private deployment connects to Supernova over Tailscale; this is not a public production launch or TestFlight release. See the [phone UI review](docs/phone-ui-review.md) for verification boundaries and the [release checklist](docs/release-checklist.md) before public distribution. Apple account deletion/revocation integration and production hardening remain release gates.
 
 ## How it works
 
@@ -21,15 +21,15 @@ iPhone app ── outbound HTTPS/WSS ── public relay ── outbound WSS ─
 
 The relay authenticates accounts, tracks device grants and routes encrypted bytes. The companion independently checks device keys approved on the host. Session names, terminal content and input travel inside SSH, not through the relay's HTTP API. The relay can see account/device/machine metadata, IP addresses, connection timing and traffic sizes.
 
-The companion reads Workbench's saved layout and private tmux socket. It does not write the layout, restart agents, or kill sessions when a phone disconnects. Run it as the **same OS user** as Workbench. The development machine must remain awake and online.
+The companion reads Workbench's saved layout and private tmux socket. It does not overwrite the desktop layout or kill sessions when a phone disconnects. New phone workspaces are saved separately and start fresh sessions only when requested. Run it as the **same OS user** as Workbench. The development machine must remain awake and online.
 
 ## Repository
 
 | Location | Purpose |
 | --- | --- |
-| `apple/App` | Native iPhone UI: pairing, workspaces, terminal, keyboard controls, drafts |
+| `apple/App` | Native iPhone UI: pairing, workspaces, tabs, terminal, files/images, drafts |
 | `apple/Sources/WorkbenchCore` | API client, device identity, pinned SSH over WebSocket |
-| `services/host` | Discovery, existing terminal attachment, local approvals and user service |
+| `services/host` | Discovery, terminal attachment, workspace creation, read-only files, approvals |
 | `services/relay` | Apple authentication, PostgreSQL grants and opaque tunnel routing |
 | `deploy` | Single-instance HTTPS relay deployment |
 | `tests/platform` | Isolated database + real tmux + encrypted relay integration tests |
@@ -107,10 +107,19 @@ npm run host -- start
 ## Session behavior
 
 - One remote connection holds terminal input control. Other connections can view and explicitly take control. Local terminal input is not locked out.
-- A locally attached terminal keeps its geometry; the phone shows a horizontally scrollable view. Otherwise the remote writer may resize the session.
+- Opening a writable session automatically fits its grid to the iPhone. This temporarily changes desktop geometry too; choose Desktop size to retain the original grid and pan. Detaching restores the previous sizing policy. Read-only viewers cannot resize the writer's session.
+- Tabs remain visible above the terminal. A spinner reflects a recognized agent busy marker; other harnesses can show recent output activity. These are terminal-derived indicators, not a structured agent status API.
 - Backgrounding or losing connectivity detaches the phone, not the running agent. Reconnection creates a new attachment to the same live session.
 - Input is never replayed automatically. Delivery can be uncertain during a network failure; inspect the terminal before resending. Unsent compose drafts stay on the phone.
-- Saved but stopped sessions are shown as unavailable. The app does not create or restart them.
+- Saved but stopped sessions are shown as unavailable and are not automatically restarted.
 - Relaunching the current Workbench CLI may detach another tmux client. The phone can reattach without restarting the underlying process.
 
-This first implementation intentionally excludes offline code synchronization, a phone file editor, new remote sessions, Windows hosts, collaboration between different account owners, and the later native Mac client. See [protocol and security boundaries](docs/protocol.md).
+### Create a workspace and browse files
+
+Choose **New workspace** from the machine's workspace list, enter a new folder name and an existing parent folder on the host, and select Codex + terminal or Terminal only. The parent defaults to the last workspace's parent. Existing folders are never overwritten. Codex starts with its normal safety defaults. Retries with unchanged fields reuse the same request and sessions.
+
+The phone's workspace registry is `<workbench-directory>/remote-workspaces.json`. Its folders and tmux sessions are real on the host and appear in the phone list, but the currently running desktop Workbench CLI does not automatically import them into its sidebar. Keeping this registry separate avoids overwriting the desktop's in-memory layout. Companion restarts preserve tmux sessions; host reboots do not automatically recreate them.
+
+Use **Files** from a workspace or terminal to browse folders, read selectable text, and preview images with pinch zoom. Access is read-only, confined to that workspace, and does not follow symbolic links. Files are limited to 20 MiB, directory listings to 500 entries, and text display to 256 KiB. Supported raster formats include PNG, JPEG, GIF (first frame), HEIC, WebP, TIFF, and BMP; previews are downsampled to at most 1600 pixels on the longest edge. Modified files must be reopened if they change during download.
+
+This implementation excludes offline code synchronization, a phone file editor, Windows hosts, collaboration between different account owners, and the later native Mac client. See [protocol and security boundaries](docs/protocol.md).

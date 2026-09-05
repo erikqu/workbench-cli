@@ -3,7 +3,7 @@ export interface Profile {
   auth: 'agent' | 'key' | 'password'; keyPath: string;
 }
 export interface Credentials { password?: string; passphrase?: string }
-export interface Pane { id: string; name: string; tmux: string; kind: 'agent' | 'terminal'; live: boolean }
+export interface Pane { id: string; name: string; tmux: string; kind: 'agent' | 'terminal'; live: boolean; harnessId?: string; activity?: 'working' | 'recent' | 'idle' }
 export interface Workspace { id: string; name: string; cwd: string; panes: Pane[] }
 export interface Snapshot { workspaces: Workspace[]; warning?: string; updatedAt: number }
 export type RemoteEvent =

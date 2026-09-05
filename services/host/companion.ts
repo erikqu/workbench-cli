@@ -2,6 +2,7 @@ import { WebSocket, createWebSocketStream } from 'ws';
 import { canonicalKey, websocketURL, type HostConfiguration } from '../shared/protocol';
 import { HostSSH } from './ssh';
 import { Sessions } from './sessions';
+import { boundedTunnel } from './tunnel';
 
 export class Companion {
   readonly sessions: Sessions;
@@ -54,7 +55,7 @@ export class Companion {
       handshakeTimeout: 15_000, maxPayload: 128 * 1024, perMessageDeflate: false });
     this.streams.add(ws);
     ws.on('open', () => {
-      const stream = createWebSocketStream(ws);
+      const stream = boundedTunnel(createWebSocketStream(ws));
       ws.on('close', () => stream.destroy());
       this.ssh.accept(stream, connectionId, deviceId);
     });

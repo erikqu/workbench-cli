@@ -8,6 +8,9 @@ import { randomUUID } from 'node:crypto';
 import { parseSnapshot } from '../../src/discovery';
 import type { Snapshot } from '../../src/shared';
 import { size } from '../shared/protocol';
+import { Workspaces, type NewWorkspace } from './workspaces';
+import { agentActivity, recentActivity } from './activity';
+import { WorkspaceFiles } from './files';
 
 const run = promisify(execFile);
 export interface Attachment {
@@ -24,20 +27,31 @@ export class Sessions extends EventEmitter {
   private geometryWork: Promise<void> = Promise.resolve();
   private phoneWindows = new Map<string, { target: string; option: string; effective: string; cols: string; rows: string }>();
   readonly socket: string;
+  readonly workspaces: Workspaces;
+  readonly files: WorkspaceFiles;
   constructor(readonly directory: string) {
     super(); this.socket = path.join(directory, 'tmux-ui.sock');
+    this.workspaces = new Workspaces(directory, args => this.tmux(args));
+    this.files = new WorkspaceFiles(() => this.snapshot(false));
     this.timer = setInterval(() => { void this.poll(); }, 1500); this.timer.unref();
   }
   private async tmux(args: string[]) {
     const { stdout } = await run('tmux', ['-S', this.socket, ...args], { timeout: 5000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, TMUX: '', TMUX_PANE: '' } }); return stdout.trim();
   }
-  async snapshot(): Promise<Snapshot> {
+  async snapshot(includeActivity = true): Promise<Snapshot> {
     let raw = '{"sessions":[]}', warning: string | undefined;
     try { raw = await readFile(path.join(this.directory, 'workbench-ui-state.json'), 'utf8'); parseSnapshot(raw, []); }
     catch {
       try { raw = await readFile(path.join(this.directory, 'workbench-ui-state.json.bak'), 'utf8'); parseSnapshot(raw, []); warning = 'Using the backup layout.'; }
       catch { raw = '{"sessions":[]}'; warning = 'No readable layout. Showing live Workbench sessions.'; }
     }
+    try {
+      const state = JSON.parse(raw);
+      const remote = await this.workspaces.layouts();
+      const ids = new Set(state.sessions.map((entry: { id?: string }) => entry.id));
+      state.sessions.push(...remote.filter(entry => !ids.has(entry.id)));
+      raw = JSON.stringify(state);
+    } catch { warning = 'Could not read the phone workspace list. Desktop sessions are still available.'; }
     let names: string[] = [];
     try { names = (await this.tmux(['list-sessions', '-F', '#{session_name}'])).split('\n').filter(Boolean); }
     catch (error) {
@@ -45,8 +59,40 @@ export class Sessions extends EventEmitter {
       if (!/no server running|No such file|Connection refused/.test(String(error))) throw error;
       warning = 'Start Workbench on this machine to restore its sessions.';
     }
-    return parseSnapshot(raw, names, warning);
+    const snapshot = parseSnapshot(raw, names, warning);
+    if (!includeActivity) return snapshot;
+    let recent = new Set<string>();
+    const dead = new Set<string>();
+    try {
+      const activity = await this.tmux(['list-windows', '-a', '-F', '#{session_name}|#{window_activity}|#{pane_dead}']);
+      recent = recentActivity(activity);
+      for (const line of activity.split('\n')) {
+        const [session, , paneDead] = line.split('|');
+        if (paneDead === '1') dead.add(session);
+      }
+    } catch {}
+    const agents = snapshot.workspaces.flatMap(workspace => workspace.panes).filter(pane => pane.kind === 'agent' && pane.live).slice(0, 64);
+    // Captured content stays on the host; only status leaves. Bound concurrency.
+    for (let index = 0; index < agents.length; index += 4) {
+      await Promise.all(agents.slice(index, index + 4).map(async pane => {
+        if (dead.has(pane.tmux)) { pane.activity = 'idle'; return; }
+        try {
+          const content = await this.tmux(['capture-pane', '-p', '-t', '=' + pane.tmux + ':']);
+          pane.activity = agentActivity(pane.harnessId, content, recent.has(pane.tmux));
+        } catch { pane.activity = 'idle'; }
+      }));
+    }
+    return snapshot;
   }
+  async createWorkspace(request: NewWorkspace) {
+    const layout = await this.workspaces.create(request);
+    const snapshot = await this.snapshot();
+    const workspace = snapshot.workspaces.find(item => item.id === layout.id);
+    if (!workspace) throw new Error('Workspace was created but could not be listed. Refresh before retrying.');
+    return { workspace, snapshot };
+  }
+  listFiles(workspaceId: unknown, relativePath: unknown) { return this.files.list(workspaceId, relativePath); }
+  readFile(workspaceId: unknown, relativePath: unknown, offset: unknown) { return this.files.read(workspaceId, relativePath, offset); }
   private async localClients(sessionId: string) {
     const clients = (await this.tmux(['list-clients', '-t', '=' + sessionId, '-F', '#{client_tty}'])).split('\n').filter(Boolean);
     const ours = new Set([...this.entries.values()].map(entry => entry.tty));
