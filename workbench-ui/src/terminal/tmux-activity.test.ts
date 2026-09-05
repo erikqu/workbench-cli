@@ -75,6 +75,23 @@ describe("harnessAppearsRunning", () => {
     );
   });
 
+  test.each([
+    "Waiting for background terminal (2m 48s • esc to interrupt) · 2 background terminals running · /ps to view · /stop to close",
+    "Working (9m 00s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close",
+    "Waiting for background terminal (12s • esc to interrupt)",
+  ])("recognizes Codex background work: %s", (status) => {
+    expect(harnessAppearsRunning("codex", status, false)).toBe(true);
+    expect(sessionAppearsRunning([false], [status])).toBe(true);
+  });
+
+  test.each([
+    "Working (4s • esc to interrupt) was printed earlier.",
+    "Waiting for background terminal (12s • esc to interrupt) is an example.",
+    "1 background terminal running · /ps to view · /stop to close\n› Ask Codex to do anything",
+  ])("does not infer an active Codex turn from prose or background jobs: %s", (text) => {
+    expect(harnessAppearsRunning("codex", text, true)).toBe(false);
+  });
+
   test("does not mistake transcript prose quoting a Codex marker for work", () => {
     expect(
       paneHasAgentBusyMarker(

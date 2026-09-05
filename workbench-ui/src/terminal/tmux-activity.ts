@@ -184,8 +184,10 @@ export function paneHasAgentBusyMarker(paneText: string): boolean {
   // Match complete status rows, not arbitrary transcript prose. Agent output
   // can quote phrases such as `Working (4s - esc to interrupt)` and used to
   // leave the session rail animating even though the harness was idle.
+  // Codex changes the label while awaiting a background terminal and may
+  // append its running-terminal count and controls to either status.
   const codexStatus =
-    /^\s*(?:[•·]\s*)?working\s*\([^\n)]*\b(?:esc|ctrl\+c|ctrl-c)\s+to\s+(?:interrupt|cancel)\b[^\n)]*\)\s*$/im;
+    /^[\t ]*(?:[•·][\t ]*)?(?:working|waiting for background terminal)[\t ]*\([^\n)]*\b(?:esc|ctrl\+c|ctrl-c)[\t ]+to[\t ]+(?:interrupt|cancel)\b[^\n)]*\)(?:[\t ]*[·•][\t ]*\d+ background terminals? running(?:[\t ]*[·•][\t ]*\/ps to view)?(?:[\t ]*[·•][\t ]*\/stop to close)?)?[\t ]*$/im;
   const claudeFooter =
     /^\s*⏵⏵[^\n]*\b(?:esc|ctrl\+c|ctrl-c)\s+to\s+(?:interrupt|cancel)\b[^\n]*$/im;
   return codexStatus.test(paneText) || claudeFooter.test(paneText);
