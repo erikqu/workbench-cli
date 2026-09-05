@@ -1,0 +1,50 @@
+services:
+  relay:
+    build:
+      context: ..
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://workbench:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@database:5432/workbench
+      APPLE_AUDIENCE: ${APPLE_AUDIENCE:-dev.workbench.remote}
+      TRUST_PROXY: "1"
+      METRICS_TOKEN: ${METRICS_TOKEN:?Set METRICS_TOKEN}
+      RELEASE_DIRECTORY: /app/releases
+    volumes:
+      - ../release/host:/app/releases:ro
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workbench
+      POSTGRES_DB: workbench
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U workbench -d workbench"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      RELAY_HOST: ${RELAY_HOST:?Set RELAY_HOST to your public DNS hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+      - caddy_config:/config
+    depends_on: [relay]
+volumes:
+  database:
+  certificates:
+  caddy_config:

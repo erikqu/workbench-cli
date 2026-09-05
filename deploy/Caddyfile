@@ -1,0 +1,4 @@
+{$RELAY_HOST} {
+    encode gzip
+    reverse_proxy relay:8080
+}

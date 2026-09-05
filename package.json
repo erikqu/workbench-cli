@@ -1,0 +1,45 @@
+{
+  "name": "workbench-remote",
+  "productName": "Workbench Remote",
+  "version": "0.1.0",
+  "description": "Your live Workbench sessions on iPhone, through an encrypted public relay",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "package:mac": "npm run build && node scripts/package.mjs",
+    "test:ui": "npm run build && node scripts/test-ui.mjs",
+    "relay": "tsx services/relay/main.ts",
+    "host": "tsx services/host/main.ts",
+    "test:platform": "node scripts/test-platform.mjs",
+    "build:services": "node scripts/build-services.mjs",
+    "package:host": "npm run build:services && node scripts/package-host.mjs",
+    "check": "npm run typecheck && npm test && npm run test:platform"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "jose": "^6.2.11",
+    "node-pty": "^1.1.0",
+    "pg": "^8.23.0",
+    "qrcode-terminal": "^0.12.0",
+    "ssh2": "^1.17.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode-terminal": "^0.12.2",
+    "@types/ssh2": "^1.15.0",
+    "@types/ws": "^8.18.1",
+    "electron": "^44.2.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.58.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
