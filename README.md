@@ -109,6 +109,7 @@ npm run host -- start
 - One remote connection holds terminal input control. Other connections can view and explicitly take control. Local terminal input is not locked out.
 - Opening a writable session automatically fits its grid to the iPhone. This temporarily changes desktop geometry too; choose Desktop size to retain the original grid and pan. Detaching restores the previous sizing policy. Read-only viewers cannot resize the writer's session.
 - Tabs remain visible above the terminal. A spinner reflects a recognized agent busy marker; other harnesses can show recent output activity. These are terminal-derived indicators, not a structured agent status API.
+- The machine's workspace overview also shows working/recent indicators and active-agent counts, with active workspaces first. Idle workspaces remain available below them. Reduce Motion replaces spinners with a static indicator.
 - Backgrounding or losing connectivity detaches the phone, not the running agent. Reconnection creates a new attachment to the same live session.
 - Input is never replayed automatically. Delivery can be uncertain during a network failure; inspect the terminal before resending. Unsent compose drafts stay on the phone.
 - Saved but stopped sessions are shown as unavailable and are not automatically restarted.
@@ -121,5 +122,7 @@ Choose **New workspace** from the machine's workspace list, enter a new folder n
 The phone's workspace registry is `<workbench-directory>/remote-workspaces.json`. Its folders and tmux sessions are real on the host and appear in the phone list, but the currently running desktop Workbench CLI does not automatically import them into its sidebar. Keeping this registry separate avoids overwriting the desktop's in-memory layout. Companion restarts preserve tmux sessions; host reboots do not automatically recreate them.
 
 Use **Files** from a workspace or terminal to browse folders, read selectable text, and preview images with pinch zoom. Access is read-only, confined to that workspace, and does not follow symbolic links. Files are limited to 20 MiB, directory listings to 500 entries, and text display to 256 KiB. Supported raster formats include PNG, JPEG, GIF (first frame), HEIC, WebP, TIFF, and BMP; previews are downsampled to at most 1600 pixels on the longest edge. Modified files must be reopened if they change during download.
+
+Text previews wrap to the phone width and scroll vertically without opening the keyboard. Long press deliberately selects text for copying; normal swipes scroll.
 
 This implementation excludes offline code synchronization, a phone file editor, Windows hosts, collaboration between different account owners, and the later native Mac client. See [protocol and security boundaries](docs/protocol.md).

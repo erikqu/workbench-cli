@@ -9,6 +9,8 @@ enum PreviewSession {
     static let machine: Machine = decode(#"{"id":"preview","name":"Supernova preview","hostKey":"","online":true}"#)
     static let workspace: Workspace = decode(#"{"id":"preview","name":"workbench-app","cwd":"~/workbench-app","panes":[{"id":"workbench_h_preview","tmux":"workbench_h_preview","name":"Codex","kind":"agent","live":true,"harnessId":"codex","activity":"idle"},{"id":"workbench_t_preview","tmux":"workbench_t_preview","name":"Terminal 1","kind":"terminal","live":true}]}"#.replacingOccurrences(of: "\"activity\":\"idle\"", with: ProcessInfo.processInfo.arguments.contains("--busy-preview") ? "\"activity\":\"working\"" : "\"activity\":\"idle\""))
     static let login: Login = decode(#"{"accessToken":"preview-only","deviceId":"preview","expiresAt":0}"#)
+    // Idle intentionally precedes busy here so the UI test exercises active-first ordering.
+    static let activityWorkspaces: [Workspace] = decode(#"[{"id":"activity-idle","name":"Idle workspace","cwd":"~/idle-project","panes":[{"id":"activity-idle-agent","tmux":"activity-idle-agent","name":"Idle agent","kind":"agent","live":true,"activity":"idle"}]},{"id":"activity-busy","name":"Building the next release","cwd":"~/active-project","panes":[{"id":"activity-working-agent","tmux":"activity-working-agent","name":"Codex","kind":"agent","live":true,"activity":"working"},{"id":"activity-recent-agent","tmux":"activity-recent-agent","name":"Claude","kind":"agent","live":true,"activity":"recent"}]}]"#)
 
     static func state(sessionId: String = "workbench_h_preview", phoneLayout: Bool, cols: Int = 48, rows: Int = 30) -> SessionState {
         decode("{\"sessionId\":\"\(sessionId)\",\"writable\":true,\"localAttached\":true,\"phoneLayout\":\(phoneLayout),\"cols\":\(cols),\"rows\":\(rows)}")
@@ -24,9 +26,13 @@ enum PreviewSession {
         if path == "images" {
             return decode(#"{"path":"images","truncated":false,"entries":[{"name":"preview.png","path":"images/preview.png","kind":"file","size":1000}]}"#)
         }
-        return decode(#"{"path":"","truncated":false,"entries":[{"name":"images","path":"images","kind":"directory","size":0},{"name":"README.md","path":"README.md","kind":"file","size":80}]}"#)
+        return decode(#"{"path":"","truncated":false,"entries":[{"name":"images","path":"images","kind":"directory","size":0},{"name":"README.md","path":"README.md","kind":"file","size":80},{"name":"long-lines.txt","path":"long-lines.txt","kind":"file","size":16000}]}"#)
     }
     static func fileData(path: String) -> Data {
+        if path == "long-lines.txt" {
+            let first = "This file has a long paragraph that should wrap within the phone screen. " + String(repeating: "Every word stays readable, including Unicode café 日本語 👋. ", count: 4) + "END OF FIRST LINE.\n\n"
+            return Data((first + (1...100).map { "Line \($0): " + String(repeating: "readable content ", count: 5) }.joined(separator: "\n") + "\nEND OF FILE.").utf8)
+        }
         if path == "images/preview.png" {
             return UIGraphicsImageRenderer(size: CGSize(width: 600, height: 360)).image { context in
                 UIColor(red: 0.07, green: 0.16, blue: 0.12, alpha: 1).setFill()

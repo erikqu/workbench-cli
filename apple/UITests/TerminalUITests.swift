@@ -1,6 +1,55 @@
 import XCTest
 
 final class TerminalUITests: XCTestCase {
+    @MainActor func testWorkspaceListShowsActivityAndPrioritizesBusyWorkspaces() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--terminal-render-fixture", "--workspace-activity-preview"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+
+        let busy = app.staticTexts["workspace.header.activity-busy"]
+        let idle = app.staticTexts["workspace.header.activity-idle"]
+        XCTAssertTrue(busy.waitForExistence(timeout: 15))
+        XCTAssertTrue(idle.waitForExistence(timeout: 5))
+        let headers = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'workspace.header.'"))
+        XCTAssertEqual(headers.element(boundBy: 0).identifier, "workspace.header.activity-busy", "Active workspaces appear first even if the host lists an idle workspace first")
+        XCTAssertLessThan(busy.frame.minY, idle.frame.minY)
+
+        let activity = app.descendants(matching: .any)["workspace.activity.activity-busy"].firstMatch
+        XCTAssertTrue(activity.exists)
+        XCTAssertEqual(activity.value as? String, "Working · 1 agent · 1 recent")
+        XCTAssertFalse(app.descendants(matching: .any)["workspace.activity.activity-idle"].firstMatch.exists)
+        XCTAssertEqual(app.buttons["workspace.pane.activity-working-agent"].value as? String, "Working")
+        XCTAssertEqual(app.buttons["workspace.pane.activity-recent-agent"].value as? String, "Recent activity")
+        XCTAssertTrue(app.buttons["workspace.new"].isHittable)
+        capture("18-workspace-activity")
+    }
+
+    @MainActor func testFileTextFitsPhoneWidth() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--terminal-render-fixture"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        XCTAssertTrue(app.buttons["terminal.files"].waitForExistence(timeout: 15))
+        app.buttons["terminal.files"].tap()
+        app.buttons["files.entry.long-lines.txt"].tap()
+        let preview = app.descendants(matching: .any)["files.preview.text"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        capture("15-long-text-portrait")
+        XCTAssertLessThanOrEqual(preview.frame.maxX, app.frame.maxX, "File text must fit within the iPhone width")
+        XCTAssertGreaterThanOrEqual(preview.frame.minX, 0)
+        preview.swipeUp()
+        XCTAssertFalse(app.menuItems["Copy"].exists)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        capture("16-long-text-scrolled")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertLessThanOrEqual(preview.frame.maxX, app.frame.maxX)
+        capture("17-long-text-landscape")
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     @MainActor func testWorkspaceCreationTabsAndFiles() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -32,7 +81,7 @@ final class TerminalUITests: XCTestCase {
         XCTAssertTrue(readme.waitForExistence(timeout: 5))
         capture("10-files")
         readme.tap()
-        let text = app.staticTexts["files.preview.text"]
+        let text = app.textViews["files.preview.text"]
         XCTAssertTrue(text.waitForExistence(timeout: 5))
         XCTAssertLessThan(text.frame.minY, app.frame.height / 3, "Short text previews start at the top, not vertically centered")
         capture("11-text-preview")

@@ -60,7 +60,7 @@ struct RootView: View {
             if model.isPreview, path.isEmpty, let machine = model.machines.first,
                let pane = model.workspaces.first?.panes.first {
                 path.append(machine)
-                if !ProcessInfo.processInfo.arguments.contains("--workspace-list-preview") { path.append(pane) }
+                if !ProcessInfo.processInfo.arguments.contains("--workspace-list-preview") && !ProcessInfo.processInfo.arguments.contains("--workspace-activity-preview") { path.append(pane) }
             }
         }
     }
@@ -94,11 +94,46 @@ struct RootView: View {
 struct WorkspaceList: View {
     @ObservedObject var model: AppModel
     let machine: Machine
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var devices = false
     @State private var newWorkspace = false
     @State private var createdPane: Pane?
     @State private var fileWorkspace: Workspace?
+    private var visibleWorkspaces: [Workspace] {
+        let filtered = model.workspaces.filter {
+            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.cwd.localizedCaseInsensitiveContains(query)
+        }
+        // Partition instead of sorting: preserve host order inside both groups.
+        return filtered.filter { activity(in: $0).isActive } + filtered.filter { !activity(in: $0).isActive }
+    }
+
+    private func isActive(_ pane: Pane) -> Bool {
+        model.connected && pane.live && pane.kind == "agent" && ["working", "recent"].contains(pane.activity ?? "")
+    }
+
+    private func activity(in workspace: Workspace) -> WorkspaceListActivity {
+        let agents = workspace.panes.filter(isActive)
+        return WorkspaceListActivity(working: agents.filter { $0.activity == "working" }.count,
+                                     recent: agents.filter { $0.activity == "recent" }.count)
+    }
+
+    private func paneStatus(_ pane: Pane) -> String {
+        if !pane.live { return "Saved · not running" }
+        if !model.connected { return "Offline" }
+        if isActive(pane) { return pane.activity == "working" ? "Working" : "Recent activity" }
+        return pane.kind == "agent" ? "Idle" : "Live session"
+    }
+
+    @ViewBuilder private var activeIndicator: some View {
+        if reduceMotion {
+            Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(.green)
+                .accessibilityHidden(true)
+        } else {
+            ProgressView().controlSize(.mini).tint(.green).accessibilityHidden(true)
+        }
+    }
+
     var body: some View {
         List {
             Section {
@@ -110,21 +145,47 @@ struct WorkspaceList: View {
                     Text("Update the host companion to create workspaces here.").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            ForEach(model.workspaces.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.cwd.localizedCaseInsensitiveContains(query) }) { workspace in
+            ForEach(visibleWorkspaces) { workspace in
                 Section {
                     ForEach(workspace.panes) { pane in
                         NavigationLink(value: pane) {
-                            Label { VStack(alignment: .leading, spacing: 4) { Text(pane.name); Text(pane.live ? "Live session" : "Saved · not running").font(.caption).foregroundStyle(.secondary) } }
-                                icon: { Image(systemName: pane.kind == "agent" ? "sparkle" : "terminal") }
+                            Label {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(pane.name)
+                                    Text(paneStatus(pane)).font(.caption)
+                                        .foregroundStyle(isActive(pane) ? Color.green : Color.secondary)
+                                }
+                            } icon: {
+                                if isActive(pane) { activeIndicator }
+                                else { Image(systemName: pane.kind == "agent" ? "sparkle" : "terminal") }
+                            }
                         }.disabled(!pane.live || !model.connected)
+                            .accessibilityIdentifier("workspace.pane.\(pane.id)")
+                            .accessibilityLabel(pane.name).accessibilityValue(paneStatus(pane))
                     }
                     if !workspace.cwd.isEmpty {
                         Button { fileWorkspace = workspace } label: { Label("Files", systemImage: "folder") }
                             .disabled(!model.connected || !model.canBrowseFiles)
                     }
-                } header: { Text(workspace.name) } footer: { Text(workspace.cwd).font(.caption2) }
+                } header: {
+                    let summary = activity(in: workspace)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(workspace.name).accessibilityIdentifier("workspace.header.\(workspace.id)")
+                        if summary.isActive {
+                            HStack(spacing: 7) {
+                                activeIndicator
+                                Text(summary.label).font(.caption).foregroundStyle(.green)
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Workspace activity")
+                            .accessibilityValue(summary.label)
+                            .accessibilityIdentifier("workspace.activity.\(workspace.id)")
+                        }
+                    }.textCase(nil)
+                } footer: { Text(workspace.cwd).font(.caption2) }
             }
         }
+        .accessibilityIdentifier("workspace.list")
         .navigationTitle(machine.name).searchable(text: $query, prompt: "Find a workspace")
         .task { if model.activeMachine?.id != machine.id || (!model.connected && !model.connecting) { model.connect(machine) } }
         .toolbar {
@@ -147,5 +208,17 @@ struct WorkspaceList: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { devices = false } } }
             }
         }
+    }
+}
+
+private struct WorkspaceListActivity {
+    let working: Int
+    let recent: Int
+    var isActive: Bool { working + recent > 0 }
+    var label: String {
+        if working > 0 {
+            return "Working · \(working) \(working == 1 ? "agent" : "agents")" + (recent > 0 ? " · \(recent) recent" : "")
+        }
+        return "Recent activity · \(recent) \(recent == 1 ? "agent" : "agents")"
     }
 }

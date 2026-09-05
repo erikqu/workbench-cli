@@ -61,7 +61,7 @@ import WorkbenchCore
 #if DEBUG
         if isPreview {
             machines = [PreviewSession.machine]
-            workspaces = [PreviewSession.workspace]
+            workspaces = ProcessInfo.processInfo.arguments.contains("--workspace-activity-preview") ? PreviewSession.activityWorkspaces : [PreviewSession.workspace]
             login = PreviewSession.login
             canCreateWorkspace = true
             canBrowseFiles = true

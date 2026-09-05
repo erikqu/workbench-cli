@@ -33,9 +33,15 @@ of vendored dependencies.
 - Added a persistent horizontal session tab strip and busy/recent-activity
   indicators. Busy tabs animate unless Reduce Motion is enabled. Switching tabs
   invalidates stale attachment callbacks and preserves per-session drafts.
+- The machine workspace overview now has working/recent indicators and agent
+  counts too. Active workspaces appear first, preserving order within each group;
+  idle workspaces remain accessible below them.
 - Added Files from the workspace list and terminal, with folder navigation,
   selectable text, downsampled images, pinch zoom, retry/empty/error states, and
   strict read-only access. File versions detect changes between download chunks.
+- Replaced unconstrained file text with a native read-only text view: long source
+  lines wrap to the viewport, rotation reflows them, and normal swipes scroll
+  without invoking selection or the keyboard. Snapshot updates keep scroll state.
 - Fixed a large-transfer disconnect found by the actual Swift client: NIOSSH's
   packet size can exceed the WebSocket limit. Host encrypted writes are now split
   into ordered, backpressured 64 KiB frames without raising the tunnel limits.
@@ -58,14 +64,17 @@ of vendored dependencies.
   a Copy menu, menu presentation, text-size changes, keyboard shortcuts/Ctrl,
   Compose editing, landscape rotation, and phone/desktop layout switching.
   The preview uses a steady cursor so XCTest does not wait on its blink animation.
-- Three simulator UI tests passed in `workbench-features-ui-2.xcresult`. In
+- Five simulator UI tests passed in `workbench-overview-files-final.xcresult`. In
   addition to existing controls they exercise workspace creation, tab switching,
   a working-agent indicator, directory/text/image previews, image zoom, and
-  rotation. Exported screenshots were visually inspected; short text previews
-  are top-aligned, and double-tap restores image fit after zoom/rotation.
+  rotation, active-first workspace ordering and overview indicators. Exported
+  screenshots were visually inspected; text previews are top-aligned and wrap,
+  and double-tap restores image fit after zoom/rotation. The long-line regression
+  failed before the fix (2790-point content on a 402-point screen), then passed
+  with bounded text width, swipe scrolling, and rotation.
 - Production dependency audit reported no known vulnerabilities.
 - Signed device builds installed successfully on the paired iPhone. The latest
-  workspace/tabs/files build installed, but reopening was blocked by the phone's
+  overview/text-wrap build installed, but reopening was blocked by the phone's
   lock screen. Live device interaction needs the user's confirmation; UI
   automation uses the simulator.
 - Supernova companion updated to `workspace-files-20260905`; service and relay health

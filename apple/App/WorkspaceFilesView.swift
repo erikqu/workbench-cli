@@ -183,17 +183,8 @@ private struct WorkspaceFilePreview: View {
                         Label("Showing the first 256 KiB of this file", systemImage: "info.circle")
                             .font(.caption).foregroundStyle(.secondary).padding(10)
                     }
-                    GeometryReader { viewport in
-                        ScrollView([.horizontal, .vertical]) {
-                            Text(text.isEmpty ? "Empty file" : text)
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(text.isEmpty ? .secondary : .primary)
-                                .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
-                                .accessibilityIdentifier("files.preview.text")
-                                .padding(16)
-                                .frame(minWidth: viewport.size.width, minHeight: viewport.size.height, alignment: .topLeading)
-                        }
-                    }
+                    WorkspaceTextView(text: text, name: file.name)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -220,6 +211,45 @@ private struct WorkspaceFilePreview: View {
         } catch is CancellationError { return }
         catch { failure = error.localizedDescription }
         loading = false
+    }
+}
+
+/// A native, read-only scrolling surface keeps long files bounded to the phone
+/// width. A single unconstrained SwiftUI Text expands to the longest source line.
+private struct WorkspaceTextView: UIViewRepresentable {
+    let text: String
+    let name: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.backgroundColor = .clear
+        view.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
+        view.textColor = .label
+        view.textAlignment = .left
+        view.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        view.textContainer.lineFragmentPadding = 0
+        view.textContainer.widthTracksTextView = true
+        view.textContainer.lineBreakMode = .byWordWrapping
+        view.contentInsetAdjustmentBehavior = .never
+        view.alwaysBounceVertical = true
+        view.alwaysBounceHorizontal = false
+        view.showsHorizontalScrollIndicator = false
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.accessibilityIdentifier = "files.preview.text"
+        updateUIView(view, context: context)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        view.accessibilityLabel = name
+        let displayed = text.isEmpty ? "Empty file" : text
+        // Snapshot updates must not reset selection or scroll position.
+        if view.text != displayed {
+            view.text = displayed
+            view.setContentOffset(.zero, animated: false)
+        }
     }
 }
 
