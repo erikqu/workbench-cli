@@ -7,14 +7,14 @@ packages:
   WorkbenchCore:
     path: .
   SwiftTerm:
-    url: https://github.com/migueldeicaza/SwiftTerm.git
-    exactVersion: 1.20.0
+    path: Vendor/SwiftTerm
 settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: 1
     WORKBENCH_RELAY_URL: ""
+    WORKBENCH_AUTH_MODE: apple
 targets:
   WorkbenchRemote:
     type: application
@@ -35,6 +35,7 @@ targets:
       properties:
         CFBundleDisplayName: Workbench
         WorkbenchRelayURL: $(WORKBENCH_RELAY_URL)
+        WorkbenchAuthMode: $(WORKBENCH_AUTH_MODE)
         NSCameraUsageDescription: Scan the pairing code displayed by your Workbench companion.
         NSLocalNetworkUsageDescription: Connect to a local development relay when testing.
         UILaunchScreen: {}
@@ -48,8 +49,19 @@ targets:
         com.apple.developer.applesignin: [Default]
     preBuildScripts:
       - name: Generate app icon
-        script: 'swift "$SRCROOT/../scripts/make-icon.swift" "$SRCROOT/App/Assets.xcassets/AppIcon.appiconset/icon.png"'
+        script: 'env -u SDKROOT -u PLATFORM_NAME -u EFFECTIVE_PLATFORM_NAME swift "$SRCROOT/../scripts/make-icon.swift" "$SRCROOT/App/Assets.xcassets/AppIcon.appiconset/icon.png"'
         outputFiles: ["$(SRCROOT)/App/Assets.xcassets/AppIcon.appiconset/icon.png"]
+  WorkbenchRemoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: WorkbenchRemote
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: WorkbenchRemote
+        CODE_SIGN_ENTITLEMENTS: ""
 schemes:
   WorkbenchRemote:
     build:
@@ -57,5 +69,8 @@ schemes:
         WorkbenchRemote: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets: [WorkbenchRemoteUITests]
     archive:
       config: Release

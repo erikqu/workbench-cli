@@ -6,6 +6,7 @@
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
+    "postinstall": "node scripts/prepare-pty.mjs",
     "build": "node scripts/build.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",

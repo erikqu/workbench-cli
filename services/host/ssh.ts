@@ -94,6 +94,11 @@ export class HostSSH {
           if (typeof request.id !== 'string' || request.id.length > 100) throw new Error('Invalid request');
           if (request.method === 'list' || request.method === 'watch') { watching ||= request.method === 'watch'; void sendSnapshot(request.id); this.sessions.states(connectionId); }
           else if (request.method === 'takeControl' && typeof request.sessionId === 'string') { this.sessions.takeControl(connectionId, request.sessionId); this.send(channel, { id: request.id, type: 'ok' }); }
+          else if (request.method === 'setPhoneLayout' && typeof request.sessionId === 'string' && typeof request.enabled === 'boolean') {
+            void this.sessions.setPhoneLayout(connectionId, request.sessionId, request.enabled)
+              .then(() => this.send(channel, { id: request.id, type: 'ok' }))
+              .catch(() => this.send(channel, { id: request.id, type: 'error', message: 'Could not change layout. Take control and try again.' }));
+          }
           else this.send(channel, { id: request.id, type: 'error', message: 'Unsupported operation' });
         } catch { this.send(channel, { type: 'error', message: 'Invalid control request' }); }
       }

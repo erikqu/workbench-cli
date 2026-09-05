@@ -35,6 +35,14 @@ export class Store {
       return { accessToken, deviceId: device.id, expiresAt };
     });
   }
+  async pairingSubject(pairingId: string, secret: string) {
+    const result = await this.pool.query('SELECT machine_id,secret_digest,expires_at,status FROM pairings WHERE id=$1', [pairingId]);
+    const row = result.rows[0];
+    if (!row || row.secret_digest !== hash(secret) || Number(row.expires_at) <= Date.now() || row.status !== 'waiting') {
+      throw new APIError(404, 'Pairing unavailable or expired');
+    }
+    return `pairing:${row.machine_id}`;
+  }
   async device(bearer: string): Promise<Device> {
     const result = await this.pool.query('SELECT d.* FROM devices d JOIN access_tokens t ON t.device_id=d.id WHERE t.digest=$1 AND t.expires_at>$2 AND NOT d.revoked', [hash(bearer), Date.now()]);
     if (!result.rows[0]) throw new APIError(401, 'Sign in again');

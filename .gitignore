@@ -11,5 +11,12 @@ apple/*.xcodeproj/
 .host-state/
 .swift-toolchain-*/
 apple/.transport-fixture.json
+# XcodeGen/build outputs and machine-local signing overrides.
+apple/App/Info.plist
+apple/App/WorkbenchRemote.entitlements
+apple/App/Local.entitlements
+apple/App/Assets.xcassets/AppIcon.appiconset/icon.png
+apple/Vendor/**/.swiftpm/
+apple/Vendor/**/.build/
 # Separate reference checkout, not part of this application's source tree.
 workbench-cli/

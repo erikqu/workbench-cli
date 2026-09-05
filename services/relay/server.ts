@@ -10,6 +10,7 @@ import { canonicalKey, hash, id, text, token } from '../shared/protocol';
 
 export interface RelayOptions {
   store: Store; appleAudience: string; trustProxy?: boolean; metricsToken?: string; releaseDirectory?: string;
+  localPairingAuth?: boolean;
   // Dependency injection for tests only; the production entrypoint always verifies Apple tokens.
   identityVerifier?: (identityToken: string, nonceHash: string) => Promise<string>;
 }
@@ -83,6 +84,10 @@ export function createRelay(options: RelayOptions) {
         let subject: string;
         try { subject = await verifyIdentity(text(body.identityToken, 'identity token', 10_000), hash(nonce)); }
         catch { throw new APIError(401, 'Apple sign-in could not be verified'); }
+        result = await store.login(subject, canonicalKey(body.publicKey), text(body.name, 'device name', 80));
+      } else if (req.method === 'POST' && url.pathname === '/v1/auth/pairing' && options.localPairingAuth) {
+        rate(req, 'auth', 20); const body = await json(req);
+        const subject = await store.pairingSubject(id(body.pairingId), text(body.secret, 'pairing secret', 100));
         result = await store.login(subject, canonicalKey(body.publicKey), text(body.name, 'device name', 80));
       } else if (req.method === 'POST' && url.pathname === '/v1/pairings') {
         rate(req, 'pair', 5); const body = await json(req);

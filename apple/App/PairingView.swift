@@ -19,8 +19,14 @@ struct PairingView: View {
                         Text("Enter this code in the companion’s terminal to approve this iPhone.")
                         HStack { ProgressView(); Text("Waiting for confirmation…").font(.footnote) }
                     } else if model.login == nil {
-                        Text("Sign in with Apple first, then return here to finish pairing.")
-                        Button("Continue to sign-in") { dismiss() }.buttonStyle(.borderedProminent)
+                        if model.pairingAuthentication {
+                            Text("This one-time code securely signs in this iPhone and binds it to Supernova.")
+                            Button("Continue with secure pairing") { Task { await model.signInWithPairing() } }
+                                .buttonStyle(.borderedProminent).disabled(model.claiming)
+                        } else {
+                            Text("Sign in with Apple first, then return here to finish pairing.")
+                            Button("Continue to sign-in") { dismiss() }.buttonStyle(.borderedProminent)
+                        }
                     } else {
                         Text("This gives your iPhone access to the Workbench sessions running on this machine.")
                         Button("Pair this machine") { Task { await model.claimPairing() } }.buttonStyle(.borderedProminent).disabled(model.claiming)

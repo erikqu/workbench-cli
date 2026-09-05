@@ -13,7 +13,7 @@ const run = promisify(execFile);
 export interface Attachment {
   id: string; connectionId: string; sessionId: string; process: pty.IPty; tty: string;
   cols: number; rows: number; writable: boolean; localAttached: boolean;
-  desiredCols: number; desiredRows: number;
+  desiredCols: number; desiredRows: number; phoneLayout: boolean;
 }
 export class Sessions extends EventEmitter {
   private entries = new Map<string, Attachment>();
@@ -21,6 +21,8 @@ export class Sessions extends EventEmitter {
   private polling = false;
   private timer: NodeJS.Timeout;
   private geometry = new Map<string, string>();
+  private geometryWork: Promise<void> = Promise.resolve();
+  private phoneWindows = new Map<string, { target: string; option: string; effective: string; cols: string; rows: string }>();
   readonly socket: string;
   constructor(readonly directory: string) {
     super(); this.socket = path.join(directory, 'tmux-ui.sock');
@@ -68,7 +70,7 @@ export class Sessions extends EventEmitter {
     const tty = (processPTY as pty.IPty & { ptsName: string }).ptsName;
     if (!tty) { processPTY.kill(); if (writable) this.writers.delete(sessionId); throw new Error('The PTY adapter did not expose a Unix terminal'); }
     const entry: Attachment = { id, connectionId, sessionId, process: processPTY, tty, cols: size(cols, 80), rows: size(rows, 24),
-      desiredCols: size(cols, 80), desiredRows: size(rows, 24), writable, localAttached };
+      desiredCols: size(cols, 80), desiredRows: size(rows, 24), writable, localAttached, phoneLayout: false };
     this.entries.set(id, entry);
     processPTY.onData(data => output(Buffer.isBuffer(data) ? data : Buffer.from(data)));
     processPTY.onExit(() => { this.release(entry); ended(); });
@@ -88,26 +90,64 @@ export class Sessions extends EventEmitter {
     if (!entry) throw new Error('Open the session before taking control');
     this.writers.set(sessionId, entry.id);
     for (const other of this.entries.values()) if (other.sessionId === sessionId) {
-      other.writable = other.id === entry.id; this.emitState(other);
+      other.writable = other.id === entry.id;
+      if (!other.writable) other.phoneLayout = false;
+      this.emitState(other);
       void this.updateGeometry(other).catch(() => {});
     }
   }
+  async setPhoneLayout(connectionId: string, sessionId: string, enabled: boolean) {
+    const entry = [...this.entries.values()].find(e => e.connectionId === connectionId && e.sessionId === sessionId);
+    if (!entry) throw new Error('Open the session before changing its layout');
+    if (this.writers.get(sessionId) !== entry.id) throw new Error('Take control before changing the terminal layout');
+    entry.phoneLayout = enabled;
+    await this.updateGeometry(entry);
+  }
   private emitState(entry: Attachment) {
     this.emit('state', entry.connectionId, { type: 'sessionState', sessionId: entry.sessionId, writable: this.writers.get(entry.sessionId) === entry.id,
-      localAttached: entry.localAttached, cols: entry.cols, rows: entry.rows });
+      localAttached: entry.localAttached, phoneLayout: entry.phoneLayout, cols: entry.cols, rows: entry.rows });
   }
   states(connectionId: string) { for (const entry of this.entries.values()) if (entry.connectionId === connectionId) this.emitState(entry); }
-  private async updateGeometry(entry: Attachment) {
+  private updateGeometry(entry: Attachment) {
+    // Polls, keyboard resizes, lease changes, and disconnects must not race.
+    const work = this.geometryWork.then(() => this.applyGeometry(entry));
+    this.geometryWork = work.catch(() => {});
+    return work;
+  }
+  private async restoreDesktop(sessionId: string) {
+    const saved = this.phoneWindows.get(sessionId);
+    if (!saved) return;
+    // resize-window installs a local manual override, so restore dimensions first
+    // and then put the original explicit/inherited policy back.
+    if (saved.effective === 'manual') await this.tmux(['resize-window', '-t', saved.target, '-x', saved.cols, '-y', saved.rows]);
+    if (saved.option) await this.tmux(['set-option', '-w', '-t', saved.target, 'window-size', saved.option]);
+    else await this.tmux(['set-option', '-w', '-u', '-t', saved.target, 'window-size']);
+    this.phoneWindows.delete(sessionId);
+  }
+  private async applyGeometry(entry: Attachment) {
     if (!this.entries.has(entry.id)) return;
     entry.localAttached = (await this.localClients(entry.sessionId)).length > 0;
-    const ownsSize = !entry.localAttached && this.writers.get(entry.sessionId) === entry.id;
+    const writer = [...this.entries.values()].find(other => other.id === this.writers.get(entry.sessionId));
+    if (writer?.phoneLayout) {
+      if (!this.phoneWindows.has(entry.sessionId)) {
+        const [target, cols, rows] = (await this.tmux(['display-message', '-p', '-t', '=' + entry.sessionId + ':', '#{window_id} #{window_width} #{window_height}'])).split(' ');
+        if (!/^@\d+$/.test(target) || !Number(cols) || !Number(rows)) throw new Error('Cannot determine the session window size');
+        const option = await this.tmux(['show-options', '-w', '-qv', '-t', target, 'window-size']);
+        const effective = await this.tmux(['show-options', '-w', '-Aqv', '-t', target, 'window-size']);
+        this.phoneWindows.set(entry.sessionId, { target, option, effective, cols, rows });
+      }
+      const target = this.phoneWindows.get(entry.sessionId)!.target;
+      // A client flag alone cannot override tmux's largest/latest sizing policy.
+      await this.tmux(['resize-window', '-t', target, '-x', String(writer.desiredCols), '-y', String(writer.desiredRows)]);
+    } else await this.restoreDesktop(entry.sessionId);
+    const ownsSize = writer?.id === entry.id && (!entry.localAttached || entry.phoneLayout);
     await this.tmux(['refresh-client', '-t', entry.tty, '-f', ownsSize ? '!ignore-size' : 'ignore-size']);
     if (ownsSize) entry.process.resize(entry.desiredCols, entry.desiredRows);
-    const dimensions = (await this.tmux(['display-message', '-p', '-t', '=' + entry.sessionId, '#{window_width} #{window_height}'])).split(' ').map(Number);
+    const dimensions = (await this.tmux(['display-message', '-p', '-t', '=' + entry.sessionId + ':', '#{window_width} #{window_height}'])).split(' ').map(Number);
     entry.cols = size(dimensions[0], 80); entry.rows = size(dimensions[1], 24);
     // Mirror actual geometry, including local Workbench's wider terminal.
     if (!ownsSize) entry.process.resize(entry.cols, entry.rows);
-    const state = `${entry.cols}:${entry.rows}:${entry.localAttached}:${entry.writable}`;
+    const state = `${entry.cols}:${entry.rows}:${entry.localAttached}:${entry.writable}:${entry.phoneLayout}`;
     if (this.geometry.get(entry.id) !== state) { this.geometry.set(entry.id, state); this.emitState(entry); }
   }
   private async poll() {
@@ -116,12 +156,18 @@ export class Sessions extends EventEmitter {
     finally { this.polling = false; }
   }
   private release(entry: Attachment) {
+    if (!this.entries.has(entry.id)) return;
     this.entries.delete(entry.id); this.geometry.delete(entry.id);
     if (this.writers.get(entry.sessionId) === entry.id) {
       this.writers.delete(entry.sessionId);
       // Other viewers remain read-only until they explicitly request control.
       for (const other of this.entries.values()) if (other.sessionId === entry.sessionId) this.emitState(other);
     }
+    const work = this.geometryWork.then(async () => {
+      const writer = [...this.entries.values()].find(other => other.id === this.writers.get(entry.sessionId));
+      if (!writer?.phoneLayout) await this.restoreDesktop(entry.sessionId);
+    });
+    this.geometryWork = work.catch(() => {});
   }
   detach(entry: Attachment) { this.release(entry); try { entry.process.kill(); } catch {} }
   closeConnection(connectionId: string) { for (const entry of this.entries.values()) if (entry.connectionId === connectionId) this.detach(entry); }

@@ -22,6 +22,7 @@ SSH control channel: subsystem `workbench-control-v1`. UTF-8 newline-delimited J
 {"id":"request-1","method":"watch"}
 {"id":"request-2","method":"list"}
 {"id":"request-3","method":"takeControl","sessionId":"workbench_h_example"}
+{"id":"request-4","method":"setPhoneLayout","sessionId":"workbench_h_example","enabled":true}
 ```
 
 Events: `hello` with version 1, `snapshot`, `sessionState`, `ok`, or `error`. Snapshots include workspaces and live/saved panes; session state includes writable, local-attached and geometry information. `watch` refreshes snapshots periodically. See `services/shared/protocol.ts` and the Swift models for the concrete shapes.
@@ -33,6 +34,8 @@ SSH terminal channel: PTY request followed by exec `workbench-attach:<discovered
 The first remote attachment becomes writer when no remote writer exists. Viewers receive terminal output but their input is rejected at injection time. `takeControl` is explicit and requires an existing attachment. Disconnecting releases the lease; another existing viewer is not silently promoted.
 
 Remote tmux clients initially attach with `ignore-size`. The host excludes its own attachment TTYs when detecting local clients. While a local client is attached, remote sizing remains ignored. Without a local client, only the remote writer contributes to terminal size; viewers mirror that size. Local input remains possible at all times.
+
+The writer can explicitly select **Fit to iPhone**. The companion saves the window's sizing setting and uses the phone's requested dimensions until that mode is disabled, the writer disconnects, or another device takes control. The desktop sees this smaller layout too. The previous sizing setting is restored on normal teardown. Session state includes `phoneLayout`; older hosts omit it and clients treat it as false. An abrupt host process crash (such as SIGKILL) can leave the tmux window manually sized; crash recovery is not yet persisted.
 
 The application does not promise exactly-once delivery: an SSH write succeeding does not prove an agent consumed the input. Nothing is resent on reconnect. Compose drafts are local, may contain sensitive text, and are not a synchronized offline coding workspace. Backgrounding closes the active client connection; the app reconnects on foreground and reattaches to a still-live session.
 

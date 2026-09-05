@@ -30,6 +30,7 @@ public struct SessionState: Codable, Sendable {
     public let sessionId: String
     public let writable: Bool
     public let localAttached: Bool
+    public let phoneLayout: Bool
     public let cols: Int
     public let rows: Int
 }
@@ -41,11 +42,12 @@ public struct ControlEvent: Decodable, Sendable {
     public let sessionId: String?
     public let writable: Bool?
     public let localAttached: Bool?
+    public let phoneLayout: Bool?
     public let cols: Int?
     public let rows: Int?
     public var sessionState: SessionState? {
         guard let sessionId, let writable, let localAttached, let cols, let rows else { return nil }
-        return SessionState(sessionId: sessionId, writable: writable, localAttached: localAttached, cols: cols, rows: rows)
+        return SessionState(sessionId: sessionId, writable: writable, localAttached: localAttached, phoneLayout: phoneLayout ?? false, cols: cols, rows: rows)
     }
 }
 public struct LoginChallenge: Decodable, Sendable { public let challengeId: String; public let nonce: String }

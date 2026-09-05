@@ -15,6 +15,10 @@ await copyFile('dist/services/host/main.mjs', path.join(directory, 'lib/host.mjs
 const dependencies = Object.fromEntries(['ssh2', 'ws', 'node-pty', 'qrcode-terminal'].map(name => [name, lock.packages['node_modules/' + name].version]));
 await writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: 'workbench-remote-host', version: '0.1.0', private: true, type: 'module', dependencies }, null, 2));
 execFileSync('npm', ['install', '--omit=dev', '--omit=optional', '--prefix', directory], { stdio: 'inherit' });
+if (process.platform === 'darwin') {
+  await chmod(path.join(directory, 'node_modules/node-pty/prebuilds', `darwin-${process.arch}`, 'spawn-helper'), 0o755)
+    .catch(error => { if (error.code !== 'ENOENT') throw error; });
+}
 execFileSync(path.join(directory, 'bin/workbench-remote'), ['help'], { stdio: 'inherit' });
 // Help alone does not load the native PTY binding. Exercise the shipped runtime
 // and binding before publishing an archive that could fail on first attachment.

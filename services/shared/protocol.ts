@@ -36,7 +36,8 @@ export interface HostConfiguration {
 }
 export type ControlRequest =
   | { id: string; method: 'list' | 'watch' }
-  | { id: string; method: 'takeControl'; sessionId: string };
+  | { id: string; method: 'takeControl'; sessionId: string }
+  | { id: string; method: 'setPhoneLayout'; sessionId: string; enabled: boolean };
 export function text(value: unknown, name: string, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw new Error(`Invalid ${name}`);
   return value.trim();

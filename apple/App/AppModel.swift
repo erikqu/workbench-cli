@@ -22,9 +22,22 @@ import WorkbenchCore
     @Published var claiming = false
     @Published var grants: [DeviceGrant] = []
     @Published var draft = ""
-    @Published var fontSize: Double = 13
+    @Published var fontSize: Double = 13 {
+        didSet { if !isPreview { UserDefaults.standard.set(fontSize, forKey: "terminalFontSize") } }
+    }
     let output = PassthroughSubject<Data, Never>()
     let resetTerminal = PassthroughSubject<Void, Never>()
+    let keyboardVisibility = PassthroughSubject<Bool, Never>()
+    var terminalSize = (cols: 80, rows: 24)
+    private var attachment = UUID()
+    private var fitOnNextWritableState = false
+    var isPreview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--terminal-render-fixture")
+#else
+        false
+#endif
+    }
     var bracketedPaste = false
     private var identity: DeviceIdentity?
     private var pins: [String: String] = [:]
@@ -38,7 +51,21 @@ import WorkbenchCore
     private var pairingTask: Task<Void, Never>?
     private var disconnectHandled = false
     private struct SavedLogin: Codable { let relay: String; let login: Login }
+    var pairingAuthentication: Bool {
+        (Bundle.main.object(forInfoDictionaryKey: "WorkbenchAuthMode") as? String)?.lowercased() == "pairing"
+    }
     init() {
+#if DEBUG
+        if isPreview {
+            machines = [PreviewSession.machine]
+            workspaces = [PreviewSession.workspace]
+            login = PreviewSession.login
+            return
+        }
+#endif
+        if let saved = UserDefaults.standard.object(forKey: "terminalFontSize") as? Double {
+            fontSize = min(22, max(10, saved))
+        }
         relayText = UserDefaults.standard.string(forKey: "relay") ?? (Bundle.main.object(forInfoDictionaryKey: "WorkbenchRelayURL") as? String ?? "")
         if relayText.contains("$(") { relayText = "" }
         do {
@@ -70,12 +97,28 @@ import WorkbenchCore
             await refreshMachines()
         } catch { self.error = error.localizedDescription }
     }
+    func signInWithPairing() async {
+        guard let pairing, let identity else { return }
+        claiming = true
+        defer { claiming = false }
+        do {
+            let value: Login = try await api().request("v1/auth/pairing", method: "POST", body: [
+                "pairingId": pairing.pairingId, "secret": pairing.secret,
+                "publicKey": identity.publicKey, "name": UIDevice.current.name
+            ])
+            let origin = try relayOrigin(relayText).absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            try Keychain.write("login", data: JSONEncoder().encode(SavedLogin(relay: origin, login: value)))
+            relayText = origin; login = value; UserDefaults.standard.set(origin, forKey: "relay")
+            await claimPairing()
+        } catch { self.error = error.localizedDescription }
+    }
     func signOut() {
         disconnect(); pairingTask?.cancel(); pairing = nil; pairingCode = nil
         do { try Keychain.write("login", data: nil); login = nil; machines = []; challenge = nil }
         catch { self.error = error.localizedDescription }
     }
     func refreshMachines() async {
+        if isPreview { return }
         guard login != nil else { return }
         do { let response: MachinesResponse = try await api().request("v1/machines"); machines = response.machines }
         catch { self.error = error.localizedDescription }
@@ -115,6 +158,12 @@ import WorkbenchCore
     }
     func cancelPairing() { pairingTask?.cancel(); pairing = nil; pairingCode = nil }
     func connect(_ machine: Machine) {
+#if DEBUG
+        if isPreview {
+            activeMachine = machine; connected = true; status = "Preview · sample session"
+            return
+        }
+#endif
         guard let login, let identity else { return }
         reconnectTask?.cancel(); connectTask?.cancel(); connection?.close()
         let attempt = UUID(); generation = attempt
@@ -127,8 +176,8 @@ import WorkbenchCore
                 guard let key = pins[pinKey(machine.id)], key == machine.hostKey else { throw WorkbenchError.hostIdentityChanged }
                 let remote = SSHConnection(); connection = remote
                 try await remote.connect(origin: relayOrigin(relayText), machineId: machine.id, hostKey: key, login: login, identity: identity,
-                    onEvent: { [weak self] event in Task { @MainActor in guard let self, generation == attempt else { return }; handle(event) } },
-                    onDisconnect: { [weak self] error in Task { @MainActor in guard let self, generation == attempt else { return }; lost(error) } })
+                    onEvent: { [weak self] event in Task { @MainActor in guard let self, self.generation == attempt else { return }; self.handle(event) } },
+                    onDisconnect: { [weak self] error in Task { @MainActor in guard let self, self.generation == attempt else { return }; self.lost(error) } })
                 guard generation == attempt, !Task.isCancelled else { remote.close(); return }
                 connecting = false; connected = true; retries = 0; status = "Connected to \(machine.name)"
                 if let desiredSession { await open(desiredSession) }
@@ -140,25 +189,61 @@ import WorkbenchCore
     }
     private func handle(_ event: ControlEvent) {
         if let snapshot = event.snapshot { workspaces = snapshot.workspaces; if let warning = snapshot.warning { status = warning } }
-        if let state = event.sessionState, state.sessionId == activePane?.id { sessionState = state }
+        if let state = event.sessionState, state.sessionId == activePane?.id { receiveSessionState(state) }
         if event.type == "error" { error = event.message }
     }
+    private func receiveSessionState(_ state: SessionState) {
+        sessionState = state
+        guard fitOnNextWritableState, state.writable else { return }
+        fitOnNextWritableState = false
+        guard !state.phoneLayout else { return }
+        let attempt = generation, opened = attachment
+        Task { [weak self] in
+            guard let self, generation == attempt, attachment == opened,
+                  activePane?.id == state.sessionId else { return }
+            await setPhoneLayout(true)
+        }
+    }
     func open(_ pane: Pane) async {
+#if DEBUG
+        if isPreview {
+            activePane = pane; connected = true; status = "Preview · sample session"
+            fitOnNextWritableState = !ProcessInfo.processInfo.arguments.contains("--desktop-preview")
+            receiveSessionState(PreviewSession.state(phoneLayout: false, cols: 120, rows: 40))
+            try? await Task.sleep(for: .milliseconds(100))
+            resetTerminal.send(())
+            output.send(Data(PreviewSession.sample.utf8))
+            return
+        }
+#endif
         guard connected, pane.live, let connection else { return }
+        if activePane?.id == pane.id, sessionState != nil { return }
         saveDraft()
         activePane = pane; desiredSession = pane; sessionState = nil
+        fitOnNextWritableState = true
         draft = UserDefaults.standard.string(forKey: draftKey) ?? ""
         resetTerminal.send(())
-        let attempt = generation, paneId = pane.id
+        attachment = UUID()
+        let attempt = generation, paneId = pane.id, opened = attachment
         do {
-            try await connection.attach(sessionId: pane.id, cols: 80, rows: 24, output: { [weak self] data in
-                Task { @MainActor in guard let self, generation == attempt, activePane?.id == paneId else { return }; output.send(data) }
+            try await connection.attach(sessionId: pane.id, cols: terminalSize.cols, rows: terminalSize.rows, output: { [weak self] data in
+                Task { @MainActor in guard let self, self.generation == attempt, self.attachment == opened, self.activePane?.id == paneId else { return }; self.output.send(data) }
             }, ended: { [weak self] in
-                Task { @MainActor in guard let self, generation == attempt, activePane?.id == paneId else { return }; sessionState = nil; status = "Session detached. Open it again to reconnect." }
+                Task { @MainActor in guard let self, self.generation == attempt, self.attachment == opened, self.activePane?.id == paneId else { return }; self.sessionState = nil; self.status = "Session detached. Reopen it to reconnect." }
             })
         } catch { self.error = error.localizedDescription }
     }
     func send(_ data: Data) {
+#if DEBUG
+        if isPreview {
+            if let text = String(data: data, encoding: .utf8), text.hasPrefix("\u{1b}[<64;") || text.hasPrefix("\u{1b}[<65;") {
+                status = text.hasPrefix("\u{1b}[<64;") ? "Preview · scrolled up" : "Preview · scrolled down"
+                return
+            }
+            output.send(data == Data([3]) ? Data("^C\r\n› ".utf8) : data)
+            return
+        }
+#endif
         guard connected, sessionState?.writable == true, let connection else { return }
         let attempt = generation, paneId = activePane?.id
         Task {
@@ -175,11 +260,22 @@ import WorkbenchCore
         do { try await connection.input(Data(text.utf8)); if activePane?.id == paneId, activeMachine?.id == machineId, draft == original { draft = ""; saveDraft() } }
         catch { self.error = "Delivery is uncertain. Your draft was kept; check the terminal before resending." }
     }
-    func resize(cols: Int, rows: Int) { connection?.resize(cols: cols, rows: rows) }
-    func leaveTerminal() { saveDraft(); connection?.detachTerminal(); activePane = nil; desiredSession = nil; sessionState = nil }
+    func resize(cols: Int, rows: Int) { terminalSize = (cols, rows); connection?.resize(cols: cols, rows: rows) }
+    func leaveTerminal() { saveDraft(); attachment = UUID(); fitOnNextWritableState = false; connection?.detachTerminal(); activePane = nil; desiredSession = nil; sessionState = nil }
     func takeControl() async { guard let pane = activePane else { return }; do { try await connection?.takeControl(sessionId: pane.id) } catch { self.error = error.localizedDescription } }
+    func setPhoneLayout(_ enabled: Bool) async {
+#if DEBUG
+        if isPreview {
+            sessionState = PreviewSession.state(phoneLayout: enabled, cols: enabled ? terminalSize.cols : 120, rows: enabled ? terminalSize.rows : 40)
+            return
+        }
+#endif
+        guard let pane = activePane else { return }
+        do { try await connection?.setPhoneLayout(sessionId: pane.id, enabled: enabled) }
+        catch { self.error = error.localizedDescription }
+    }
     private var draftKey: String { "draft:\(relayText):\(activeMachine?.id ?? ""):\(activePane?.id ?? "")" }
-    func saveDraft() { if activePane != nil { UserDefaults.standard.set(draft, forKey: draftKey) } }
+    func saveDraft() { if activePane != nil && !isPreview { UserDefaults.standard.set(draft, forKey: draftKey) } }
     private func lost(_ error: Error) {
         guard !disconnectHandled else { return }; disconnectHandled = true
         connected = false; connecting = false; sessionState = nil
@@ -195,6 +291,7 @@ import WorkbenchCore
         }
     }
     func setForeground(_ value: Bool) {
+        if isPreview { return }
         foreground = value
         if !value { saveDraft(); generation = UUID(); reconnectTask?.cancel(); connectTask?.cancel(); connection?.close(); connected = false; connecting = false; sessionState = nil }
         else if let activeMachine { retries = 0; connect(activeMachine) }

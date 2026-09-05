@@ -22,7 +22,7 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
   await pool.query(`CREATE SCHEMA ${schema}`); await pool.end();
   const isolated = new Pool({ connectionString: process.env.WORKBENCH_TEST_DATABASE_URL, options: `-c search_path=${schema}` });
   const store = new Store(isolated); await store.migrate();
-  const relay = createRelay({ store, appleAudience: 'dev.workbench.remote', identityVerifier: async (identity, expected) => {
+  const relay = createRelay({ store, appleAudience: 'dev.workbench.remote', localPairingAuth: true, identityVerifier: async (identity, expected) => {
     const [subject, nonce] = identity.split(':'); if (nonce !== expected) throw new Error('Bad nonce'); return subject;
   } });
   await new Promise<void>(resolve => relay.server.listen(0, '127.0.0.1', resolve));
@@ -118,6 +118,11 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
     await until(() => second.events.filter(e => e.type === 'sessionState').at(-1)?.localAttached === true);
     two.stream.setWindow(20, 60, 0, 0);
     await until(() => tmux(['display-message', '-p', '-t', session, '#{window_width}']) === '110');
+    second.control.write(JSON.stringify({ id: 'phone', method: 'setPhoneLayout', sessionId: session, enabled: true }) + '\n');
+    await until(() => second.events.filter(e => e.type === 'sessionState').at(-1)?.phoneLayout === true);
+    await until(() => tmux(['display-message', '-p', '-t', session, '#{window_width}']) === '60');
+    second.control.write(JSON.stringify({ id: 'desktop', method: 'setPhoneLayout', sessionId: session, enabled: false }) + '\n');
+    await until(() => tmux(['display-message', '-p', '-t', session, '#{window_width}']) === '110');
     local.kill(); local = undefined;
     await until(() => second.events.filter(e => e.type === 'sessionState').at(-1)?.localAttached === false);
     first.client.end();
@@ -130,6 +135,13 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
     const expired = await api('/v1/pairings', 'POST', { name: 'Test host', hostKey: hostKey.public }, pair.hostToken);
     await isolated.query('UPDATE pairings SET expires_at=0 WHERE id=$1', [expired.pairingId]);
     await api(`/v1/pairings/${expired.pairingId}/claim`, 'POST', { secret: expired.secret }, user1.accessToken, 404);
+    const localHost = generateIdentity(), localKey = generateIdentity();
+    const localPair = await api('/v1/pairings', 'POST', { name: 'Local host', hostKey: localHost.public });
+    await api('/v1/auth/pairing', 'POST', { pairingId: localPair.pairingId, secret: 'wrong-secret', publicKey: localKey.public, name: 'Local phone' }, undefined, 404);
+    const localUser = await api('/v1/auth/pairing', 'POST', { pairingId: localPair.pairingId, secret: localPair.secret, publicKey: localKey.public, name: 'Local phone' });
+    await api(`/v1/pairings/${localPair.pairingId}/claim`, 'POST', { secret: localPair.secret }, localUser.accessToken);
+    await api(`/v1/pairings/${localPair.pairingId}/confirm`, 'POST', { deviceId: localUser.deviceId, publicKey: localKey.public }, localPair.hostToken);
+    assert.equal((await api('/v1/machines', 'GET', undefined, localUser.accessToken)).machines[0].name, 'Local host');
   } finally {
     local?.kill(); for (const client of clients) client.end(); companion?.close();
     await relay.close();

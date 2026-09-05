@@ -75,12 +75,18 @@ import NIOSSH
         terminal.triggerUserOutboundEvent(SSHChannelRequestEvent.WindowChangeRequest(terminalCharacterWidth: clamp(cols), terminalRowHeight: clamp(rows), terminalPixelWidth: 0, terminalPixelHeight: 0), promise: nil)
     }
     public func takeControl(sessionId: String) async throws { try await command(method: "takeControl", sessionId: sessionId) }
+    public func setPhoneLayout(sessionId: String, enabled: Bool) async throws { try await command(method: "setPhoneLayout", sessionId: sessionId, enabled: enabled) }
     public func detachTerminal() { terminal?.close(promise: nil); terminal = nil }
     public func refresh() async throws { try await command(method: "list") }
-    private func command(method: String, sessionId: String? = nil) async throws {
+    private struct Command: Encodable {
+        let id: String
+        let method: String
+        let sessionId: String?
+        let enabled: Bool?
+    }
+    private func command(method: String, sessionId: String? = nil, enabled: Bool? = nil) async throws {
         guard let control else { throw WorkbenchError.disconnected }
-        var request = ["id": UUID().uuidString, "method": method]; request["sessionId"] = sessionId
-        var data = try JSONEncoder().encode(request); data.append(10)
+        var data = try JSONEncoder().encode(Command(id: UUID().uuidString, method: method, sessionId: sessionId, enabled: enabled)); data.append(10)
         var buffer = control.allocator.buffer(capacity: data.count); buffer.writeBytes(data)
         try await control.writeAndFlush(buffer).get()
     }
