@@ -37,6 +37,27 @@ afterAll(() => {
 });
 
 describe.skipIf(!hasTmux)("TerminalPanel private tmux ownership", () => {
+  test("shows an unavailable persisted workspace without crashing", async () => {
+    const workspace = join(suiteRoot, "missing-workspace");
+    const panel = new TerminalPanel(workspace, 80, 24, {
+      command: "exit 1",
+      persist: {
+        name: "missing_workspace_test",
+        socketPath: join(suiteRoot, "missing-workspace.sock"),
+      },
+    });
+
+    expect(() => panel.start()).not.toThrow();
+    await Bun.sleep(10);
+    expect(
+      panel
+        .getLines()
+        .map((row) => row.map((cell) => cell.char).join(""))
+        .join("\n")
+    ).toContain("Workspace unavailable:");
+    panel.kill();
+  });
+
   test("kills an unopened persisted pane by identity", () => {
     const socketPath = join(suiteRoot, "unopened-close.sock");
     const persist = { name: "unopened_close_test", socketPath };

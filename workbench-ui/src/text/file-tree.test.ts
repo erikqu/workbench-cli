@@ -54,6 +54,17 @@ describe("buildExplorerEntries", () => {
   });
 });
 
+describe("createExplorerIgnore", () => {
+  test("allows watcher traversal paths outside the workspace root", () => {
+    const shouldIgnore = createExplorerIgnore("/workspace/project", {
+      respectGitignore: false,
+    });
+
+    expect(shouldIgnore("/workspace")).toBe(false);
+    expect(shouldIgnore("/workspace/sibling")).toBe(false);
+  });
+});
+
 describe("ensureWorkspaceDirectory", () => {
   test("creates a missing nested workspace path", () => {
     const root = createTempRoot();

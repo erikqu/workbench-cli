@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { IBufferCell } from "@xterm/headless";
 import { Terminal } from "@xterm/headless";
@@ -432,6 +432,7 @@ export class TerminalPanel implements TerminalReadable {
   private terminal: Terminal;
   private child?: ReturnType<typeof Bun.spawn>;
   private pty?: Bun.Terminal;
+  private unavailableCwdShown = false;
   private updateRevision = ++revisionCounter;
   private lastViewportMovementAt = Number.NEGATIVE_INFINITY;
   private listeners = new Set<() => void>();
@@ -701,6 +702,21 @@ export class TerminalPanel implements TerminalReadable {
 
   start() {
     if (this.child) {
+      return;
+    }
+    try {
+      if (!statSync(this.cwd).isDirectory()) {
+        throw new Error("not a directory");
+      }
+      this.unavailableCwdShown = false;
+    } catch {
+      if (!this.unavailableCwdShown) {
+        this.unavailableCwdShown = true;
+        this.terminal.write(
+          `\r\nWorkspace unavailable:\r\n${this.cwd}\r\n\r\nRestore the folder or close this session.\r\n`,
+          () => this.publishFrame()
+        );
+      }
       return;
     }
     const cols = this.terminal.cols;

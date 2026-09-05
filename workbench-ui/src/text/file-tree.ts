@@ -220,10 +220,19 @@ export function createExplorerIgnore(
   }
 
   const matcher = (path: string) => {
-    const relPath = normalizeRelativePath(
-      isAbsolute(path) ? relative(rootPath, path) : path
-    );
+    const relativePath = isAbsolute(path) ? relative(rootPath, path) : path;
+    const relPath = normalizeRelativePath(relativePath);
     if (!relPath || relPath === ".") {
+      return false;
+    }
+    // Chokidar may ask about parent directories while traversing toward an
+    // absolute watch root. The `ignore` package intentionally rejects `..`
+    // paths, and these outside-root candidates must remain traversable anyway.
+    if (
+      relPath === ".." ||
+      relPath.startsWith("../") ||
+      isAbsolute(relativePath)
+    ) {
       return false;
     }
     if (relPath.split("/").some((part) => ignored.has(part))) {
