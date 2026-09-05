@@ -216,6 +216,9 @@ export class ReactWorkbenchApp {
       stdout,
       cols: process.stdout.columns ?? 120,
       rows: process.stdout.rows ?? 36,
+      // The host has already reflowed when SIGWINCH arrives. Waiting 200 ms
+      // lets incoming PTY output paint diffs against the pre-resize screen.
+      resizeCoalesceMs: 0,
       mode: "fullscreen",
       exitOnCtrlC: false,
       mouse: true,

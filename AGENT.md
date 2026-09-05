@@ -378,6 +378,14 @@ with text already present in the agent composer.
   Persistent harness panels therefore send one coalesced redraw signal to the
   pane process group after attach/resizes settle. Do not remove it unless the
   dormant-old-size integration regression is replaced with equivalent coverage.
+- Keep `resizeCoalesceMs: 0` on Workbench's `run()` options. The host screen
+  reflows immediately on resize; Silvery's default 200 ms trailing debounce
+  otherwise lets PTY updates paint against the old screen and leave stale text
+  when a resize burst returns to the original dimensions. The pinned Bun patch
+  in `workbench-ui/patches/silvery@0.24.0.patch` exposes the existing Term setting
+  through `run()` without changing its input/protocol setup. Preserve that
+  forwarding when upgrading Silvery, or remove the patch if upstream includes
+  it. The resize/input regression must pass before changing this policy.
 
 ## Viewers
 

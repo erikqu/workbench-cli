@@ -57,6 +57,12 @@ Use the checks proportionally:
   alternate-screen, inline, Codex-style, sticky-transcript, and real-shell
   scenarios with fragmented ANSI input.
 
+The deterministic terminal scenarios also resize a populated composer through
+80×24, 147×74, 319×82, and 120×40, then type, backspace, and paste multiline
+text. They check the complete reference frame, unique composer rows, and cursor
+position after edits, and send input immediately after a rapid resize burst.
+These checks run for both alternate-screen and inline fixtures, including Codex.
+
 The screenshot runner chooses the package root as its fixture workspace and
 writes ignored artifacts to `artifacts/screenshots/`.
 

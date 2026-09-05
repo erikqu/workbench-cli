@@ -1,0 +1,25 @@
+diff --git a/dist/index-DcroTThy.d.mts b/dist/index-DcroTThy.d.mts
+index 84713083066102ed23ceda81c307c10ef6c9c06b..2da5789400562bcd84b7e46e35a12fb6e8ef1dea 100644
+--- a/dist/index-DcroTThy.d.mts
++++ b/dist/index-DcroTThy.d.mts
+@@ -2422,6 +2422,8 @@ type RunOptions = RunOptionsCommon & RunOptionsProfileBranch;
+  * except `profile` / `caps` / `colorLevel`).
+  */
+ interface RunOptionsCommon {
++  /** Trailing-edge resize debounce for the owned Term (default: 200 ms). */
++  resizeCoalesceMs?: number;
+   /** Terminal dimensions (default: from process.stdout) */
+   cols?: number;
+   rows?: number;
+diff --git a/dist/src-CQ4eDa1k.mjs b/dist/src-CQ4eDa1k.mjs
+index 06d4705cebe4a61570fc7b27e799d9cd44017af8..32036080dca7584dbc8b604bf6b0599269d79aec 100644
+--- a/dist/src-CQ4eDa1k.mjs
++++ b/dist/src-CQ4eDa1k.mjs
+@@ -6147,6 +6147,7 @@ async function run(element, optionsOrTerm = {}, termOptions) {
+ 	const ownedTerm = headless ? null : createTerm({
+ 		stdin: runStdin,
+ 		stdout: runStdout,
++		...rest.resizeCoalesceMs !== void 0 ? { resizeCoalesceMs: rest.resizeCoalesceMs } : {},
+ 		...initialCaps ? { caps: initialCaps } : {},
+ 		...colorLevelOption !== void 0 ? { colorLevel: colorLevelOption } : {},
+ 		...typeof rest.mouse === "object" ? { mouse: rest.mouse } : {},

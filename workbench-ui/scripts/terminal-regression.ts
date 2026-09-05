@@ -186,6 +186,10 @@ try {
     await send(page, "\0WORKBENCH_CHUNK_OUTPUT");
   }
 
+  if (!(options.idleOnly || options.liveCodex || options.plainOnly)) {
+    location = await runResizeInputScenario(page);
+  }
+
   if (options.idleOnly) {
     await assertIdleWindows(page, options.idleSamples);
   } else if (options.liveCodex) {
@@ -255,6 +259,71 @@ try {
     rmSync(artifactDir, { force: true, recursive: true });
   }
   rmSync(tempRoot, { force: true, recursive: true });
+}
+
+// Exercise edits after reflow, including the user's large-window transition.
+// Every checkpoint compares the whole reference frame, unique composer markers,
+// history order (inline mode), and the actual painted cursor, not just text presence.
+async function runResizeInputScenario(page: Page): Promise<Location> {
+  let draft = "resize draft ".repeat(12).trim();
+  await paste(page, draft);
+  const check = () =>
+    waitForReference(page, (fixture) => fixture.state.composer === draft, 8000);
+  await check();
+  const sizes = [
+    [80, 24],
+    [147, 74],
+    [319, 82],
+    [80, 24],
+    [120, 40],
+  ] as const;
+  for (const [cols, rows] of sizes) {
+    await resizeOuter(page, cols, rows);
+    await check();
+    for (const char of " editX") {
+      await send(page, char);
+      draft += char;
+      await check();
+    }
+    await send(page, "\x7f");
+    draft = draft.slice(0, -1);
+    await check();
+    await paste(page, "\nsecond line");
+    draft += "\nsecond line";
+    await check();
+    // Delete through a newline and a wrapping boundary, exposing any old rows.
+    const deleted = "\nsecond line".length + 8;
+    await send(page, "\x7f".repeat(deleted));
+    draft = draft.slice(0, -deleted);
+    await check();
+    report(
+      `resize to ${cols}x${rows} followed by typing, deletion, and multiline paste`
+    );
+  }
+
+  // Deliver input immediately after a burst of resize events, before waiting
+  // for layout/PTY reflow. This covers keys arriving during window dragging.
+  await page.evaluate(() => {
+    for (const [cols, rows] of [
+      [100, 30],
+      [319, 82],
+      [80, 24],
+      [120, 40],
+    ]) {
+      (window as any).__resizeTerminal(cols, rows);
+    }
+    (window as any).__send(" burstX\x7f");
+  });
+  draft += " burst";
+  await check();
+  report("input during a resize burst preserves one composer and its cursor");
+
+  // Leave the same empty composer and geometry expected by the other scenarios.
+  await send(page, "\x1b");
+  draft = "";
+  await check();
+  await resizeOuter(page, initialCols, initialRows);
+  return check();
 }
 
 async function runSimulatedAgentScenario(page: Page, initial: Location) {
@@ -1177,7 +1246,12 @@ async function waitForReference(
     const frame = options.inline
       ? renderSimulatedInlineBlock(fixture.state, fixture.cols)
       : renderSimulatedAgentFrame(fixture.state, fixture.cols, fixture.rows);
-    const grid = await bufferGrid(page);
+    const { grid, outputSettled, synchronizedOutputMode } =
+      await settledBufferGrid(page);
+    if (!outputSettled || synchronizedOutputMode) {
+      await Bun.sleep(10);
+      continue;
+    }
     const found = locateFrame(grid, frame);
     if (found.ok) {
       const next = readFixture();
@@ -1250,14 +1324,12 @@ function validateInlineTail(
   y: number
 ) {
   const conversation = simulatedConversationRows(fixture.state, fixture.cols);
-  let headerY = -1;
-  for (let row = y - 1; row >= 0; row -= 1) {
-    if (grid.lines[row]?.slice(x).startsWith(" CLI:")) {
-      headerY = row;
-      break;
-    }
-  }
-  const visibleConversationRows = Math.max(0, y - headerY - 1);
+  // The header is truncated at narrow widths and is not part of the PTY.
+  // Derive the visible history from its actual height instead of searching
+  // for header text and accidentally comparing app chrome with history.
+  const blockRows = renderSimulatedInlineBlock(fixture.state, fixture.cols)
+    .lines.length;
+  const visibleConversationRows = Math.max(0, fixture.rows - blockRows);
   const depth = Math.min(
     INLINE_TAIL_ROWS,
     conversation.length,
