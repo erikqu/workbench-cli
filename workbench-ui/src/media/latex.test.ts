@@ -49,6 +49,48 @@ $$\theta \leftarrow \theta-\eta\nabla_\theta L_{\mathrm{PPO}}$$
     ).toEqual([{ startRow: 1, endRow: 3, formula: "x_t=E(o_t)" }]);
   });
 
+  test("recognizes approximation-only display equations from Codex", () => {
+    const formulas = [
+      String.raw`L(w+\Delta w)\approx L(w)+L'(w)\Delta w.`,
+      String.raw`L(3+\Delta w)\approx 9+6\Delta w.`,
+    ];
+    const lines = formulas.flatMap((formula) => [
+      "  [   ",
+      `  ${formula}   `,
+      "  ]   ",
+      "",
+    ]);
+
+    expect(extractDisplayMathBlocks(lines)).toEqual([
+      { startRow: 0, endRow: 2, formula: formulas[0] },
+      { startRow: 4, endRow: 6, formula: formulas[1] },
+    ]);
+  });
+
+  test.each([
+    "approx",
+    "sim",
+    "simeq",
+    "cong",
+    "equiv",
+    "neq",
+    "leq",
+    "geq",
+    "propto",
+  ])("recognizes the relation command \\%s without an equals sign", (command) => {
+    const formula = `a \\${command} b`;
+    expect(extractDisplayMath(`[\n${formula}\n]`)).toEqual([formula]);
+  });
+
+  test("does not treat prose about approximation as a display equation", () => {
+    expect(extractDisplayMath("[\napproximately nine\n]")).toEqual([]);
+    expect(
+      extractDisplayMath(String.raw`[
+\approximately nine
+]`)
+    ).toEqual([]);
+  });
+
   test("extracts equations beyond the renderer batch limit", () => {
     const lines = Array.from({ length: 15 }, (_, index) => [
       "[",

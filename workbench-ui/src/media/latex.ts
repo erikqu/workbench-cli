@@ -16,7 +16,7 @@ const unsafeTex =
   /\\(?:catcode|csname|def|documentclass|end\s*\{document|gdef|href|immediate|include|includegraphics|input|loop|newcommand|openin|openout|read|renewcommand|repeat|special|usepackage|write|xdef)\b|\^\^/i;
 
 const mathSignal =
-  /(?:\\(?:begin|frac|left|lambda|mathrm|nabla|operatorname|pi|qquad|right|softmax|text|theta)|[_^=]|\b(?:GRU|softmax)\b)/;
+  /(?:\\(?:approx|sim|simeq|cong|equiv|neq|leq|geq|propto)\b|\\(?:begin|frac|left|lambda|mathrm|nabla|operatorname|pi|qquad|right|softmax|text|theta)|[_^=]|\b(?:GRU|softmax)\b)/;
 
 export function latexAvailable(): boolean {
   return Bun.which("tectonic") !== null && Bun.which("pdftoppm") !== null;
