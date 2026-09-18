@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Text, useBoxRectDangerously, useInput } from "silvery";
-import type { SilveryImagePlacement } from "../../media/image";
 import { type PdfPreview, preparePdfPreview } from "../../media/pdf";
-import { preparePdfDisplay } from "../../media/pdf-display";
-import { PdfPageLoader } from "../../media/pdf-page-loader";
 import type { EditorTab } from "../../state/types";
 import { colors } from "../../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "../types";
-import { PreparedImageContent } from "./ImageViewer";
+import { MeasuredImageContent } from "./ImageViewer";
 import { clamp } from "./shared";
 
 export function PdfViewer({
@@ -84,11 +81,6 @@ export function PdfViewer({
   );
 }
 
-type ReadyPdfPreview = PdfPreview & {
-  sourcePath: string;
-  placement: SilveryImagePlacement;
-};
-
 function MeasuredPdfContent({
   path,
   page,
@@ -103,39 +95,16 @@ function MeasuredPdfContent({
   const rect = useBoxRectDangerously();
   // Small pane drags can reuse the same raster and let the image fit itself.
   const cols = Math.max(1, Math.ceil(rect.width / 8) * 8);
-  const imageCols = Math.max(1, Math.floor(rect.width));
-  const rows = Math.max(1, Math.floor(rect.height));
-  const [preview, setPreview] = useState<ReadyPdfPreview | null>(null);
+  const [preview, setPreview] = useState<
+    (PdfPreview & { sourcePath: string }) | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
-  const loader = useRef<{
-    key: string;
-    pages: PdfPageLoader<ReadyPdfPreview>;
-  } | null>(null);
-  const key = JSON.stringify([path, imageCols, rows]);
-
-  useEffect(() => {
-    const current = new PdfPageLoader(async (requestedPage, signal) => {
-      const result = await preparePdfPreview(path, requestedPage, cols, signal);
-      const placement = await preparePdfDisplay(
-        result.imagePath,
-        imageCols,
-        rows,
-        signal
-      );
-      return { ...result, sourcePath: path, placement };
-    });
-    loader.current = { key, pages: current };
-    return () => {
-      current.dispose();
-      loader.current = null;
-    };
-  }, [path, cols, imageCols, rows, key]);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setError(null);
-    loader.current?.pages
-      .load(page)
+    preparePdfPreview(path, page, cols, controller.signal)
       .then((result) => {
         if (cancelled) {
           return;
@@ -154,18 +123,15 @@ function MeasuredPdfContent({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [path, page, cols, key, setPage, setPageCount]);
+  }, [path, page, cols, setPage, setPageCount]);
 
   if (error) {
     return <Text color={colors.accentAlt}>{error}</Text>;
   }
-  const visible =
-    (loader.current?.key === key
-      ? loader.current.pages.peek(page)
-      : undefined) ?? preview;
-  if (!visible || visible.sourcePath !== path || visible.page !== page) {
+  if (!preview || preview.sourcePath !== path || preview.page !== page) {
     return <Text color={colors.dim}>Rendering PDF...</Text>;
   }
-  return <PreparedImageContent placement={visible.placement} />;
+  return <MeasuredImageContent path={preview.imagePath} />;
 }

@@ -74,6 +74,7 @@ export function MeasuredImageContent({
   const rect = useBoxRectDangerously();
   const cols = Math.max(1, Math.floor(rect.width));
   const rows = Math.max(1, Math.floor(rect.height));
+  const suppressed = useContext(SuppressImagesContext);
   const [placement, setPlacement] = useState<SilveryImagePlacement | null>(
     null
   );
@@ -107,28 +108,6 @@ export function MeasuredImageContent({
     };
   }, [path, cols, rows, terminalArtOnly]);
 
-  return (
-    <PreparedImageContent
-      error={error}
-      placement={placement}
-      renderWhenSuppressed={renderWhenSuppressed}
-      zIndex={zIndex}
-    />
-  );
-}
-
-export function PreparedImageContent({
-  placement,
-  error,
-  renderWhenSuppressed = false,
-  zIndex = 10,
-}: {
-  placement: SilveryImagePlacement | null;
-  error?: string | null;
-  renderWhenSuppressed?: boolean;
-  zIndex?: number;
-}) {
-  const suppressed = useContext(SuppressImagesContext);
   // Hold off transmitting graphics while suppressed (e.g. under the splash) so
   // the emulator's image compositor doesn't paint over the overlay.
   if (suppressed && !renderWhenSuppressed) {
