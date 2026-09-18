@@ -23,12 +23,13 @@ export function pdfPrefetchPages(page: number, pageCount?: number): number[] {
   ];
 }
 
-// One rasterizer at a time per viewer. Foreground requests can adopt an active
-// prefetch of the same page, or cancel unrelated work before starting their own.
+// One active preparation per viewer. Foreground requests adopt the matching
+// prefetch or abort unrelated work without waiting for its asynchronous cleanup.
 export class PdfPageLoader<T extends PdfPreview = PdfPreview> {
   private active?: RenderJob<T>;
   private readonly ready = new Map<number, T>();
   private queue: number[] = [];
+  private backgroundTimer?: ReturnType<typeof setTimeout>;
   private generation = 0;
   private disposed = false;
 
@@ -44,6 +45,8 @@ export class PdfPageLoader<T extends PdfPreview = PdfPreview> {
     }
     const generation = ++this.generation;
     this.queue = [];
+    clearTimeout(this.backgroundTimer);
+    this.backgroundTimer = undefined;
     const cached = this.peek(page);
     const result =
       cached ??
@@ -62,6 +65,8 @@ export class PdfPageLoader<T extends PdfPreview = PdfPreview> {
     this.disposed = true;
     this.ready.clear();
     this.queue = [];
+    clearTimeout(this.backgroundTimer);
+    this.backgroundTimer = undefined;
     this.active?.controller.abort();
   }
 
@@ -69,10 +74,8 @@ export class PdfPageLoader<T extends PdfPreview = PdfPreview> {
     const previous = this.active;
     previous?.controller.abort();
     const controller = new AbortController();
-    // Await cancellation cleanup so fast navigation cannot pile up processes.
-    const promise = (
-      previous ? previous.promise.catch(() => undefined) : Promise.resolve()
-    )
+    // A cancelled decoder may finish late; it must not hold up the new page.
+    const promise = Promise.resolve()
       .then(() => {
         controller.signal.throwIfAborted();
         return this.renderPage(page, controller.signal);
@@ -104,11 +107,19 @@ export class PdfPageLoader<T extends PdfPreview = PdfPreview> {
     while (this.queue.length && this.ready.has(this.queue[0]!)) {
       this.queue.shift();
     }
-    const page = this.queue.shift();
-    if (page !== undefined) {
-      // Failed speculative pages must not replace the visible page with an
-      // error. A foreground visit retries them through the normal error path.
-      this.start(page).promise.catch(() => undefined);
+    if (this.backgroundTimer !== undefined || !this.queue.length) {
+      return;
     }
+    // Let the foreground result commit and service input between every page.
+    this.backgroundTimer = setTimeout(() => {
+      this.backgroundTimer = undefined;
+      if (this.disposed || this.active) {
+        return;
+      }
+      const page = this.queue.shift();
+      if (page !== undefined) {
+        this.start(page).promise.catch(() => undefined);
+      }
+    }, 0);
   }
 }

@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useBoxRectDangerously, useInput } from "silvery";
-import {
-  forgetImage,
-  prepareSilveryImage,
-  type SilveryImagePlacement,
-} from "../../media/image";
+import type { SilveryImagePlacement } from "../../media/image";
 import { type PdfPreview, preparePdfPreview } from "../../media/pdf";
+import { preparePdfDisplay } from "../../media/pdf-display";
 import { PdfPageLoader } from "../../media/pdf-page-loader";
 import type { EditorTab } from "../../state/types";
 import { colors } from "../../ui/theme";
@@ -119,30 +116,13 @@ function MeasuredPdfContent({
   useEffect(() => {
     const current = new PdfPageLoader(async (requestedPage, signal) => {
       const result = await preparePdfPreview(path, requestedPage, cols, signal);
-      try {
-        let placement = await prepareSilveryImage(
-          result.imagePath,
-          imageCols,
-          rows
-        );
-        signal.throwIfAborted();
-        if (!placement) {
-          throw new Error("Could not decode PDF page");
-        }
-        if (
-          placement.protocol === "graphics" &&
-          typeof placement.src === "string"
-        ) {
-          placement = {
-            ...placement,
-            src: Buffer.from(await Bun.file(placement.src).arrayBuffer()),
-          };
-          signal.throwIfAborted();
-        }
-        return { ...result, sourcePath: path, placement };
-      } finally {
-        forgetImage(result.imagePath);
-      }
+      const placement = await preparePdfDisplay(
+        result.imagePath,
+        imageCols,
+        rows,
+        signal
+      );
+      return { ...result, sourcePath: path, placement };
     });
     loader.current = { key, pages: current };
     return () => {

@@ -11,10 +11,74 @@ const range = (start: number, end: number) =>
   Array.from({ length: end - start + 1 }, (_, i) => start + i);
 
 async function settle() {
-  await Bun.sleep(1);
+  await Bun.sleep(40);
 }
 
 describe("PDF tranche loading", () => {
+  test("publishes the visible page before beginning background preparation", async () => {
+    const events: string[] = [];
+    const loader = new PdfPageLoader(async (page) => {
+      events.push(`prepare ${page}`);
+      return preview(page, 10);
+    });
+    try {
+      await loader.load(1);
+      events.push("display 1");
+      expect(events).toEqual(["prepare 1", "display 1"]);
+    } finally {
+      loader.dispose();
+    }
+  });
+
+  test("yields to input between background pages with cached rasters", async () => {
+    const events: string[] = [];
+    let input: ReturnType<typeof setTimeout> | undefined;
+    const loader = new PdfPageLoader(async (page) => {
+      events.push(`prepare ${page}`);
+      if (page === 2) {
+        input = setTimeout(() => events.push("input"), 0);
+      }
+      return preview(page, 10);
+    });
+    try {
+      await loader.load(1);
+      await Bun.sleep(100);
+      expect(events.indexOf("input")).toBeLessThan(events.indexOf("prepare 3"));
+    } finally {
+      clearTimeout(input);
+      loader.dispose();
+    }
+  });
+
+  test("foreground jumps do not wait for obsolete decoders", async () => {
+    let finishOld: (() => void) | undefined;
+    const started: number[] = [];
+    const loader = new PdfPageLoader(async (page) => {
+      started.push(page);
+      if (page === 2) {
+        await new Promise<void>((resolve) => {
+          finishOld = resolve;
+        });
+      }
+      return preview(page, 3);
+    });
+    await loader.load(1);
+    await Bun.sleep(20);
+    let displayed: number | undefined;
+    const jump = loader.load(3).then((result) => {
+      displayed = result.page;
+    });
+    try {
+      await Bun.sleep(20);
+      expect(started).toContain(3);
+      expect(displayed).toBe(3);
+    } finally {
+      finishOld?.();
+      await jump;
+      loader.dispose();
+    }
+  });
+
   test("warms ten pages and starts the next tranche at page four", async () => {
     const rendered = new Set<number>();
     const loader = new PdfPageLoader(async (page) => {
