@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useBoxRectDangerously, useInput } from "silvery";
+import {
+  forgetImage,
+  prepareSilveryImage,
+  type SilveryImagePlacement,
+} from "../../media/image";
 import { type PdfPreview, preparePdfPreview } from "../../media/pdf";
 import { PdfPageLoader } from "../../media/pdf-page-loader";
 import type { EditorTab } from "../../state/types";
 import { colors } from "../../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "../types";
-import { MeasuredImageContent } from "./ImageViewer";
+import { PreparedImageContent } from "./ImageViewer";
 import { clamp } from "./shared";
 
 export function PdfViewer({
@@ -82,6 +87,11 @@ export function PdfViewer({
   );
 }
 
+type ReadyPdfPreview = PdfPreview & {
+  sourcePath: string;
+  placement: SilveryImagePlacement;
+};
+
 function MeasuredPdfContent({
   path,
   page,
@@ -96,28 +106,56 @@ function MeasuredPdfContent({
   const rect = useBoxRectDangerously();
   // Small pane drags can reuse the same raster and let the image fit itself.
   const cols = Math.max(1, Math.ceil(rect.width / 8) * 8);
-  const [preview, setPreview] = useState<
-    (PdfPreview & { sourcePath: string }) | null
-  >(null);
+  const imageCols = Math.max(1, Math.floor(rect.width));
+  const rows = Math.max(1, Math.floor(rect.height));
+  const [preview, setPreview] = useState<ReadyPdfPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const loader = useRef<PdfPageLoader | null>(null);
+  const loader = useRef<{
+    key: string;
+    pages: PdfPageLoader<ReadyPdfPreview>;
+  } | null>(null);
+  const key = JSON.stringify([path, imageCols, rows]);
 
   useEffect(() => {
-    const current = new PdfPageLoader((requestedPage, signal) =>
-      preparePdfPreview(path, requestedPage, cols, signal)
-    );
-    loader.current = current;
+    const current = new PdfPageLoader(async (requestedPage, signal) => {
+      const result = await preparePdfPreview(path, requestedPage, cols, signal);
+      try {
+        let placement = await prepareSilveryImage(
+          result.imagePath,
+          imageCols,
+          rows
+        );
+        signal.throwIfAborted();
+        if (!placement) {
+          throw new Error("Could not decode PDF page");
+        }
+        if (
+          placement.protocol === "graphics" &&
+          typeof placement.src === "string"
+        ) {
+          placement = {
+            ...placement,
+            src: Buffer.from(await Bun.file(placement.src).arrayBuffer()),
+          };
+          signal.throwIfAborted();
+        }
+        return { ...result, sourcePath: path, placement };
+      } finally {
+        forgetImage(result.imagePath);
+      }
+    });
+    loader.current = { key, pages: current };
     return () => {
       current.dispose();
       loader.current = null;
     };
-  }, [path, cols]);
+  }, [path, cols, imageCols, rows, key]);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    loader.current
-      ?.load(page)
+    loader.current?.pages
+      .load(page)
       .then((result) => {
         if (cancelled) {
           return;
@@ -137,13 +175,17 @@ function MeasuredPdfContent({
     return () => {
       cancelled = true;
     };
-  }, [path, page, cols, setPage, setPageCount]);
+  }, [path, page, cols, key, setPage, setPageCount]);
 
   if (error) {
     return <Text color={colors.accentAlt}>{error}</Text>;
   }
-  if (!preview || preview.sourcePath !== path || preview.page !== page) {
+  const visible =
+    (loader.current?.key === key
+      ? loader.current.pages.peek(page)
+      : undefined) ?? preview;
+  if (!visible || visible.sourcePath !== path || visible.page !== page) {
     return <Text color={colors.dim}>Rendering PDF...</Text>;
   }
-  return <MeasuredImageContent path={preview.imagePath} />;
+  return <PreparedImageContent placement={visible.placement} />;
 }

@@ -42,6 +42,57 @@ describe("PDF tranche loading", () => {
     }
   });
 
+  test("ready page turns reuse the prepared display without waiting for background work", async () => {
+    const calls: number[] = [];
+    let release: (() => void) | undefined;
+    let backgroundSignal: AbortSignal | undefined;
+    const loader = new PdfPageLoader(async (page, signal) => {
+      calls.push(page);
+      if (page === 3) {
+        backgroundSignal = signal;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return {
+        ...preview(page, 3),
+        placement: { text: `prepared page ${page}` },
+      };
+    });
+    try {
+      await loader.load(1);
+      await settle();
+      expect(calls).toEqual([1, 2, 3]);
+      const ready = loader.peek(2);
+      expect(ready?.placement.text).toBe("prepared page 2");
+      expect(await loader.load(2)).toBe(ready!);
+      expect(backgroundSignal?.aborted).toBe(false);
+      expect(calls).toEqual([1, 2, 3]);
+      release!();
+      await settle();
+      expect(calls).toEqual([1, 2, 3]);
+    } finally {
+      release?.();
+      loader.dispose();
+    }
+  });
+
+  test("bounds prepared page memory and discards it on close", async () => {
+    const loader = new PdfPageLoader(async (page) => preview(page));
+    for (const page of [1, 14, 24, 34]) {
+      await loader.load(page);
+      await settle();
+    }
+    expect(
+      Array.from({ length: 100 }, (_, i) => loader.peek(i + 1)).filter(Boolean)
+        .length
+    ).toBeLessThanOrEqual(30);
+    expect(loader.peek(1)).toBeUndefined();
+    expect(loader.peek(50)?.page).toBe(50);
+    loader.dispose();
+    expect(loader.peek(50)).toBeUndefined();
+  });
+
   test("bounds jumps, backward navigation, short documents, and unknown counts", () => {
     expect(pdfPrefetchPages(24, 26).sort((a, b) => a - b)).toEqual([
       21, 22, 23, 25, 26,
