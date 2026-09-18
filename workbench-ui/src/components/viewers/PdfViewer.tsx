@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Text, useBoxRectDangerously, useInput } from "silvery";
 import { type PdfPreview, preparePdfPreview } from "../../media/pdf";
+import { PdfPageLoader } from "../../media/pdf-page-loader";
 import type { EditorTab } from "../../state/types";
 import { colors } from "../../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "../types";
@@ -99,12 +100,24 @@ function MeasuredPdfContent({
     (PdfPreview & { sourcePath: string }) | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const loader = useRef<PdfPageLoader | null>(null);
+
+  useEffect(() => {
+    const current = new PdfPageLoader((requestedPage, signal) =>
+      preparePdfPreview(path, requestedPage, cols, signal)
+    );
+    loader.current = current;
+    return () => {
+      current.dispose();
+      loader.current = null;
+    };
+  }, [path, cols]);
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
     setError(null);
-    preparePdfPreview(path, page, cols, controller.signal)
+    loader.current
+      ?.load(page)
       .then((result) => {
         if (cancelled) {
           return;
@@ -123,7 +136,6 @@ function MeasuredPdfContent({
       });
     return () => {
       cancelled = true;
-      controller.abort();
     };
   }, [path, page, cols, setPage, setPageCount]);
 
