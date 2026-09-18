@@ -35,7 +35,7 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.64",
+  "version": "0.1.65",
   "private": true,
   "patchedDependencies": {
     "silvery@0.24.0": "patches/silvery@0.24.0.patch"
