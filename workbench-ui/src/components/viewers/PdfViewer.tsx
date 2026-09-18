@@ -93,45 +93,44 @@ function MeasuredPdfContent({
   setPageCount(pageCount: number | undefined): void;
 }) {
   const rect = useBoxRectDangerously();
-  const cols = Math.max(1, Math.floor(rect.width));
-  const [preview, setPreview] = useState<PdfPreview | null>(null);
+  // Small pane drags can reuse the same raster and let the image fit itself.
+  const cols = Math.max(1, Math.ceil(rect.width / 8) * 8);
+  const [preview, setPreview] = useState<
+    (PdfPreview & { sourcePath: string }) | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setError(null);
-    setPreview(null);
-    const timer = setTimeout(() => {
-      preparePdfPreview(path, page, cols)
-        .then((result) => {
-          if (cancelled) {
-            return;
-          }
-          setPreview(result);
-          setPageCount(result.pageCount);
-          if (result.page !== page) {
-            setPage(result.page);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            setPreview(null);
-            setError(
-              err instanceof Error ? err.message : "Could not render PDF"
-            );
-          }
-        });
-    }, 80);
+    preparePdfPreview(path, page, cols, controller.signal)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setPreview({ ...result, sourcePath: path });
+        setPageCount(result.pageCount);
+        if (result.page !== page) {
+          setPage(result.page);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPreview(null);
+          setError(err instanceof Error ? err.message : "Could not render PDF");
+        }
+      });
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      controller.abort();
     };
   }, [path, page, cols, setPage, setPageCount]);
 
   if (error) {
     return <Text color={colors.accentAlt}>{error}</Text>;
   }
-  if (!preview) {
+  if (!preview || preview.sourcePath !== path || preview.page !== page) {
     return <Text color={colors.dim}>Rendering PDF...</Text>;
   }
   return <MeasuredImageContent path={preview.imagePath} />;

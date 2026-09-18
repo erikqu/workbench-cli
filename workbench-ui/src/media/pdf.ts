@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCellPixelWidth } from "./image";
@@ -24,10 +24,13 @@ export interface PdfPreview {
 export async function preparePdfPreview(
   path: string,
   page: number,
-  maxCols: number
+  maxCols: number,
+  signal?: AbortSignal
 ): Promise<PdfPreview> {
+  signal?.throwIfAborted();
   const metadata = fileMetadata(path);
   const pageCount = await pdfPageCount(path);
+  signal?.throwIfAborted();
   const selectedPage = clamp(
     Math.floor(page),
     1,
@@ -37,38 +40,89 @@ export async function preparePdfPreview(
   // reported by the terminal probe. This makes the page as sharp as the monitor
   // it's shown on, instead of the old fixed 10px/column guess. Falls back to the
   // heuristic when the terminal never reported its cell geometry.
-  const perColumn = getCellPixelWidth() ?? fallbackCellPxWidth;
-  const pixelWidth = Math.min(
-    maxRasterWidth,
-    Math.max(minRasterWidth, Math.round(Math.floor(maxCols) * perColumn))
-  );
+  const pixelWidth = pdfPreviewWidth(maxCols);
   const imagePath = cachePath(path, metadata, selectedPage, pixelWidth);
 
   if (existsSync(imagePath)) {
     return { imagePath, page: selectedPage, pageCount };
   }
 
-  mkdirSync(previewDir, { recursive: true });
-  const outputPrefix = imagePath.replace(/\.png$/, "");
-  const result = await runCommand("pdftoppm", [
-    "-png",
-    "-singlefile",
-    "-f",
-    String(selectedPage),
-    "-l",
-    String(selectedPage),
-    "-scale-to-x",
-    String(pixelWidth),
-    "-scale-to-y",
-    "-1",
-    path,
-    outputPrefix,
-  ]);
-
-  if (!(result.ok && existsSync(imagePath))) {
-    throw new Error("PDF preview needs pdftoppm from poppler-utils");
-  }
+  await renderPage(path, selectedPage, pixelWidth, imagePath, signal);
   return { imagePath, page: selectedPage, pageCount };
+}
+
+// Round upward so small pane drags reuse a raster without sacrificing detail.
+export function pdfPreviewWidth(
+  maxCols: number,
+  perColumn = getCellPixelWidth() ?? fallbackCellPxWidth
+): number {
+  return Math.min(
+    maxRasterWidth,
+    Math.max(
+      minRasterWidth,
+      Math.ceil((Math.floor(maxCols) * perColumn) / 128) * 128
+    )
+  );
+}
+
+async function renderPage(
+  path: string,
+  page: number,
+  pixelWidth: number,
+  imagePath: string,
+  signal?: AbortSignal
+) {
+  // Debounce only cold renders. Cached pages should appear immediately.
+  await waitForRender(signal);
+  mkdirSync(previewDir, { recursive: true });
+  // Never expose a partially written (or cancelled) PNG as a cache hit.
+  const outputPrefix = `${imagePath}.${crypto.randomUUID()}`;
+  const temporaryPath = `${outputPrefix}.png`;
+  try {
+    const result = await runCommand(
+      "pdftoppm",
+      [
+        "-png",
+        "-singlefile",
+        "-f",
+        String(page),
+        "-l",
+        String(page),
+        "-scale-to-x",
+        String(pixelWidth),
+        "-scale-to-y",
+        "-1",
+        path,
+        outputPrefix,
+      ],
+      12_000,
+      signal
+    );
+    signal?.throwIfAborted();
+    if (!(result.ok && existsSync(temporaryPath))) {
+      throw new Error(
+        "Could not render PDF page (pdftoppm from poppler-utils is required)"
+      );
+    }
+    renameSync(temporaryPath, imagePath);
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
+}
+
+function waitForRender(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, 80);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 async function pdfPageCount(path: string): Promise<number | undefined> {
@@ -114,8 +168,10 @@ function fileMetadata(path: string) {
 async function runCommand(
   command: string,
   args: string[],
-  timeoutMs = 12_000
+  timeoutMs = 12_000,
+  signal?: AbortSignal
 ): Promise<{ ok: boolean; stdout: string }> {
+  signal?.throwIfAborted();
   let child: ReturnType<typeof Bun.spawn>;
   try {
     child = Bun.spawn([command, ...args], {
@@ -127,13 +183,15 @@ async function runCommand(
     return { ok: false, stdout: "" };
   }
 
-  const timer = setTimeout(() => {
+  const stop = () => {
     try {
-      child.kill();
+      child.kill("SIGKILL");
     } catch {
       // Ignore races if the renderer exits as the timeout fires.
     }
-  }, timeoutMs);
+  };
+  signal?.addEventListener("abort", stop, { once: true });
+  const timer = setTimeout(stop, timeoutMs);
 
   try {
     const stdoutPromise = new Response(
@@ -147,6 +205,7 @@ async function runCommand(
     return { ok: exitCode === 0, stdout };
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
   }
 }
 
