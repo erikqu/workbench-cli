@@ -71,6 +71,8 @@ Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
   tmux server.
 - Open several workspaces and switch directly with visible Option-number hints.
 - Inspect Explorer files and live Git changes beside the active harness.
+- Review, merge, and check CI on the workspace's pull requests in a
+  Pull Requests tab.
 - Preview Markdown, Mermaid diagrams, images, PDFs, and video.
 - Use the mouse for tabs, session cards, resizing, selection, and scrolling.
 - Open the complete in-app shortcut guide from `? Help` or `Ctrl+?`.
@@ -169,7 +171,15 @@ in that workspace directory.
   the Bottom.
 - **Tabs:** harnesses, terminals, Changes, and files across the top. Right-click
   for Close Others, Close to the Left, and Close to the Right.
-- **Workspace pane:** active harness, Explorer, Terminals, and Changes.
+- **Workspace pane:** active harness, Explorer, Terminals, Pull Requests, and
+  Changes.
+- **Pull Requests:** `Option+P`, the workspace pane entry, or the `+` menu opens
+  the workspace repository's pull requests in
+  [prs](https://github.com/nandatheguntupalli/prs) (`brew install
+  nandatheguntupalli/tap/prs`; set `WORKBENCH_PRS_BIN` to use another build).
+  Outside a GitHub checkout it lists every PR you are involved in. The viewer
+  keeps running across restarts like other panes, and `q` inside it offers to
+  reopen rather than leaving a dead tab.
 - **Harness header:** restart the current harness in place with `↻`, or use
   `switch ...` to add/select another harness.
 - **Help:** click `? Help` or press `Ctrl+?` for the current command guide.
@@ -185,6 +195,7 @@ Quitting Workbench only detaches panes so they can be restored on the next run.
 | `Ctrl+N` | New workspace |
 | `Ctrl+H` | Add or switch harness |
 | `Ctrl+T` | New terminal in the active workspace |
+| `Option+P` | Open the workspace's Pull Requests tab |
 | `Ctrl+B` | Toggle the sessions pane |
 | `Ctrl+W` | Close the active closable tab when UI focus owns the key |
 | `Ctrl+S` | Save the active editable buffer when UI focus owns the key |
@@ -206,7 +217,8 @@ distinguish `Ctrl+?` from Backspace.
 
 Workbench stores layout and tab identity in
 `~/.workbench/workbench-ui-state.json`. Agent and terminal processes run on the
-private tmux socket `~/.workbench/tmux-ui.sock`; Workbench never uses or destroys
+private tmux socket `~/.workbench/tmux-ui.sock`, as does the pull request
+viewer; Workbench never uses or destroys
 the user's normal tmux server.
 
 ## Development

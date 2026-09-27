@@ -28,12 +28,15 @@ import type {
   PersistedSession,
   PersistedTerminalTab,
   PersistedWorkbenchState,
+  PullRequestsPane,
   TerminalTab,
 } from "./types";
 import {
   CHANGES_TAB,
   harnessIdFromTab,
   isChangesTab,
+  isPullRequestsTab,
+  PULL_REQUESTS_TAB,
   terminalIdFromTab,
 } from "./types";
 import { persistedStatePath } from "./workbench-paths";
@@ -116,6 +119,10 @@ export function createTerminal(
   };
 }
 
+export function createPullRequestsPane(): PullRequestsPane {
+  return { tmux: makeTmuxName("p") };
+}
+
 export function restoreSession(
   persisted: PersistedSession,
   existing: AgentSession[]
@@ -165,6 +172,11 @@ export function restoreSession(
       (index === 0 ? session.terminals[0].tmux : makeTmuxName("t")),
   }));
 
+  // Reuse the persisted tmux name so the viewer re-attaches where it was.
+  session.pullRequests = persisted.pullRequests?.tmux
+    ? { tmux: persisted.pullRequests.tmux }
+    : undefined;
+
   session.openTabs = (persisted.openTabs ?? [])
     .map((path) => openEditorTab(path))
     .filter((tab): tab is EditorTab => !!tab);
@@ -191,11 +203,14 @@ export function restoreSession(
       ? `term:${restoredTerminal.id}`
       : isChangesTab(persisted.activeMainTab ?? "")
         ? CHANGES_TAB
-        : session.openTabs.some((tab) => tab.path === persisted.activeMainTab)
-          ? (persisted.activeMainTab ?? `harness:${session.harnesses[0].id}`)
-          : persistedTerminalId && session.terminals[0]
-            ? `term:${session.terminals[0].id}`
-            : `harness:${session.harnesses[0].id}`;
+        : isPullRequestsTab(persisted.activeMainTab ?? "") &&
+            session.pullRequests
+          ? PULL_REQUESTS_TAB
+          : session.openTabs.some((tab) => tab.path === persisted.activeMainTab)
+            ? (persisted.activeMainTab ?? `harness:${session.harnesses[0].id}`)
+            : persistedTerminalId && session.terminals[0]
+              ? `term:${session.terminals[0].id}`
+              : `harness:${session.harnesses[0].id}`;
   // Directory expansion is intentionally ephemeral. Every restored workspace
   // starts collapsed so old/deep trees never reopen unexpectedly.
   session.expandedDirs = new Set();
@@ -271,7 +286,8 @@ export function focusForMainTab(tab: string): AppState["focus"] {
   if (harnessIdFromTab(tab) || tab === "chat") {
     return "harness";
   }
-  if (terminalIdFromTab(tab)) {
+  // The pull request viewer is a PTY, so it takes terminal focus and input.
+  if (terminalIdFromTab(tab) || isPullRequestsTab(tab)) {
     return "terminal";
   }
   // The Changes tab and file tabs both live in the editor focus region.
@@ -342,6 +358,9 @@ export function savePersistedState(state: AppState) {
         tmux: terminal.tmux,
       })),
       openTabs: session.openTabs.map((tab) => tab.path),
+      pullRequests: session.pullRequests
+        ? { tmux: session.pullRequests.tmux }
+        : undefined,
       activeTabPath: session.activeTabPath,
       activeMainTab: session.activeMainTab,
     })),

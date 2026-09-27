@@ -46,6 +46,26 @@ function persisted(activeMainTab: string): PersistedWithIds {
 }
 
 describe("persisted session identity", () => {
+  test("re-attaches the pull request viewer and keeps it active", () => {
+    const restored = restoreSession(
+      {
+        ...persisted("pull-requests"),
+        pullRequests: { tmux: "workbench_p_stable" },
+      },
+      []
+    );
+
+    expect(restored.pullRequests).toEqual({ tmux: "workbench_p_stable" });
+    expect(restored.activeMainTab).toBe("pull-requests");
+  });
+
+  test("falls back to the agent when the pull request viewer is gone", () => {
+    const restored = restoreSession(persisted("pull-requests"), []);
+
+    expect(restored.pullRequests).toBeUndefined();
+    expect(restored.activeMainTab).toBe("harness:harness-stable");
+  });
+
   test("restores the same harness, terminal, and session ids", () => {
     const restored = restoreSession(persisted("harness:harness-stable"), []);
 

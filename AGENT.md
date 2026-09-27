@@ -490,6 +490,27 @@ Re-selecting the active harness type is an explicit restart. It keeps the tab
 identity but kills the backing tmux session so the panel starts cleanly. The
 `↻` control beside `switch ...` invokes the same path.
 
+## Pull Requests tab
+
+`PULL_REQUESTS_TAB` is a per-session tab that embeds the standalone
+[`prs`](https://github.com/nandatheguntupalli/prs) TUI. It is deliberately a
+PTY rather than a Silvery port: like a harness, it runs in its own persistent
+private tmux session (`AgentSession.pullRequests.tmux`, prefix `workbench_p_`),
+so it keeps its place across tab switches, hot reloads, and restarts, and prs
+keeps its own releases.
+
+- It shares **terminal focus** with shell tabs. `activeTerminalPanel()` resolves
+  either the active shell or the viewer, so input, paste, resize, and wheel all
+  use the existing terminal routing. Do not add a separate focus target.
+- The pane exists only after the user opens it (`Option+P`, the workspace pane
+  row, or the `+` menu). It is closable, and closing it or its workspace kills
+  the tmux session, the same as terminals.
+- `state/pull-requests.ts` owns the command. The binary reaches the pane
+  through `WORKBENCH_PRS_BIN` so no path is ever quoted into the script, and the
+  reopen loop runs under `/bin/sh` because tmux hands the command to the user's
+  shell (possibly fish). Opening without prs installed shows an install toast
+  instead of creating a pane.
+
 ## Screenshot suite & fixtures (gotcha)
 
 `bun run screenshot` builds a synthetic state from the package root

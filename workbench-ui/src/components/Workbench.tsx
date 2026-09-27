@@ -17,10 +17,12 @@ import {
   useWindowSize,
 } from "silvery";
 import { SPLASH_VERSION } from "../media/splash";
+import { PULL_REQUESTS_LABEL } from "../state/pull-requests";
 import { focusForMainTab } from "../state/state";
 import {
   harnessIdFromTab,
   isChangesTab,
+  isPullRequestsTab,
   terminalIdFromTab,
 } from "../state/types";
 import {
@@ -174,6 +176,7 @@ export function Workbench({
   const terminalTab = terminalIdFromTab(view.session.activeMainTab);
   const harnessTab = harnessIdFromTab(view.session.activeMainTab);
   const changesTab = isChangesTab(view.session.activeMainTab);
+  const pullRequestsTab = isPullRequestsTab(view.session.activeMainTab);
 
   return (
     <Screen flexDirection="column">
@@ -269,7 +272,7 @@ export function Workbench({
                 minHeight={1}
                 minWidth={1}
               >
-                {terminalTab ? (
+                {terminalTab || pullRequestsTab ? (
                   <TerminalView
                     actions={actions}
                     selectionChanged={(selected) => {
@@ -279,6 +282,7 @@ export function Workbench({
                         selectionActions.clear?.();
                       }
                     }}
+                    title={pullRequestsTab ? PULL_REQUESTS_LABEL : "Terminal"}
                     view={view}
                   />
                 ) : harnessTab ? (
@@ -412,6 +416,8 @@ function handleKey(
       actions.newTerminal();
     } else if (input === "n") {
       actions.openNewAgent();
+    } else if (input === "p") {
+      actions.openPullRequests();
     }
     return;
   }
@@ -456,6 +462,12 @@ function handleKey(
     // it fires whether or not Shift is held for the +/= key.
     if (input === "+" || input === "=") {
       actions.openNewAgent();
+      return;
+    }
+    // Option+P opens (or returns to) the workspace's pull requests. Like
+    // Option+W, it has to work while an agent or shell owns the keyboard.
+    if (input.toLowerCase() === "p" && !key.shift) {
+      actions.openPullRequests();
       return;
     }
     const index = digitIndex(input);
@@ -948,10 +960,12 @@ function TerminalView({
   view,
   actions,
   selectionChanged,
+  title,
 }: {
   view: WorkbenchViewModel;
   actions: WorkbenchActions;
   selectionChanged(selected: boolean): void;
+  title: string;
 }) {
   return (
     <Box
@@ -972,8 +986,7 @@ function TerminalView({
       <Text
         color={view.state.focus === "terminal" ? colors.accent : colors.dim}
       >
-        {" "}
-        Terminal{" "}
+        {` ${title} `}
       </Text>
       {view.terminalPanel ? (
         <PaneScrollIndicator panel={view.terminalPanel} top={1} />
@@ -1231,7 +1244,7 @@ function PlusMenu({
       onMouseDown={(event) => event.stopPropagation()}
       open={open}
       placement="bottom-end"
-      size={{ width: 30, height: 5 }}
+      size={{ width: 30, height: 6 }}
     >
       <PlusMenuRow
         hint="Ctrl+H"
@@ -1247,6 +1260,11 @@ function PlusMenu({
         hint="Ctrl+N"
         label="New Workspace"
         onClick={() => actions.openNewAgent()}
+      />
+      <PlusMenuRow
+        hint="⌥P"
+        label={PULL_REQUESTS_LABEL}
+        onClick={() => actions.openPullRequests()}
       />
     </AnchoredOverlay>
   );

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -9,7 +9,12 @@ import {
   useWindowSize,
 } from "silvery";
 import { harnessSpec } from "../state/harnesses";
-import { harnessIdFromTab, terminalIdFromTab } from "../state/types";
+import { PULL_REQUESTS_LABEL } from "../state/pull-requests";
+import {
+  harnessIdFromTab,
+  isPullRequestsTab,
+  terminalIdFromTab,
+} from "../state/types";
 import {
   COLLAPSED_SESSIONS_SIDEBAR_WIDTH,
   COLLAPSED_WORKSPACE_SIDE_PANE_WIDTH,
@@ -27,6 +32,7 @@ import { PaneResizeHandle } from "./PaneResizeHandle";
 import type { WorkbenchActions, WorkbenchViewModel } from "./types";
 
 const agentRows = 3;
+const pullRequestsRows = 1;
 const minTerminalRows = 3;
 const minChangesRows = 4;
 const maxTerminalRows = 6;
@@ -74,7 +80,7 @@ export function WorkspaceSidePane({
   // Fixed row budgets: no section flexes after mount, which avoids measured
   // ListViews growing the side pane and pushing lower controls out of sight.
   const contentRows = Math.max(1, totalRows - 2);
-  const availableRows = Math.max(3, contentRows - agentRows);
+  const availableRows = Math.max(3, contentRows - agentRows - pullRequestsRows);
   const terminalTarget = Math.min(
     maxTerminalRows,
     Math.max(minTerminalRows, view.session.terminals.length + 1)
@@ -118,6 +124,7 @@ export function WorkspaceSidePane({
         <AgentButton actions={actions} view={view} />
         <ExplorerSection actions={actions} height={explorerRows} view={view} />
         <TerminalSection actions={actions} height={terminalRows} view={view} />
+        <PullRequestsRow actions={actions} view={view} />
         <ChangesSection actions={actions} height={changesRows} view={view} />
       </Box>
       <PaneResizeHandle
@@ -228,6 +235,59 @@ function TerminalRow({
     >
       <Text color={active ? colors.accent : colors.text} wrap={false}>
         {name}
+      </Text>
+    </Box>
+  );
+}
+
+function PullRequestsRow({
+  view,
+  actions,
+}: {
+  view: WorkbenchViewModel;
+  actions: WorkbenchActions;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const active = isPullRequestsTab(view.session.activeMainTab);
+  return (
+    <Box
+      backgroundColor={
+        hovered
+          ? colors.selected
+          : active
+            ? colors.selectedMuted
+            : colors.panelAlt
+      }
+      flexDirection="row"
+      flexShrink={0}
+      height={pullRequestsRows}
+      justifyContent="space-between"
+      mouseCursor="pointer"
+      onClick={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        actions.openPullRequests();
+        event.stopPropagation();
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      paddingX={1}
+    >
+      <Text
+        color={
+          hovered
+            ? colors.onSelected
+            : active
+              ? colors.accent
+              : colors.accentAlt
+        }
+        wrap={false}
+      >
+        {PULL_REQUESTS_LABEL}
+      </Text>
+      <Text color={hovered ? colors.onSelected : colors.dim} wrap={false}>
+        ⌥P
       </Text>
     </Box>
   );
