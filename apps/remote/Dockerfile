@@ -2,6 +2,7 @@ FROM node:24-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
+COPY scripts/prepare-pty.mjs ./scripts/prepare-pty.mjs
 RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 COPY services ./services
 COPY src/discovery.ts src/shared.ts ./src/
