@@ -23,6 +23,21 @@ function createTempRoot() {
 }
 
 describe("buildExplorerEntries", () => {
+  test.skipIf(process.platform === "win32")(
+    "opens a workspace containing a literal backslash directory",
+    () => {
+      const root = createTempRoot();
+      const folder = join(root, "\\");
+      mkdirSync(folder);
+      writeFileSync(join(folder, "notes.txt"), "hello");
+      const entries = buildExplorerEntries(root, new Set([folder]));
+      expect(entries.map((entry) => entry.path)).toEqual([
+        folder,
+        join(folder, "notes.txt"),
+      ]);
+    }
+  );
+
   test("shows and expands gitignored directories", () => {
     const root = createTempRoot();
     const runs = join(root, "runs");
@@ -55,6 +70,31 @@ describe("buildExplorerEntries", () => {
 });
 
 describe("createExplorerIgnore", () => {
+  test.skipIf(process.platform === "win32")(
+    "keeps backslashes literal while matching actual directory separators",
+    () => {
+      const root = createTempRoot();
+      writeFileSync(join(root, ".gitignore"), "*.tmp\n");
+      const shouldIgnore = createExplorerIgnore(root);
+      for (const name of [
+        "\\",
+        "\\notes",
+        "node_modules\\notes.txt",
+        "notes\\node_modules",
+      ]) {
+        expect(shouldIgnore(name)).toBe(false);
+        expect(shouldIgnore(join(root, name))).toBe(false);
+      }
+      expect(shouldIgnore(join(root, "\\", "notes.tmp"))).toBe(true);
+      expect(
+        shouldIgnore(join(root, "\\", "node_modules", "package.json"))
+      ).toBe(true);
+      expect(shouldIgnore(join(root, "node_modules", "package.json"))).toBe(
+        true
+      );
+    }
+  );
+
   test("allows watcher traversal paths outside the workspace root", () => {
     const shouldIgnore = createExplorerIgnore("/workspace/project", {
       respectGitignore: false,

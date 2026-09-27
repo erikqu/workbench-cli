@@ -7,6 +7,7 @@ import {
   join,
   relative,
   resolve,
+  sep,
 } from "node:path";
 import ignore from "ignore";
 import type { FileTreeEntry } from "../state/types";
@@ -245,5 +246,7 @@ export function createExplorerIgnore(
 }
 
 function normalizeRelativePath(path: string) {
-  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+  // On POSIX, backslashes are literal filename characters, not separators.
+  // Replacing them would turn a valid entry named "\\" into the invalid "/".
+  return path.split(sep).join("/").replace(/^\.\//, "");
 }
