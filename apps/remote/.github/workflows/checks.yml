@@ -1,0 +1,43 @@
+name: Checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  platform:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: workbench
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      WORKBENCH_TEST_DATABASE_URL: postgres://postgres:test-only@127.0.0.1:5432/workbench
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:services
+      - run: npm audit --omit=dev
+  iphone:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: swift test --package-path apple
+      - run: swift scripts/make-icon.swift apple/App/Assets.xcassets/AppIcon.appiconset/icon.png
+      - run: xcodegen generate --spec apple/project.yml
+      - run: xcodebuild -project apple/WorkbenchRemote.xcodeproj -scheme WorkbenchRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath test-results/ios CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build-results
+          path: test-results/ios/Logs

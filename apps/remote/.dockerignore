@@ -1,0 +1,12 @@
+*
+!package.json
+!package-lock.json
+!services/
+!services/**
+!src/
+!src/discovery.ts
+!src/shared.ts
+!scripts/
+!scripts/build-services.mjs
+!public/
+!public/**

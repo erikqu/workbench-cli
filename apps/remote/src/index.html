@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Workbench Remote</title>
+  <link rel="stylesheet" href="renderer.css">
+</head>
+<body>
+  <header class="titlebar"><span class="titlebar-name">WORKBENCH <span>REMOTE</span></span><span class="titlebar-note">A little closer to your work.</span></header>
+  <div class="app">
+    <aside>
+      <div class="brand"><div class="brand-mark">w<span>_</span></div><div>Workbench<small>YOUR REMOTE WORKSPACE</small></div></div>
+      <button id="machine" class="machine"><span class="machine-icon">▣</span><span><strong id="machine-name">Your machine</strong><small id="connection-state">Disconnected</small></span><span id="status-dot" class="status-dot"></span></button>
+      <div class="sidebar-heading"><span>WORKSPACES</span><button id="refresh" class="icon-button" title="Refresh workspaces" aria-label="Refresh workspaces">↻</button></div>
+      <div class="search-wrap"><span>⌕</span><input id="search" placeholder="Find a workspace…" aria-label="Find a workspace"><kbd>⌘ K</kbd></div>
+      <nav id="workspaces" aria-label="Workspaces"><p class="sidebar-empty">Connect your machine to see your workspaces.</p></nav>
+      <div class="sidebar-bottom"><span class="tiny-mark">↗</span><p>Same machine.<br><strong>Anywhere you are.</strong></p><button id="settings" class="icon-button" aria-label="Connection settings" title="Connection settings">⚙</button></div>
+    </aside>
+    <main>
+      <div class="workspace-header"><div><div class="eyebrow">REMOTE WORKSPACE</div><h1 id="workspace-title">Pick up where you left off.</h1><p id="workspace-path">Your agents, terminals, and projects — still running at home.</p></div><button id="connection-action" class="secondary">Connect machine <span>↗</span></button></div>
+      <div id="notice" role="status" hidden></div>
+      <div id="tabs" role="tablist" aria-label="Workspace sessions"></div>
+      <section id="terminal-area" aria-label="Remote terminal">
+        <div id="empty" class="empty"><div class="orbit"><span>⌘</span><i></i><b></b></div><div class="eyebrow">YOUR WORK, WITH YOU</div><h2>Leave your desk.<br>Keep your momentum.</h2><p>Connect to your machine and step back into your<br>live Workbench sessions. Everything is right where you left it.</p><button id="empty-connect" class="primary">Connect to your machine <span>↗</span></button><div class="empty-details"><span>◉ Encrypted over SSH</span><span>◷ Sessions stay running</span></div></div>
+      </section>
+      <footer><span><i id="footer-dot"></i><span id="footer-status">Ready when you are</span></span><span id="footer-right">WORKBENCH REMOTE <span class="footer-divider">/</span> 0.1</span></footer>
+    </main>
+  </div>
+  <dialog id="connection-dialog">
+    <form id="connection-form">
+      <div class="dialog-heading"><div class="eyebrow">MAKE YOURSELF AT HOME</div><button type="button" id="close-dialog" class="icon-button" aria-label="Close connection settings">×</button></div>
+      <h2>Connect your machine.</h2><p class="dialog-intro">Use your SSH login. Workbench finds the sessions already running on your machine.</p>
+      <label>Hostname or Tailscale address<input name="host" required autocomplete="off" placeholder="my-machine.example.com"></label>
+      <div class="form-row"><label>Username<input name="username" required autocomplete="username"></label><label class="port">SSH port<input name="port" type="number" min="1" max="65535" required></label></div>
+      <label>Sign in with<select name="auth"><option value="agent">SSH agent</option><option value="key">Private key file</option><option value="password">Password</option></select></label>
+      <div id="key-fields" hidden><label>Private key<div class="key-row"><input name="keyPath" placeholder="Choose a private key" readonly><button id="choose-key" type="button" class="secondary">Choose…</button></div></label><label>Key passphrase <span class="optional">if needed</span><input name="passphrase" type="password" autocomplete="off"></label></div>
+      <label id="password-field" hidden>Password<input name="password" type="password" autocomplete="current-password"></label>
+      <p id="auth-help" class="field-help">Uses the keys loaded in your Mac’s SSH agent.</p>
+      <details><summary>Advanced</summary><label>Workbench directory<input name="directory" required placeholder="~/.workbench"></label><p class="field-help">Use the same directory as your remote Workbench instance.</p></details>
+      <div id="form-error" role="alert" hidden></div>
+      <button id="submit-connect" class="primary" type="submit">Connect <span>↗</span></button>
+      <p class="privacy-note">Passwords and passphrases are never saved to disk.</p>
+    </form>
+  </dialog>
+  <script src="renderer.js"></script>
+</body>
+</html>

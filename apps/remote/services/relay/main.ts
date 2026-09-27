@@ -1,0 +1,11 @@
+import { Pool } from 'pg';
+import { Store } from './store';
+import { createRelay } from './server';
+if (!process.env.DATABASE_URL || !process.env.APPLE_AUDIENCE) throw new Error('Set DATABASE_URL and APPLE_AUDIENCE (the iOS bundle identifier)');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
+const store = new Store(pool); await store.migrate();
+const relay = createRelay({ store, appleAudience: process.env.APPLE_AUDIENCE, metricsToken: process.env.METRICS_TOKEN, trustProxy: process.env.TRUST_PROXY === '1', releaseDirectory: process.env.RELEASE_DIRECTORY,
+  localPairingAuth: process.env.PAIRING_AUTH === '1' });
+relay.server.listen(Number(process.env.PORT || 8080), process.env.BIND_ADDRESS || '127.0.0.1', () => console.log('Workbench relay listening'));
+let closing = false;
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, async () => { if (closing) return; closing = true; await relay.close(); await pool.end(); });

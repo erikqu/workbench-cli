@@ -1,0 +1,2 @@
+# Preserve the vendored source snapshot's formatting and exclude it from language statistics.
+apple/Vendor/SwiftTerm/** linguist-vendored=true -whitespace
