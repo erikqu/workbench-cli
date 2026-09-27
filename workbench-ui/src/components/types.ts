@@ -40,6 +40,7 @@ export interface WorkbenchActions {
   newTerminal(): void;
   openNewAgent(): void;
   openNewHarness(): void;
+  openPullRequests(): void;
   resizeHarness(cols: number, rows: number): void;
   resizeSessionsLogo(height: number): void;
   resizeSessionsSidebar(width: number): void;

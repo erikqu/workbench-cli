@@ -39,6 +39,13 @@ export interface TerminalTab {
   tmux: string;
 }
 
+// The per-session pull request viewer. It is a persistent PTY like a terminal,
+// but it runs `prs` for the workspace's repository instead of a shell.
+export interface PullRequestsPane {
+  // Stable name of the backing tmux session (persists across restarts).
+  tmux: string;
+}
+
 export interface HarnessTab {
   cwd: string;
   harnessId: string;
@@ -48,7 +55,8 @@ export interface HarnessTab {
   tmux: string;
 }
 
-// "harness:<harnessTabId>" | "term:<terminalId>" | "changes" | absolute file path
+// "harness:<harnessTabId>" | "term:<terminalId>" | "changes" | "pull-requests"
+// | absolute file path
 export type MainTabId = string;
 
 // The synthetic per-session "Changes" review tab.
@@ -56,6 +64,13 @@ export const CHANGES_TAB = "changes";
 
 export function isChangesTab(tab: MainTabId): boolean {
   return tab === CHANGES_TAB;
+}
+
+// The per-session "Pull Requests" tab, present while the session has a pane.
+export const PULL_REQUESTS_TAB = "pull-requests";
+
+export function isPullRequestsTab(tab: MainTabId): boolean {
+  return tab === PULL_REQUESTS_TAB;
 }
 
 // Each agent session owns its complete tab set: switching sessions swaps the
@@ -69,6 +84,8 @@ export interface AgentSession {
   id: string;
   name: string;
   openTabs: EditorTab[];
+  // Opened on demand; absent until the user first asks for pull requests.
+  pullRequests?: PullRequestsPane;
   // Which changed file's diff is shown in the Changes tab (transient, absolute path).
   selectedDiffPath?: string;
   terminals: TerminalTab[];
@@ -120,6 +137,7 @@ export interface PersistedSession {
   harnesses?: PersistedHarnessTab[];
   id?: string;
   openTabs?: string[];
+  pullRequests?: PersistedPullRequestsPane;
   terminalCount?: number;
   terminals?: PersistedTerminalTab[];
 }
@@ -129,6 +147,10 @@ export interface PersistedHarnessTab {
   harnessId: string;
   id?: string;
   name?: string;
+  tmux?: string;
+}
+
+export interface PersistedPullRequestsPane {
   tmux?: string;
 }
 

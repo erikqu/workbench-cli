@@ -17,6 +17,7 @@ const ACTION_SHORTCUTS = [
   ["Ctrl+N", "New workspace"],
   ["Ctrl+H", "New harness"],
   ["Ctrl+T", "New terminal"],
+  ["⌥P", "Pull requests"],
   ["⌥W", "Close tab"],
   ["Ctrl+S", "Save file"],
   ["⌥Tab", "Cycle theme"],

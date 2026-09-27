@@ -23,8 +23,15 @@ import {
   releaseInstanceLock,
 } from "../state/instance-lock";
 import {
+  PULL_REQUESTS_INSTALL_HINT,
+  PULL_REQUESTS_LABEL,
+  pullRequestsCommand,
+  resolvePullRequestsBin,
+} from "../state/pull-requests";
+import {
   createHarness,
   createInitialState,
+  createPullRequestsPane,
   createSession,
   createTerminal,
   focusForMainTab,
@@ -41,6 +48,8 @@ import {
   CHANGES_TAB,
   harnessIdFromTab,
   isChangesTab,
+  isPullRequestsTab,
+  PULL_REQUESTS_TAB,
   terminalIdFromTab,
 } from "../state/types";
 import {
@@ -140,6 +149,8 @@ export class ReactWorkbenchApp {
   // only by which state collection owns their ids.
   private harnessPanels = new Map<string, TerminalPanel>();
   private shellPanels = new Map<string, TerminalPanel>();
+  // At most one pull request viewer per session, keyed by session id.
+  private pullRequestsPanels = new Map<string, TerminalPanel>();
   private explorerWatcher?: FSWatcher;
   private watchedCwd?: string;
   private explorerWorkbenchTimer?: ReturnType<typeof setTimeout>;
@@ -286,10 +297,7 @@ export class ReactWorkbenchApp {
         }
       },
       writeTerminal: (input) => {
-        const terminal = this.activeTerminal();
-        if (terminal) {
-          this.shellPanel(terminal).write(input);
-        }
+        this.activeTerminalPanel()?.write(input);
       },
       resizeHarness: (cols, rows) => {
         const harness = this.activeHarness();
@@ -324,12 +332,7 @@ export class ReactWorkbenchApp {
         }
       },
       resizeTerminal: (cols, rows) => {
-        const terminal = this.activeTerminal();
-        if (!terminal) {
-          return;
-        }
-        const panel = this.shellPanel(terminal);
-        panel.resize(cols, rows);
+        this.activeTerminalPanel()?.resize(cols, rows);
       },
       resizeWorkspaceSidePane: (width) => {
         const sessionsWidth = this.state.sidebarVisible
@@ -356,10 +359,7 @@ export class ReactWorkbenchApp {
         }
       },
       scrollTerminal: (lines) => {
-        const terminal = this.activeTerminal();
-        if (terminal) {
-          this.shellPanel(terminal).scrollLines(lines);
-        }
+        this.activeTerminalPanel()?.scrollLines(lines);
       },
       selectSession: (id) => this.selectSession(id),
       closeSession: (id) => this.closeSession(id),
@@ -393,6 +393,7 @@ export class ReactWorkbenchApp {
       },
       addHarness: (harnessId) => this.addHarness(harnessId),
       newTerminal: () => this.newTerminal(),
+      openPullRequests: () => this.openPullRequests(),
       closeTerminal: (id) => this.closeTerminal(id),
       closeHarness: (id) => this.closeHarness(id),
       togglePlusMenu: () => {
@@ -452,9 +453,8 @@ export class ReactWorkbenchApp {
   buildView(): WorkbenchViewModel {
     const session = this.activeSession();
     const harness = this.activeHarness();
-    const terminal = this.activeTerminal();
     const harnessPanel = harness ? this.harnessPanel(harness) : undefined;
-    const terminalPanel = terminal ? this.shellPanel(terminal) : undefined;
+    const terminalPanel = this.activeTerminalPanel();
 
     // When the active pane changes, bump its revision once so the <Terminal>
     // redraws in place (we no longer force a remount via `key`).
@@ -653,6 +653,9 @@ export class ReactWorkbenchApp {
     for (const panel of this.shellPanels.values()) {
       panel.touch();
     }
+    for (const panel of this.pullRequestsPanels.values()) {
+      panel.touch();
+    }
     this.persistAndRender();
   }
 
@@ -671,6 +674,17 @@ export class ReactWorkbenchApp {
       return;
     }
     return session.terminals.find((terminal) => terminal.id === id);
+  }
+
+  // Shell terminals and the pull request viewer share terminal focus: input,
+  // paste, resizing, and scrolling go to whichever of them is on screen.
+  private activeTerminalPanel(): TerminalPanel | undefined {
+    const session = this.activeSession();
+    if (isPullRequestsTab(session.activeMainTab)) {
+      return this.pullRequestsPanel(session);
+    }
+    const terminal = this.activeTerminal();
+    return terminal ? this.shellPanel(terminal) : undefined;
   }
 
   private activeHarness(): HarnessTab | undefined {
@@ -724,6 +738,31 @@ export class ReactWorkbenchApp {
     return panel;
   }
 
+  private pullRequestsPanel(session: AgentSession): TerminalPanel | undefined {
+    if (!session.pullRequests) {
+      return;
+    }
+    let panel = this.pullRequestsPanels.get(session.id);
+    if (!panel) {
+      // A restored pane re-attaches to its running viewer. If prs has since
+      // been uninstalled, the plain name makes the pane say so.
+      const command = pullRequestsCommand(resolvePullRequestsBin() ?? "prs");
+      panel = new TerminalPanel(
+        session.cwd,
+        this.estimateCols(),
+        this.estimateRows(),
+        {
+          ...command,
+          env: { ...HARNESS_COLOR_ENV, ...command.env },
+          persist: this.persistFor(session.pullRequests.tmux),
+        }
+      );
+      this.pullRequestsPanels.set(session.id, panel);
+      this.scheduleFullRedraw();
+    }
+    return panel;
+  }
+
   // Persistent tmux backing for a panel, unless we're in a throwaway screenshot
   // run (which must not spawn real tmux sessions).
   private persistFor(name: string): PersistentTmuxSession | undefined {
@@ -746,6 +785,15 @@ export class ReactWorkbenchApp {
         description: terminal.cwd,
         value: `term:${terminal.id}`,
       })),
+      ...(session.pullRequests
+        ? [
+            {
+              name: PULL_REQUESTS_LABEL,
+              description: session.cwd,
+              value: PULL_REQUESTS_TAB,
+            },
+          ]
+        : []),
       ...session.openTabs.map((tab) => ({
         name: `${tab.dirty ? "*" : ""}${tab.name}`,
         description: relative(session.cwd, tab.path),
@@ -795,7 +843,8 @@ export class ReactWorkbenchApp {
       !(
         harnessIdFromTab(value) ||
         terminalIdFromTab(value) ||
-        isChangesTab(value)
+        isChangesTab(value) ||
+        isPullRequestsTab(value)
       )
     ) {
       session.activeTabPath = value;
@@ -850,6 +899,10 @@ export class ReactWorkbenchApp {
   private closeTab(value: string) {
     // The Changes tab is synthetic and always present; it can't be closed.
     if (isChangesTab(value)) {
+      return;
+    }
+    if (isPullRequestsTab(value)) {
+      this.closePullRequests();
       return;
     }
     const harnessId = harnessIdFromTab(value);
@@ -917,6 +970,13 @@ export class ReactWorkbenchApp {
     }
     for (const terminal of closing.terminals) {
       this.killBackingPanel(this.shellPanels, terminal.id, terminal.tmux);
+    }
+    if (closing.pullRequests) {
+      this.killBackingPanel(
+        this.pullRequestsPanels,
+        closing.id,
+        closing.pullRequests.tmux
+      );
     }
     this.state.sessions.splice(index, 1);
     if (this.state.activeSessionId === id) {
@@ -1113,6 +1173,45 @@ export class ReactWorkbenchApp {
     this.persistAndRender();
   }
 
+  private openPullRequests() {
+    const session = this.activeSession();
+    if (!session.pullRequests) {
+      if (!resolvePullRequestsBin()) {
+        emitToast({
+          title: "prs is not installed",
+          description: PULL_REQUESTS_INSTALL_HINT,
+          variant: "warning",
+        });
+        return;
+      }
+      session.pullRequests = createPullRequestsPane();
+      captureAnalytics("pull_requests_opened");
+    }
+    session.activeMainTab = PULL_REQUESTS_TAB;
+    this.state.plusMenuOpen = false;
+    this.state.focus = "terminal";
+    this.scheduleFullRedraw();
+    this.persistAndRender();
+  }
+
+  private closePullRequests() {
+    const session = this.activeSession();
+    if (!session.pullRequests) {
+      return;
+    }
+    this.killBackingPanel(
+      this.pullRequestsPanels,
+      session.id,
+      session.pullRequests.tmux
+    );
+    session.pullRequests = undefined;
+    if (isPullRequestsTab(session.activeMainTab)) {
+      session.activeMainTab = `harness:${session.harnesses[0].id}`;
+      this.state.focus = "harness";
+    }
+    this.persistAndRender();
+  }
+
   private closeTerminal(id: string) {
     const session = this.activeSession();
     const index = session.terminals.findIndex((terminal) => terminal.id === id);
@@ -1299,6 +1398,7 @@ export class ReactWorkbenchApp {
         harnessIdFromTab(session.activeMainTab) ||
         terminalIdFromTab(session.activeMainTab) ||
         isChangesTab(session.activeMainTab) ||
+        isPullRequestsTab(session.activeMainTab) ||
         session.openTabs.some((tab) => tab.path === session.activeMainTab)
       )
     ) {
@@ -1340,6 +1440,9 @@ export class ReactWorkbenchApp {
       panel.detach();
     }
     for (const panel of this.shellPanels.values()) {
+      panel.detach();
+    }
+    for (const panel of this.pullRequestsPanels.values()) {
       panel.detach();
     }
     if (this.explorerWorkbenchTimer) {
