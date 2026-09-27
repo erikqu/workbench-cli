@@ -1,6 +1,41 @@
+# Workbench
+
+One repository for the terminal CLI, native iPhone app, remote host companion,
+and encrypted relay. Your agents keep running on your development machine;
+the iPhone app connects to those same live sessions.
+
+| Product | Install |
+| --- | --- |
+| Terminal CLI | `curl -fsSL https://ehq.so/install \| bash` |
+| Remote host companion | `curl -fsSL https://ehq.so/install \| bash -s -- host --relay https://YOUR-RELAY` |
+| iPhone app | Signed TestFlight distribution is being configured; [installation status](docs/install.md#iphone) |
+
+[Downloads](https://github.com/erikqu/workbench-cli/releases/latest) ·
+[Installation](docs/install.md) · [Releasing](docs/releasing.md) ·
+[iPhone app and relay](apps/remote/README.md)
+
+## Monorepo development
+
+| Location | Purpose |
+| --- | --- |
+| `workbench-ui/`, `bin/` | Terminal CLI; stable paths for existing installations |
+| `apps/remote/apple/` | Native iPhone app and shared Swift transport |
+| `apps/remote/services/` | Host companion, relay, and remote protocol |
+| `apps/remote/src/` | Earlier desktop prototype and shared discovery code |
+| `scripts/`, `.github/workflows/` | Shared versioning, checks, and release packaging |
+
+Use Node 24 and Bun. Run `npm run setup`, then `npm run check` from the repository
+root. The remote integration tests use a temporary PostgreSQL container and tmux
+server. Native iPhone checks run on macOS in CI. See the
+[CLI development guide](workbench-ui/development/development.md) and
+[remote development guide](apps/remote/README.md#development) for individual commands.
+
+This is the original Workbench CLI repository, with its stars and Git history
+preserved. Existing `work`, `work update`, and installer links continue to work.
+
 ![Workbench CLI](workbench-ui/assets/images/sample.png)
 
-# Workbench CLI
+## Workbench CLI
 
 ```text
 888       888                  888      888                                 888

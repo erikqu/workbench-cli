@@ -10,3 +10,7 @@ erikqu.github.io/
 
 # Local scratch space: throwaway diagnostic scripts, never committed.
 scratch/
+
+# Monorepo release output and browser diagnostics.
+release/
+.playwright-mcp/

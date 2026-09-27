@@ -1,0 +1,132 @@
+name: iPhone TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Workbench version tag to sign and upload (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iphone-distribution
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    environment: apple-distribution
+    timeout-minutes: 60
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+      WORKBENCH_RELAY_URL: ${{ vars.WORKBENCH_RELAY_URL }}
+      WORKBENCH_BUILD_NUMBER: ${{ github.run_number }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      FASTLANE_SKIP_UPDATE_CHECK: "1"
+      FASTLANE_HIDE_CHANGELOG: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Validate release and signing configuration
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          npm run version:check
+          python3 - <<'PY'
+          import os
+          required = ["APPLE_TEAM_ID", "APPLE_BUNDLE_ID", "APPLE_CERTIFICATE_P12",
+                      "APPLE_PROVISIONING_PROFILE", "APP_STORE_CONNECT_KEY_ID",
+                      "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_PRIVATE_KEY"]
+          missing = [key for key in required if not os.environ.get(key)]
+          if missing:
+              raise SystemExit("Configure the apple-distribution environment: " + ", ".join(missing))
+          PY
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - run: brew install xcodegen && gem install fastlane --no-document
+      - name: Install signing identity in a temporary keychain
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          workbench_keychain="$RUNNER_TEMP/workbench-signing.keychain-db"
+          workbench_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$workbench_password"
+          python3 - <<'PY'
+          import base64, json, os
+          from pathlib import Path
+          os.umask(0o077)
+          temp = Path(os.environ["RUNNER_TEMP"])
+          (temp / "workbench-certificate.p12").write_bytes(base64.b64decode(os.environ["APPLE_CERTIFICATE_P12"], validate=True))
+          (temp / "workbench.mobileprovision").write_bytes(base64.b64decode(os.environ["APPLE_PROVISIONING_PROFILE"], validate=True))
+          (temp / "workbench-api-key.json").write_text(json.dumps({
+              "key_id": os.environ["APP_STORE_CONNECT_KEY_ID"],
+              "issuer_id": os.environ["APP_STORE_CONNECT_ISSUER_ID"],
+              "key": os.environ["APP_STORE_CONNECT_PRIVATE_KEY"],
+              "in_house": False
+          }))
+          PY
+          security create-keychain -p "$workbench_password" "$workbench_keychain"
+          security set-keychain-settings -lut 7200 "$workbench_keychain"
+          security unlock-keychain -p "$workbench_password" "$workbench_keychain"
+          security import "$RUNNER_TEMP/workbench-certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$workbench_keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$workbench_password" "$workbench_keychain"
+          security list-keychains -d user -s "$workbench_keychain" "$HOME/Library/Keychains/login.keychain-db"
+          security cms -D -i "$RUNNER_TEMP/workbench.mobileprovision" > "$RUNNER_TEMP/workbench-profile.plist"
+          python3 - <<'PY'
+          import datetime, os, plistlib, shutil
+          from pathlib import Path
+          temp = Path(os.environ["RUNNER_TEMP"])
+          with (temp / "workbench-profile.plist").open("rb") as f:
+              profile = plistlib.load(f)
+          team = os.environ["APPLE_TEAM_ID"]
+          bundle = os.environ["APPLE_BUNDLE_ID"]
+          if team not in profile["TeamIdentifier"]:
+              raise SystemExit("Provisioning profile belongs to a different team")
+          if profile["Entitlements"].get("application-identifier") != f"{team}.{bundle}":
+              raise SystemExit("Provisioning profile does not match the app bundle ID")
+          if profile["ExpirationDate"] <= datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None):
+              raise SystemExit("Provisioning profile has expired")
+          if profile.get("ProvisionedDevices") or profile.get("ProvisionsAllDevices"):
+              raise SystemExit("Use an App Store distribution profile, not development, ad hoc, or enterprise")
+          for directory in [Path.home() / "Library/MobileDevice/Provisioning Profiles",
+                            Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles"]:
+              directory.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(temp / "workbench.mobileprovision", directory / f"{profile['UUID']}.mobileprovision")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"APPLE_PROFILE_UUID={profile['UUID']}\n")
+              f.write(f"APPLE_KEYCHAIN_PATH={temp / 'workbench-signing.keychain-db'}\n")
+              f.write(f"APP_STORE_CONNECT_API_KEY_PATH={temp / 'workbench-api-key.json'}\n")
+          PY
+      - name: Archive and upload
+        run: bash scripts/release-ios.sh --upload
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/workbench-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/workbench-certificate.p12" "$RUNNER_TEMP/workbench.mobileprovision" \
+            "$RUNNER_TEMP/workbench-profile.plist" "$RUNNER_TEMP/workbench-api-key.json"
+          if [[ -n "${APPLE_PROFILE_UUID:-}" ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$APPLE_PROFILE_UUID.mobileprovision" \
+              "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$APPLE_PROFILE_UUID.mobileprovision"
+          fi

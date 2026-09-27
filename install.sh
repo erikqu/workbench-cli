@@ -11,7 +11,59 @@
 #   WORKBENCH_CLI_BIN    where to symlink     (default: ~/.local/bin)
 set -euo pipefail
 
-REPO="${WORKBENCH_CLI_REPO:-erikqu/workbench-cli}"
+workbench_mode="${1:-cli}"
+case "$workbench_mode" in
+  --help|-h)
+    cat <<'EOF'
+Workbench installer
+
+  curl -fsSL https://ehq.so/install | bash
+  curl -fsSL https://ehq.so/install | bash -s -- host --relay https://YOUR-RELAY
+  curl -fsSL https://ehq.so/install | bash -s -- app
+
+cli   Install or update the terminal workbench (default).
+host  Download the remote host companion with its runtime included.
+app   Show the published iPhone TestFlight or App Store install link.
+EOF
+    exit 0 ;;
+  cli|--cli) if (($#)); then shift; fi ;;
+  host|--host|app|--app)
+    shift
+    workbench_repo="${WORKBENCH_REPO:-erikqu/workbench-cli}"
+    workbench_version="${WORKBENCH_VERSION:-latest}"
+    [[ "$workbench_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "Invalid GitHub repository" >&2; exit 2; }
+    [[ "$workbench_version" == latest || "$workbench_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Use latest or a vX.Y.Z release" >&2; exit 2; }
+    if [[ "$workbench_version" == latest ]]; then
+      workbench_download_base="https://github.com/$workbench_repo/releases/latest/download"
+    else
+      workbench_download_base="https://github.com/$workbench_repo/releases/download/$workbench_version"
+    fi
+    workbench_download_base="${WORKBENCH_DOWNLOAD_BASE:-$workbench_download_base}"
+    [[ "$workbench_download_base" == https://* ]] || { echo "Downloads must use HTTPS" >&2; exit 2; }
+    workbench_temp="$(mktemp -d)"
+    trap 'rm -rf -- "$workbench_temp"' EXIT
+    if [[ "$workbench_mode" == host || "$workbench_mode" == --host ]]; then
+      curl --proto '=https' --tlsv1.2 -fsSL "${workbench_download_base%/}/install-host.sh" -o "$workbench_temp/install-host.sh"
+      WORKBENCH_REPO="$workbench_repo" WORKBENCH_VERSION="$workbench_version" \
+        WORKBENCH_DOWNLOAD_BASE="$workbench_download_base" bash "$workbench_temp/install-host.sh" "$@"
+    else
+      if (($#)); then echo "app does not accept arguments" >&2; exit 2; fi
+      if ! curl --proto '=https' --tlsv1.2 -fsSL "${workbench_download_base%/}/iphone-install-url.txt" -o "$workbench_temp/iphone-url"; then
+        echo "An iPhone install link is not published for this release yet." >&2
+        echo "Check https://github.com/$workbench_repo for iPhone availability." >&2
+        exit 1
+      fi
+      workbench_app_url="$(tr -d '\r\n' < "$workbench_temp/iphone-url")"
+      [[ "$workbench_app_url" =~ ^https://testflight\.apple\.com/join/[A-Za-z0-9]+$ ||
+         "$workbench_app_url" =~ ^https://apps\.apple\.com/[^[:space:]]+$ ]] || { echo "Invalid iPhone install link" >&2; exit 1; }
+      printf 'Open this link on your iPhone to install Workbench:\n%s\n' "$workbench_app_url"
+    fi
+    exit 0 ;;
+  *) echo "Unknown installer option: $workbench_mode. Use --help." >&2; exit 2 ;;
+esac
+if (($#)); then echo "The CLI installer does not accept arguments. Use --help." >&2; exit 2; fi
+
+REPO="${WORKBENCH_CLI_REPO:-${WORKBENCH_REPO:-erikqu/workbench-cli}}"
 REF="${WORKBENCH_CLI_REF:-main}"
 INSTALL_DIR="${WORKBENCH_CLI_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/workbench-cli}"
 BIN_DIR="${WORKBENCH_CLI_BIN:-$HOME/.local/bin}"
@@ -49,6 +101,9 @@ bun_is_compatible ||
 
 # Fetch (or update) the source checkout.
 if [ -d "$INSTALL_DIR/.git" ]; then
+  if [[ -n "$(git -C "$INSTALL_DIR" status --porcelain --untracked-files=normal)" ]]; then
+    die "Refusing to update because $INSTALL_DIR has local changes."
+  fi
   info "Updating existing checkout in $INSTALL_DIR ..."
   git -C "$INSTALL_DIR" remote set-url origin "https://github.com/$REPO.git"
   git -C "$INSTALL_DIR" fetch --depth 1 origin "$REF"
@@ -60,7 +115,7 @@ else
 fi
 
 info "Installing dependencies ..."
-(cd "$INSTALL_DIR/workbench-ui" && bun install)
+(cd "$INSTALL_DIR/workbench-ui" && bun install --frozen-lockfile)
 
 # Symlink the launcher onto PATH.
 mkdir -p "$BIN_DIR"

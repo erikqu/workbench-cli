@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 if (!['linux', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('Unsupported host release platform');
 const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
+const manifest = JSON.parse(await readFile('package.json', 'utf8'));
 const name = `workbench-host-${process.platform}-${process.arch}`;
 const directory = path.resolve('release/host', name);
 await mkdir(path.join(directory, 'bin'), { recursive: true });
@@ -12,9 +13,15 @@ await copyFile(process.execPath, path.join(directory, 'bin/node'));
 await copyFile('scripts/host-launcher.sh', path.join(directory, 'bin/workbench-remote'));
 await chmod(path.join(directory, 'bin/workbench-remote'), 0o755);
 await copyFile('dist/services/host/main.mjs', path.join(directory, 'lib/host.mjs'));
-const dependencies = Object.fromEntries(['ssh2', 'ws', 'node-pty', 'qrcode-terminal'].map(name => [name, lock.packages['node_modules/' + name].version]));
-await writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: 'workbench-remote-host', version: '0.1.0', private: true, type: 'module', dependencies }, null, 2));
-execFileSync('npm', ['install', '--omit=dev', '--omit=optional', '--prefix', directory], { stdio: 'inherit' });
+// Reuse the project's complete lockfile so transitive dependencies cannot drift
+// between the tested checkout and downloadable host. Desktop dev tools are omitted.
+const packaged = { ...manifest, name: 'workbench-remote-host', type: 'module', main: 'lib/host.mjs' };
+delete packaged.scripts;
+lock.name = packaged.name;
+lock.packages[''].name = packaged.name;
+await writeFile(path.join(directory, 'package.json'), JSON.stringify(packaged, null, 2));
+await writeFile(path.join(directory, 'package-lock.json'), JSON.stringify(lock, null, 2));
+execFileSync('npm', ['ci', '--omit=dev', '--omit=optional', '--prefix', directory], { stdio: 'inherit' });
 if (process.platform === 'darwin') {
   await chmod(path.join(directory, 'node_modules/node-pty/prebuilds', `darwin-${process.arch}`, 'spawn-helper'), 0o755)
     .catch(error => { if (error.code !== 'ENOENT') throw error; });

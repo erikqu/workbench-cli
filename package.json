@@ -1,0 +1,23 @@
+{
+  "name": "workbench",
+  "version": "0.1.70",
+  "private": true,
+  "description": "Workbench CLI, native iPhone app, host companion, and relay",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "setup": "node scripts/workspace.mjs setup",
+    "check": "node scripts/workspace.mjs check",
+    "check:cli": "node scripts/workspace.mjs check:cli",
+    "check:remote": "node scripts/workspace.mjs check:remote",
+    "test:distribution": "node --test tests/distribution.test.mjs",
+    "dev:cli": "node scripts/workspace.mjs dev:cli",
+    "dev:host": "node scripts/workspace.mjs dev:host",
+    "dev:relay": "node scripts/workspace.mjs dev:relay",
+    "build:host": "node scripts/workspace.mjs build:host",
+    "version:set": "node scripts/version.mjs",
+    "version:check": "node scripts/version.mjs --check",
+    "package:release": "node scripts/package-release.mjs"
+  }
+}

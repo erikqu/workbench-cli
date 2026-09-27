@@ -1,0 +1,72 @@
+name: Checks
+
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: bun install --frozen-lockfile
+        working-directory: workbench-ui
+      - run: npm run version:check
+      - run: npm run test:distribution
+      - run: npm run check:cli
+
+  remote:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: workbench
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      WORKBENCH_TEST_DATABASE_URL: postgres://postgres:test-only@127.0.0.1:5432/workbench
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/remote/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: npm ci
+        working-directory: apps/remote
+      - run: npm run check:remote
+
+  iphone:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/remote
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: swift test --package-path apple
+      - run: xcodegen generate --spec apple/project.yml
+      - name: Build the native iPhone app
+        run: xcodebuild -project apple/WorkbenchRemote.xcodeproj -scheme WorkbenchRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath test-results/ios CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build-results
+          path: apps/remote/test-results/ios/Logs

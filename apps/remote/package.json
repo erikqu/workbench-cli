@@ -1,7 +1,7 @@
 {
   "name": "workbench-remote",
   "productName": "Workbench Remote",
-  "version": "0.1.0",
+  "version": "0.1.70",
   "description": "Your live Workbench sessions on iPhone, through an encrypted public relay",
   "private": true,
   "main": "dist/main.cjs",

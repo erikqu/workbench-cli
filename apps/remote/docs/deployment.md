@@ -4,6 +4,9 @@ This repository contains deployment configuration, not a deployed service. You n
 
 ## Relay
 
+Run the commands in this guide from `apps/remote/`. The Docker build context
+remains that directory, so its dependencies and public installer are self-contained.
+
 1. Point a hostname such as `relay.example.com` at your deployment machine. Allow inbound TCP 80/443 there. Development machines and phones need only outbound access to the relay.
 2. Copy `deploy/.env.example` to `deploy/.env`. Set `RELAY_HOST`, `APPLE_AUDIENCE` (the app's bundle ID), a strong URL-safe `POSTGRES_PASSWORD`, and an unrelated random `METRICS_TOKEN`. Do not commit this file.
 3. Produce host archives as described below and place them in `release/host`.
@@ -39,7 +42,12 @@ workbench-host-darwin-x64.tar.gz
 workbench-host-darwin-arm64.tar.gz
 ```
 
-The manual `Host releases` workflow builds each target on its matching runner. Download its artifacts and copy the archives and `.sha256` files into the deployment's `release/host`. Only the Linux x64 artifact has been built locally in this workspace. The installer reports an unavailable release rather than substituting an incompatible one.
+The monorepo's **Release** workflow builds each target on its matching runner
+and publishes the archives and checksums to GitHub Releases. The installer
+downloads them directly from the release; copying archives onto the relay is
+optional for deployments that also want to serve `/downloads`. See
+[shared release instructions](../../../docs/releasing.md). The installer reports
+an unavailable release rather than substituting an incompatible one.
 
 Hosts need tmux separately. Linux builds target glibc-based systems, not Alpine/musl. macOS distribution still requires the signing/notarization and clean-machine checks in the release checklist. Checksums detect corrupted downloads; they are not an independent publisher signature. Protect the HTTPS service and release publishing credentials.
 

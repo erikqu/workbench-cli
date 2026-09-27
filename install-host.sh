@@ -1,0 +1,1 @@
+apps/remote/public/install.sh

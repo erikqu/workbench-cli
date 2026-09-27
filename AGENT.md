@@ -1,4 +1,29 @@
-# AGENT.md — workbench-cli
+# AGENT.md — Workbench monorepo
+
+The existing public CLI repository also contains the native iPhone app, host
+companion, and relay under `apps/remote/`. Both projects' Git histories are
+preserved. Keep the CLI's root `bin/`, `install.sh`, and `workbench-ui/` paths:
+older installed launchers rely on them during upgrades.
+
+`package.json` at the repository root provides shared development and release
+commands. Run `npm run setup` to install each project's own locked dependencies,
+`npm run check` for distribution/CLI/remote checks, and `npm run version:set --
+X.Y.Z` to update every product version. The CLI uses Bun; remote services use
+Node 24/npm; the iPhone app uses Swift/Xcode. Do not merge their dependency
+lockfiles or move vendored SwiftTerm into the CLI package.
+
+`install.sh` defaults to CLI installation, accepts `host` for a downloaded host
+package, and `app` for the verified iPhone installation URL. `install-host.sh`
+and `apps/remote/public/install.sh` refer to the same installer. The release
+workflow publishes sources and host binaries for Linux/macOS, x64/arm64. Signed
+iPhone distribution is a separate explicit workflow and must never be reported
+as complete based only on an unsigned simulator build.
+
+The native app, host, and relay invariants are documented in
+`apps/remote/README.md`, `apps/remote/docs/protocol.md`, and
+`apps/remote/docs/deployment.md`. Remote disconnects must preserve the user's
+live tmux sessions and desktop layout. Do not use real session state or a
+production database as a test fixture.
 
 Notes for agents working in `workbench-cli/`. This is the **Bun + React + Silvery
 terminal workbench** (a TUI that drives multiple coding-agent CLIs). The real app

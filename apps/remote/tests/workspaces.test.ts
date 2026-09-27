@@ -34,7 +34,9 @@ test('new workspace starts a real persistent terminal in its exclusive folder wi
   await writeFile(path.join(directory, 'workbench-ui-state.json'), desktop);
   let sessions: Sessions | undefined;
   try {
-    const workspaces = new Workspaces(directory, tmux);
+    // Keep this fixture independent of the runner's interactive shell startup,
+    // which may intentionally change directories or prompt for input.
+    const workspaces = new Workspaces(directory, tmux, async () => '/bin/sh');
     // Quotes, spaces and metacharacters are folder characters, never commands.
     const input = request(parent, "project '#{pid}'; literal");
     const [created, duplicate] = await Promise.all([workspaces.create(input), workspaces.create(input)]);

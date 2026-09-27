@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.1.70"
     CURRENT_PROJECT_VERSION: 1
     WORKBENCH_RELAY_URL: ""
     WORKBENCH_AUTH_MODE: apple

@@ -1,5 +1,10 @@
 # Workbench Remote
 
+This app, its host companion, and its relay are maintained in the
+[Workbench monorepo](../../README.md). Run the commands below from `apps/remote/`,
+or use the shared commands at the repository root. Downloads and iPhone
+availability are documented in [Install Workbench](../../docs/install.md).
+
 Continue the Workbench sessions running on your development machine from a native iPhone app. The host keeps running your agents, tools, and terminals; the phone connects to those same sessions. This is remote access, not a second copy of your workspace.
 
 The public relay supports separate accounts and independently paired machines. Users do not need Tailscale, a VPN, public SSH access, or router port forwarding.
@@ -34,7 +39,7 @@ The companion reads Workbench's saved layout and private tmux socket. It does no
 | `deploy` | Single-instance HTTPS relay deployment |
 | `tests/platform` | Isolated database + real tmux + encrypted relay integration tests |
 | `src` | Earlier Electron desktop prototype; preserved, not the iPhone product |
-| `workbench-cli` | Existing Workbench reference checkout; unchanged |
+| `../../workbench-ui`, `../../bin` | Workbench CLI source in the same repository |
 
 ## Development
 
