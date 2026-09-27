@@ -159,7 +159,7 @@ test-harness/             deterministic coding-agent and browser fixtures
 
 The three central files are `app/WorkbenchApp.tsx`,
 `components/Workbench.tsx`, and `terminal/terminal-panel.ts`. Consult the root
-[`AGENT.md`](../../AGENT.md) before changing their lifecycle, input, or rendering
+[`AGENTS.md`](../../AGENTS.md) before changing their lifecycle, input, or rendering
 contracts.
 
 ## Release Process

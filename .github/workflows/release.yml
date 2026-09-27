@@ -42,7 +42,7 @@ jobs:
             --exclude='.git' \
             --exclude='workbench-ui/node_modules' \
             --exclude='workbench-ui/artifacts' \
-            bin workbench-ui install.sh README.md LICENSE AGENT.md
+            bin workbench-ui install.sh README.md LICENSE AGENTS.md
 
       - name: Create release
         uses: softprops/action-gh-release@v2

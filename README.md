@@ -178,7 +178,7 @@ the user's normal tmux server.
 
 Start with [the development guide](workbench-ui/development/development.md).
 Package-specific runtime notes live in [workbench-ui/README.md](workbench-ui/README.md),
-and invariants for coding agents live in [AGENT.md](AGENT.md).
+and invariants for coding agents live in [AGENTS.md](AGENTS.md).
 
 ## License
 

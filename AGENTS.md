@@ -1,4 +1,4 @@
-# AGENT.md — workbench-cli
+# AGENTS.md — workbench-cli
 
 Notes for agents working in `workbench-cli/`. This is the **Bun + React + Silvery
 terminal workbench** (a TUI that drives multiple coding-agent CLIs). The real app
