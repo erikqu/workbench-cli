@@ -129,5 +129,5 @@ configuration.
 ## More Documentation
 
 - [Development guide](development/development.md)
-- [Repository engineering invariants](../AGENT.md)
+- [Repository engineering invariants](../AGENTS.md)
 - [Public README](../README.md)
