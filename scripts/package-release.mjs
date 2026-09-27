@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -28,6 +28,7 @@ for (const [name, files] of [
 await copyFile(path.join(root, "install.sh"), path.join(output, "install.sh"));
 await copyFile(path.join(root, "install-host.sh"), path.join(output, "install-host.sh"));
 await writeFile(path.join(output, "distribution.json"), JSON.stringify({ ...distribution, version }, null, 2) + "\n");
+await rm(path.join(output, "iphone-install-url.txt"), { force: true });
 if (distribution.iphoneInstallUrl) {
   await writeFile(path.join(output, "iphone-install-url.txt"), distribution.iphoneInstallUrl + "\n");
 }

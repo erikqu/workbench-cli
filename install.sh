@@ -45,7 +45,7 @@ EOF
     if [[ "$workbench_mode" == host || "$workbench_mode" == --host ]]; then
       curl --proto '=https' --tlsv1.2 -fsSL "${workbench_download_base%/}/install-host.sh" -o "$workbench_temp/install-host.sh"
       WORKBENCH_REPO="$workbench_repo" WORKBENCH_VERSION="$workbench_version" \
-        WORKBENCH_DOWNLOAD_BASE="$workbench_download_base" bash "$workbench_temp/install-host.sh" "$@"
+        WORKBENCH_DOWNLOAD_BASE="${WORKBENCH_DOWNLOAD_BASE:-}" bash "$workbench_temp/install-host.sh" "$@"
     else
       if (($#)); then echo "app does not accept arguments" >&2; exit 2; fi
       if ! curl --proto '=https' --tlsv1.2 -fsSL "${workbench_download_base%/}/iphone-install-url.txt" -o "$workbench_temp/iphone-url"; then

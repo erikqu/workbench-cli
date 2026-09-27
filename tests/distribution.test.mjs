@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync,
   readlinkSync, rmSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -189,6 +189,21 @@ test("shared installer dispatches to the released host installer", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /setup --relay https:\/\/relay\.example\.test/);
   assert.ok(existsSync(path.join(f.env.WORKBENCH_HOST_BIN, "workbench-remote")));
+});
+
+test("an explicit host version selects that release's payload rather than the bootstrap version", (t) => {
+  const f = fixture(t);
+  makeHostArchive(f);
+  copyFileSync(hostInstaller, path.join(f.downloads, "install-host.sh"));
+  const result = f.run(installer, ["host", "--version", "v1.2.3"], {
+    WORKBENCH_VERSION: "latest",
+    WORKBENCH_DOWNLOAD_BASE: "",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const requests = readFileSync(f.env.CURL_CAPTURE, "utf8");
+  assert.match(requests, /releases\/latest\/download\/install-host\.sh/);
+  assert.match(requests, /releases\/download\/v1\.2\.3\/workbench-host-linux-x64\.tar\.gz/);
+  assert.doesNotMatch(requests, /releases\/latest\/download\/workbench-host/);
 });
 
 test("iPhone installer shows a published Apple install link and refuses other URLs", (t) => {
