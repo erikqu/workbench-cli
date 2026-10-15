@@ -221,7 +221,11 @@ export class ReactWorkbenchApp {
       resizeCoalesceMs: 0,
       mode: "fullscreen",
       exitOnCtrlC: false,
-      mouse: true,
+      // Workbench hit targets are terminal cells. Silvery's mouse=true probes
+      // pixel geometry once and enables 1016; font zoom then leaves its cached
+      // pixel-to-cell scale stale. Explicit cell mode keeps the host terminal
+      // responsible for converting clicks with its current font/grid geometry.
+      mouse: { coordinateMode: "cell" },
       // The workbench routes Tab/Shift+Tab itself (PTY tab-completion when a
       // terminal/harness is focused, otherwise cycling main tabs). Silvery's
       // default focus-cycling would otherwise swallow Tab before useInput, so

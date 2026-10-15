@@ -63,6 +63,13 @@ text. They check the complete reference frame, unique composer rows, and cursor
 position after edits, and send input immediately after a rapid resize burst.
 These checks run for both alternate-screen and inline fixtures, including Codex.
 
+The mouse regression answers terminal pixel-geometry probes and uses real
+browser pointer events to click Help, New Workspace, tabs, and the agent pane
+after zooming in/out and resizing. Run it separately with
+`bun scripts/terminal-regression.ts --mouse-only --codex --chunk-seed=1`.
+Workbench requests cell-coordinate SGR reports so the host terminal converts
+clicks using its current font size, including zoom without a grid resize.
+
 The screenshot runner chooses the package root as its fixture workspace and
 writes ignored artifacts to `artifacts/screenshots/`.
 

@@ -66,6 +66,13 @@
       fontWeightBold: option("fontWeightBold") ?? "700",
       letterSpacing: numericOption("letterSpacing", 0),
       lineHeight: numericOption("lineHeight", 1.12),
+      // Opt in for the font-zoom regression: real terminals answer these
+      // geometry queries, which lets Silvery negotiate pixel mouse reports.
+      windowOptions: {
+        getWinSizePixels: option("mouseGeometry") === "1",
+        getCellSizePixels: option("mouseGeometry") === "1",
+        getWinSizeChars: option("mouseGeometry") === "1",
+      },
       theme: terminalTheme,
     });
 
@@ -113,6 +120,20 @@
     window.__resizeTerminal = (cols, rows) => {
       term.resize(cols, rows);
       socket.send(`\0WORKBENCH_RESIZE ${cols} ${rows}`);
+    };
+    window.__setTerminalFontSize = (size) => {
+      term.options.fontSize = size;
+    };
+    window.__terminalGeometry = () => {
+      const rect = term.element
+        .querySelector(".xterm-screen")
+        .getBoundingClientRect();
+      return {
+        x: rect.x,
+        y: rect.y,
+        cellWidth: rect.width / term.cols,
+        cellHeight: rect.height / term.rows,
+      };
     };
     window.__outputStats = () => ({ outputBytes, outputEvents, parsedWrites });
     window.__terminalFontFamily = () => term.options.fontFamily;

@@ -136,7 +136,7 @@ try {
     },
   });
   await page.goto(
-    `http://127.0.0.1:${port}/?cols=${initialCols}&rows=${initialRows}`
+    `http://127.0.0.1:${port}/?cols=${initialCols}&rows=${initialRows}${options.mouseOnly ? "&mouseGeometry=1" : ""}`
   );
   await page.waitForFunction(
     () =>
@@ -186,11 +186,20 @@ try {
     await send(page, "\0WORKBENCH_CHUNK_OUTPUT");
   }
 
-  if (!(options.idleOnly || options.liveCodex || options.plainOnly)) {
+  if (
+    !(
+      options.idleOnly ||
+      options.liveCodex ||
+      options.plainOnly ||
+      options.mouseOnly
+    )
+  ) {
     location = await runResizeInputScenario(page);
   }
 
-  if (options.idleOnly) {
+  if (options.mouseOnly) {
+    await runMouseGeometryScenario(page);
+  } else if (options.idleOnly) {
     await assertIdleWindows(page, options.idleSamples);
   } else if (options.liveCodex) {
     await runLiveCodexScenario(page);
@@ -259,6 +268,79 @@ try {
     rmSync(artifactDir, { force: true, recursive: true });
   }
   rmSync(tempRoot, { force: true, recursive: true });
+}
+
+// Use browser pointer events at the rendered cells rather than injecting SGR
+// coordinates. This exercises the negotiated mouse protocol and its actual
+// hit testing after zoom and reflow, which raw cell reports cannot cover.
+async function runMouseGeometryScenario(page: Page) {
+  let shellCheck = 0;
+  const clickText = async (needle: string, offset = 1) => {
+    await waitForOutputSettled(page, 5000);
+    const cell = await findCell(page, needle);
+    if (!cell) {
+      throw new Error(
+        `could not locate mouse target ${JSON.stringify(needle)}`
+      );
+    }
+    const point = await page.evaluate(
+      ({ x, y }) => {
+        const geometry = (window as any).__terminalGeometry();
+        return {
+          x: geometry.x + (x + 0.5) * geometry.cellWidth,
+          y: geometry.y + (y + 0.5) * geometry.cellHeight,
+        };
+      },
+      { x: cell.x + offset, y: cell.y }
+    );
+    await page.mouse.click(point.x, point.y);
+  };
+  const checkClicks = async (label: string) => {
+    await waitForReference(page, () => true, 8000);
+    await clickText("? Help");
+    await waitForText(page, "Workbench help", 1500);
+    await send(page, "\x1b");
+    await waitForTextAbsent(page, "Workbench help", 1500);
+    await clickText("[META]", 10);
+    await waitForReference(page, () => true, 8000);
+    await clickText("+ New workspace", 5);
+    await waitForText(page, "Workspace folder:", 1500);
+    await send(page, "\x1b");
+    await waitForTextAbsent(page, "Workspace folder:", 1500);
+    await clickText("[META]", 10);
+    await waitForReference(page, () => true, 8000);
+    await clickText("Terminal 1", 4);
+    // Shell prompts vary by platform. Its output confirms which pane has focus.
+    await Bun.sleep(150);
+    shellCheck += 1;
+    await send(page, `printf 'WB_MOUSE_SHELL_%s\\n' ${shellCheck}\r`);
+    await waitForText(page, `WB_MOUSE_SHELL_${shellCheck}`, 2500);
+    await clickText(options.codex ? "Codex" : "Cursor");
+    await waitForReference(page, () => true, 8000);
+    report(`browser clicks hit their visible targets ${label}`);
+  };
+
+  await checkClicks("before zoom");
+  await page.evaluate(() => (window as any).__setTerminalFontSize(18));
+  await checkClicks("after font zoom without a grid resize");
+  for (const [fontSize, cols, rows] of [
+    [20, 100, 30],
+    [12, 147, 50],
+    [15, 120, 40],
+  ]) {
+    await page.evaluate(
+      (size) => (window as any).__setTerminalFontSize(size),
+      fontSize
+    );
+    await resizeOuter(page, cols, rows);
+    await checkClicks(
+      `after font size ${fontSize} and resize to ${cols}x${rows}`
+    );
+  }
+  await resizeOuter(page, 100, 30);
+  await checkClicks("after window resize without changing the font");
+  await resizeOuter(page, initialCols, initialRows);
+  await checkClicks("after restoring the window");
 }
 
 // Exercise edits after reflow, including the user's large-window transition.
@@ -1737,6 +1819,7 @@ function parseOptions(args: string[]) {
     inline: false,
     keepArtifacts: false,
     liveCodex: false,
+    mouseOnly: false,
     label: undefined as string | undefined,
     plainOnly: false,
     size: undefined as string | undefined,
@@ -1759,6 +1842,8 @@ function parseOptions(args: string[]) {
       result.codex = true;
     } else if (arg === "--plain-only") {
       result.plainOnly = true;
+    } else if (arg === "--mouse-only") {
+      result.mouseOnly = true;
     } else if (arg.startsWith("--app-root=")) {
       result.appRoot = arg.slice("--app-root=".length);
     } else if (arg.startsWith("--chunk-seed=")) {
@@ -1792,7 +1877,10 @@ function parseOptions(args: string[]) {
       "idle samples must be positive and soak must be non-negative"
     );
   }
-  if (result.liveCodex && (result.inline || result.plainOnly)) {
+  if (
+    result.liveCodex &&
+    (result.inline || result.plainOnly || result.mouseOnly)
+  ) {
     throw new Error("--live-codex cannot be combined with fixture scenarios");
   }
   return result;

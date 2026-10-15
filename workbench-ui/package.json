@@ -27,7 +27,7 @@
     "start": "bun src/index.ts",
     "dev": "bun scripts/hot-runner.ts",
     "screenshot": "bun scripts/screenshot.ts",
-    "test:terminal": "bun scripts/terminal-regression.ts && bun scripts/terminal-regression.ts --codex --chunk-seed=1 && bun scripts/terminal-regression.ts --inline --chunk-seed=1 && bun scripts/terminal-regression.ts --inline --codex --chunk-seed=1 && bun scripts/terminal-regression.ts --sticky-transcript --chunk-seed=1",
+    "test:terminal": "bun scripts/terminal-regression.ts && bun scripts/terminal-regression.ts --codex --chunk-seed=1 && bun scripts/terminal-regression.ts --inline --chunk-seed=1 && bun scripts/terminal-regression.ts --inline --codex --chunk-seed=1 && bun scripts/terminal-regression.ts --sticky-transcript --chunk-seed=1 && bun scripts/terminal-regression.ts --mouse-only --codex --chunk-seed=1",
     "test:terminal:red": "bun scripts/terminal-regression.ts --idle-only --idle-samples=10 --keep-artifacts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
@@ -35,7 +35,7 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.70",
+  "version": "0.1.71",
   "private": true,
   "patchedDependencies": {
     "silvery@0.24.0": "patches/silvery@0.24.0.patch"

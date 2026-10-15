@@ -365,6 +365,12 @@ with text already present in the agent composer.
 
 ## Terminal-corruption workflow
 
+- Workbench uses explicit SGR cell-coordinate mouse reporting:
+  `mouse: { coordinateMode: "cell" }`. Silvery's `mouse: true` negotiates
+  SGR-Pixels with startup-only cell metrics, causing clicks to miss after font
+  zoom. Keep the host terminal responsible for pixel-to-cell conversion. The
+  `--mouse-only` terminal regression answers geometry probes and clicks actual
+  browser-rendered targets after font changes and window resizes.
 - Do not change renderer, cursor, resize, or tmux behavior until
   `bun run test:terminal` has a deterministic failing frame. A pane that looks
   clean after output stops does not disprove a transient streaming failure, but
