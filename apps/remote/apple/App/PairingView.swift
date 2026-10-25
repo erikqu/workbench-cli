@@ -11,7 +11,7 @@ struct PairingView: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
                 if let pairing = model.pairing {
-                    Image(systemName: "desktopcomputer").font(.largeTitle).foregroundStyle(.green)
+                    Image(systemName: "desktopcomputer").font(.largeTitle).foregroundStyle(Color.accentColor)
                     Text("Pair your development machine").font(.title2.bold())
                     Text("Computer: \(pairing.relay)").font(.footnote).foregroundStyle(.secondary)
                     if let code = model.pairingCode {

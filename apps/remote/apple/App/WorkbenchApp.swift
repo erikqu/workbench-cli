@@ -8,7 +8,7 @@ import WorkbenchCore
     var body: some Scene {
         WindowGroup {
             RootView(model: model)
-                .preferredColorScheme(.dark).tint(Color(red: 0.72, green: 0.86, blue: 0.58))
+                .preferredColorScheme(.dark).tint(Color.accentColor)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { model.setForeground(false) }
                     else if phase == .active { model.setForeground(true) }
@@ -36,7 +36,7 @@ struct RootView: View {
                                 HStack(spacing: 14) {
                                     Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(.tint)
                                     VStack(alignment: .leading, spacing: 5) { Text(machine.name).font(.headline); Text(machine.online ? "Online" : "Companion offline").font(.caption).foregroundStyle(.secondary) }
-                                    Spacer(); Circle().fill(machine.online ? Color.green : Color.gray).frame(width: 7, height: 7)
+                                    Spacer(); Circle().fill(machine.online ? Color.accentColor : Color.gray).frame(width: 7, height: 7)
                                 }.padding(.vertical, 8)
                             }
                         }
@@ -127,10 +127,10 @@ struct WorkspaceList: View {
 
     @ViewBuilder private var activeIndicator: some View {
         if reduceMotion {
-            Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(.green)
+            Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
         } else {
-            ProgressView().controlSize(.mini).tint(.green).accessibilityHidden(true)
+            ProgressView().controlSize(.mini).tint(Color.accentColor).accessibilityHidden(true)
         }
     }
 
@@ -153,7 +153,7 @@ struct WorkspaceList: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(pane.name)
                                     Text(paneStatus(pane)).font(.caption)
-                                        .foregroundStyle(isActive(pane) ? Color.green : Color.secondary)
+                                        .foregroundStyle(isActive(pane) ? Color.accentColor : Color.secondary)
                                 }
                             } icon: {
                                 if isActive(pane) { activeIndicator }
@@ -174,7 +174,7 @@ struct WorkspaceList: View {
                         if summary.isActive {
                             HStack(spacing: 7) {
                                 activeIndicator
-                                Text(summary.label).font(.caption).foregroundStyle(.green)
+                                Text(summary.label).font(.caption).foregroundStyle(Color.accentColor)
                             }
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel("Workspace activity")

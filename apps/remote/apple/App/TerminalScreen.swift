@@ -30,7 +30,7 @@ struct TerminalScreen: View {
                                 let active = model.connected && tab.live && ["working", "recent"].contains(tab.activity ?? "")
                                 Button { selectedPane = tab } label: {
                                     HStack(spacing: 6) {
-                                        if active && !reduceMotion { ProgressView().controlSize(.mini).tint(.green) }
+                                        if active && !reduceMotion { ProgressView().controlSize(.mini).tint(Color.accentColor) }
                                         else { Image(systemName: tab.kind == "agent" ? "sparkle" : "terminal").foregroundStyle(active ? Color.green : Color.secondary) }
                                         Text(tab.name).lineLimit(1)
                                     }.font(.subheadline.weight(currentPane.id == tab.id ? .semibold : .regular))
@@ -69,7 +69,7 @@ struct TerminalScreen: View {
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
             }
-            NativeTerminal(model: model).background(Color(red: 0.06, green: 0.08, blue: 0.07))
+            NativeTerminal(model: model).background(Color(red: 0.06, green: 0.08, blue: 0.11))
             if !model.connected || model.sessionState == nil {
                 Button("Reconnect") { if model.connected { Task { await model.open(currentPane) } } else if let machine = model.activeMachine { model.connect(machine) } }
                     .buttonStyle(.bordered).padding(8).disabled(model.connecting)
@@ -167,7 +167,7 @@ struct NativeTerminal: UIViewControllerRepresentable {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.addSubview(viewport); viewport.addSubview(terminal)
-        let background = UIColor(red: 0.06, green: 0.08, blue: 0.07, alpha: 1)
+        let background = UIColor(red: 0.06, green: 0.08, blue: 0.11, alpha: 1)
         view.backgroundColor = background
         viewport.backgroundColor = background
         viewport.isDirectionalLockEnabled = true
@@ -180,7 +180,7 @@ struct NativeTerminal: UIViewControllerRepresentable {
         terminal.contentInsetAdjustmentBehavior = .never
         terminal.showsHorizontalScrollIndicator = false
         terminal.nativeBackgroundColor = background
-        terminal.nativeForegroundColor = UIColor(red: 0.86, green: 0.90, blue: 0.84, alpha: 1)
+        terminal.nativeForegroundColor = UIColor(red: 0.86, green: 0.90, blue: 0.94, alpha: 1)
         terminal.getTerminal().changeScrollback(10_000)
         terminal.accessibilityIdentifier = "terminal.content"
         terminal.inputAccessoryView = makeKeyboardAccessory()
