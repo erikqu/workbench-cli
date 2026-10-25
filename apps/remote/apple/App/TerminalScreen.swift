@@ -31,7 +31,7 @@ struct TerminalScreen: View {
                                 Button { selectedPane = tab } label: {
                                     HStack(spacing: 6) {
                                         if active && !reduceMotion { ProgressView().controlSize(.mini).tint(Color.accentColor) }
-                                        else { Image(systemName: tab.kind == "agent" ? "sparkle" : "terminal").foregroundStyle(active ? Color.green : Color.secondary) }
+                                        else { Image(systemName: tab.kind == "agent" ? "sparkle" : "terminal").foregroundStyle(active ? Color.accentColor : Color.secondary) }
                                         Text(tab.name).lineLimit(1)
                                     }.font(.subheadline.weight(currentPane.id == tab.id ? .semibold : .regular))
                                         .padding(.horizontal, 12).frame(height: 38)
@@ -49,7 +49,7 @@ struct TerminalScreen: View {
                 }
             }
             HStack(spacing: 8) {
-                Circle().fill(model.connected && !model.isPreview ? Color.green : Color.orange).frame(width: 6, height: 6)
+                Circle().fill(model.connected && !model.isPreview ? Color.accentColor : Color.orange).frame(width: 6, height: 6)
                 Text(model.status).font(.caption).lineLimit(2)
                 Spacer()
                 if model.connected && model.sessionState?.writable == false {

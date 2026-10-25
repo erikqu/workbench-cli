@@ -12,7 +12,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.71"
-    CURRENT_PROJECT_VERSION: 2
+    CURRENT_PROJECT_VERSION: 3
     WORKBENCH_RELAY_URL: ""
     WORKBENCH_AUTH_MODE: pairing
 targets:
@@ -39,6 +39,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WorkbenchRelayURL: $(WORKBENCH_RELAY_URL)
         WorkbenchAuthMode: $(WORKBENCH_AUTH_MODE)
+        # Mirrors the saved export classification of TestFlight Build 1.
+        ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: Scan the pairing code displayed by your Workbench companion.
         NSLocalNetworkUsageDescription: Connect to a local development relay when testing.
         UILaunchScreen: {}
