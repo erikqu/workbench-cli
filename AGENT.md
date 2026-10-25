@@ -530,3 +530,13 @@ GitHub Release. Do not tag until the release commit is already on `main`.
 ASCII-safe output, no emojis (matches the repo-root conventions). True-color
 theme tokens live in `src/ui/theme.ts`. Formatting/linting is handled by
 Ultracite/Biome (`biome.jsonc`); run `bun run check` before committing.
+
+## Phone pairing
+
+`ConnectPhoneDialog` runs `bin/workbench-phone pair --json` only on demand.
+The Node companion in `apps/remote/services/local/` owns pairing and encrypted
+SSH transport; the TUI reads JSON status events and sends only the approval code.
+Keep pairing links and credentials out of analytics and logs. The private
+endpoint binds loopback and uses Tailscale Serve on port 8443, never Funnel.
+Automated and isolated UI instances must never install services or alter
+Tailscale. Run `npm run test:phone --prefix apps/remote` for pairing regressions.

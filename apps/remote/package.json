@@ -18,7 +18,8 @@
     "test:platform": "node scripts/test-platform.mjs",
     "build:services": "node scripts/build-services.mjs",
     "package:host": "npm run build:services && node scripts/package-host.mjs",
-    "check": "npm run typecheck && npm test && npm run test:platform"
+    "check": "npm run typecheck && npm test && npm run test:phone && npm run test:platform",
+    "test:phone": "tsx --test tests/local/*.test.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

@@ -9,8 +9,10 @@ import { APIError, Store, type Device } from './store';
 import { canonicalKey, hash, id, text, token } from '../shared/protocol';
 
 export interface RelayOptions {
-  store: Store; appleAudience: string; trustProxy?: boolean; metricsToken?: string; releaseDirectory?: string;
+  store: Pick<Store, 'challenge' | 'consumeChallenge' | 'login' | 'pairingSubject' | 'device' | 'machine' | 'createPair' | 'claim' | 'pairing' | 'confirm' | 'machines' | 'authorize' | 'grants' | 'revoke' | 'cleanup' | 'health'>; appleAudience: string; trustProxy?: boolean; metricsToken?: string; releaseDirectory?: string;
   localPairingAuth?: boolean;
+  privateHost?: boolean;
+  cancelPairing?: (pairingId: string) => Promise<void>;
   // Dependency injection for tests only; the production entrypoint always verifies Apple tokens.
   identityVerifier?: (identityToken: string, nonceHash: string) => Promise<string>;
 }
@@ -72,7 +74,7 @@ export function createRelay(options: RelayOptions) {
       }
       let result: unknown;
       if (req.method === 'GET' && url.pathname === '/health') {
-        await store.pool.query('SELECT 1'); result = { ok: true, protocol: 1 };
+        await store.health(); result = { ok: true, protocol: 1 };
       } else if (req.method === 'GET' && url.pathname === '/metrics') {
         if (!options.metricsToken || bearer(req) !== options.metricsToken) throw new APIError(404, 'Not found');
         result = { ...metrics, hosts: hosts.size, tunnels: tunnels.size };
@@ -90,12 +92,15 @@ export function createRelay(options: RelayOptions) {
         const subject = await store.pairingSubject(id(body.pairingId), text(body.secret, 'pairing secret', 100));
         result = await store.login(subject, canonicalKey(body.publicKey), text(body.name, 'device name', 80));
       } else if (req.method === 'POST' && url.pathname === '/v1/pairings') {
+        if (options.privateHost) await store.machine(bearer(req));
         rate(req, 'pair', 5); const body = await json(req);
         const existing = req.headers.authorization ? await store.machine(bearer(req)) : undefined;
         result = await store.createPair(text(body.name, 'machine name', 80), canonicalKey(body.hostKey), existing);
       } else if (url.pathname.startsWith('/v1/pairings/')) {
         const [, , , pairingId, action] = url.pathname.split('/'); id(pairingId);
-        if (req.method === 'POST' && action === 'claim') {
+        if (req.method === 'DELETE' && !action && options.privateHost && options.cancelPairing) {
+          await store.machine(bearer(req)); await options.cancelPairing(pairingId); result = { cancelled: true };
+        } else if (req.method === 'POST' && action === 'claim') {
           const device = await store.device(bearer(req)); const body = await json(req);
           await store.claim(pairingId, text(body.secret, 'pairing secret'), device); result = { status: 'claimed' };
         } else if (req.method === 'GET' && !action) {

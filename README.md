@@ -218,3 +218,10 @@ and invariants for coding agents live in [AGENT.md](AGENT.md).
 ## License
 
 [MIT](LICENSE)
+
+### Connect phone
+
+Click **Connect phone** beside the Mermaid control to check Tailscale and pair
+an iPhone with a QR code. Both devices need Tailscale on the same network; the
+computer needs Node.js 24 or newer. Approve the phone's six-digit code in the
+CLI. See [phone setup](docs/install.md#connect-your-iphone-over-tailscale).

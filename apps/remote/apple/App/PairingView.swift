@@ -13,14 +13,14 @@ struct PairingView: View {
                 if let pairing = model.pairing {
                     Image(systemName: "desktopcomputer").font(.largeTitle).foregroundStyle(.green)
                     Text("Pair your development machine").font(.title2.bold())
-                    Text("Relay: \(pairing.relay)").font(.footnote).foregroundStyle(.secondary)
+                    Text("Computer: \(pairing.relay)").font(.footnote).foregroundStyle(.secondary)
                     if let code = model.pairingCode {
                         Text(code).font(.system(size: 44, weight: .medium, design: .monospaced)).frame(maxWidth: .infinity).padding(.vertical)
-                        Text("Enter this code in the companion’s terminal to approve this iPhone.")
+                        Text("Enter this code in Connect phone on your computer to approve this iPhone.")
                         HStack { ProgressView(); Text("Waiting for confirmation…").font(.footnote) }
                     } else if model.login == nil {
                         if model.pairingAuthentication {
-                            Text("This one-time code securely signs in this iPhone and binds it to Supernova.")
+                            Text("This one-time code securely signs in this iPhone and pairs it with your computer.")
                             Button("Continue with secure pairing") { Task { await model.signInWithPairing() } }
                                 .buttonStyle(.borderedProminent).disabled(model.claiming)
                         } else {
@@ -34,7 +34,7 @@ struct PairingView: View {
                     Spacer()
                 } else {
                     Text("Scan the companion’s QR code").font(.title2.bold())
-                    Text("Run setup on your development machine, then point the camera at its pairing code.").foregroundStyle(.secondary)
+                    Text("Open Tailscale on both devices, click Connect phone in Workbench on your computer, then scan its QR code.").foregroundStyle(.secondary)
                     if scanning { QRScanner { model.receivePairing($0); scanning = false }.clipShape(RoundedRectangle(cornerRadius: 16)).frame(minHeight: 230) }
                     Text("Or paste a pairing link").font(.subheadline.bold())
                     TextField("workbench-remote://pair?…", text: $manual, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)

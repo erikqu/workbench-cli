@@ -44,7 +44,7 @@ xcodebuild \
   "OTHER_CODE_SIGN_FLAGS=--keychain $APPLE_KEYCHAIN_PATH" \
   "CURRENT_PROJECT_VERSION=$workbench_build" \
   "WORKBENCH_RELAY_URL=${WORKBENCH_RELAY_URL:-}" \
-  "WORKBENCH_AUTH_MODE=apple" archive
+  "WORKBENCH_AUTH_MODE=${WORKBENCH_AUTH_MODE:-pairing}" archive
 WORKBENCH_EXPORT_OPTIONS="$workbench_output/ExportOptions.plist" python3 - <<'PY'
 import os, plistlib
 with open(os.environ["WORKBENCH_EXPORT_OPTIONS"], "wb") as f:

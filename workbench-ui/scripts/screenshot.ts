@@ -142,6 +142,34 @@ try {
     await waitForText(page, "↻ switch ...", 2000)
   );
   await page.screenshot({ path: join(screenshotDir, "workbench.png") });
+  const phonePosition = (await bufferText(page))
+    .split("\n")
+    .map((line, row) => ({ col: line.indexOf("Connect phone"), row }))
+    .find((position) => position.col >= 0);
+  report("Connect phone renders beside Mermaid", Boolean(phonePosition));
+  if (phonePosition) {
+    await click(page, phonePosition.col + 2, phonePosition.row + 1);
+    report(
+      "Connect phone opens its pairing dialog",
+      await waitForText(
+        page,
+        "Phone pairing is unavailable in automated previews.",
+        3000
+      )
+    );
+    await page.screenshot({
+      path: join(screenshotDir, "workbench-connect-phone.png"),
+    });
+    await send(page, "\x1b");
+    report(
+      "Escape closes phone pairing",
+      await waitForTextGone(
+        page,
+        "Phone pairing is unavailable in automated previews.",
+        3000
+      )
+    );
+  }
 
   await send(page, "\x1b[63;6u");
   const helpOpened = await waitForText(page, "Workbench help", 3000);

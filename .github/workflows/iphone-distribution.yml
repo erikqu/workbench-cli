@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing Workbench version tag to sign and upload (vX.Y.Z)
+        description: Branch, commit, or version tag to sign and upload
         required: true
+        default: main
         type: string
 
 permissions:
@@ -25,7 +26,7 @@ jobs:
       APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
       WORKBENCH_RELAY_URL: ${{ vars.WORKBENCH_RELAY_URL }}
       WORKBENCH_BUILD_NUMBER: ${{ github.run_number }}
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ startsWith(inputs.tag, 'v') && inputs.tag || '' }}
       FASTLANE_SKIP_UPDATE_CHECK: "1"
       FASTLANE_HIDE_CHANGELOG: "1"
     steps:

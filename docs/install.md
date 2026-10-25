@@ -15,6 +15,39 @@ Existing installations update with `work update`. The monorepo keeps the origina
 launcher paths, installation directory, saved workspaces, and private tmux socket.
 You do not need to reinstall or migrate your sessions.
 
+## Connect your iPhone over Tailscale
+
+Install Tailscale on the computer and iPhone and sign in to the same tailnet.
+Enable MagicDNS and HTTPS certificates in your Tailscale admin console. The
+computer also needs Node.js 24 or newer and tmux.
+
+In Workbench, click **Connect phone** beside **mermaid**. Setup checks Tailscale,
+starts a user companion service, and shows a private QR code. Scan it in the
+Workbench iPhone app, then enter the phone's six-digit code in the computer's
+pairing dialog. The QR expires after five minutes. You can also run:
+
+```sh
+work phone pair
+work phone status
+```
+
+The companion listens on loopback port 9419, with Tailscale Serve providing
+private HTTPS on port 8443. Setup refuses an existing conflicting handler or
+Funnel exposure. Access requires a locally approved phone key; joining the
+same tailnet alone does not grant terminal access. Phone disconnection leaves
+agents running, and the user service reconnects after login.
+
+Pairing identities and grants are stored with owner-only permissions under
+`~/.config/workbench-remote`. Closing the pairing dialog cancels the current QR;
+the companion continues serving previously approved phones. To stop it:
+
+- macOS: unload `~/Library/LaunchAgents/dev.workbench.remote.tailscale.plist`
+  with `launchctl bootout` for your GUI domain.
+- Linux: `systemctl --user disable --now workbench-phone.service`.
+
+The iPhone app is available through TestFlight once its signed build is uploaded
+and Apple enables testing. A public invitation link has not been published yet.
+
 ## Remote host companion
 
 On the development machine, install tmux, then:

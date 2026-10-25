@@ -32,6 +32,28 @@ final class ProtocolTests: XCTestCase {
         XCTAssertThrowsError(try relayOrigin("https://remote.example/path"))
         XCTAssertEqual(try relayOrigin("http://127.0.0.1:8080").port, 8080)
     }
+    func testCompactPairingRoundTripAndRejectTruncation() throws {
+        let host = try DeviceIdentity()
+        let pairId = UUID(), machineId = UUID()
+        let secret = Data(repeating: 17, count: 32)
+        var pairUUID = pairId.uuid, machineUUID = machineId.uuid
+        var payload = Data([2])
+        payload.append(withUnsafeBytes(of: &pairUUID) { Data($0) })
+        payload.append(secret)
+        payload.append(withUnsafeBytes(of: &machineUUID) { Data($0) })
+        payload.append(Data(base64Encoded: host.publicKey.split(separator: " ")[1].description)!)
+        payload.append(Data("https://computer.example.ts.net:8443".utf8))
+        func link(_ bytes: Data) -> String {
+            "workbench-remote://pair?data=" + bytes.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        }
+        let pairing = try PairingQR(link: link(payload))
+        XCTAssertEqual(pairing.pairingId.lowercased(), pairId.uuidString.lowercased())
+        XCTAssertEqual(pairing.machineId.lowercased(), machineId.uuidString.lowercased())
+        XCTAssertEqual(pairing.hostKey, host.publicKey)
+        XCTAssertEqual(pairing.secret, secret.base64EncodedString().replacingOccurrences(of: "=", with: "").replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_"))
+        XCTAssertEqual(pairing.relay, "https://computer.example.ts.net:8443")
+        XCTAssertThrowsError(try PairingQR(link: link(payload.prefix(115))))
+    }
     func testPairingValidation() throws {
         let identity = try DeviceIdentity()
         let payload: [String: Any] = ["version": 1, "relay": "https://relay.example", "pairingId": UUID().uuidString, "machineId": UUID().uuidString, "secret": String(repeating: "a", count: 43), "hostKey": identity.publicKey]

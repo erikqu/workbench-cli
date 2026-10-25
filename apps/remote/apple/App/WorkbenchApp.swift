@@ -73,7 +73,7 @@ struct RootView: View {
                 Button { showPairing = true } label: { Label(model.pairing == nil ? "Scan a pairing code" : "Continue pairing", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large)
                 if model.pairingAuthentication {
                     Text("Private connection through Tailscale").font(.subheadline.bold())
-                    Text(model.relayText.isEmpty ? "Scan Supernova’s pairing code to connect." : model.relayText)
+                    Text(model.relayText.isEmpty ? "Sign in to the same Tailscale network on both devices, then click Connect phone in Workbench." : model.relayText)
                         .font(.footnote).foregroundStyle(.secondary)
                 } else {
                     Text("Connection service").font(.subheadline.bold())

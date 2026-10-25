@@ -18,7 +18,7 @@ if (distribution.iphoneInstallUrl && !/^https:\/\/(?:testflight\.apple\.com\/joi
 const output = path.join(root, "release");
 await mkdir(output, { recursive: true });
 for (const [name, files] of [
-  [`workbench-cli-v${version}.tar.gz`, ["bin", "workbench-ui", "install.sh", "README.md", "LICENSE", "AGENT.md"]],
+  [`workbench-cli-v${version}.tar.gz`, ["bin", "workbench-ui", "apps/remote", "install.sh", "README.md", "LICENSE", "AGENT.md"]],
   [`workbench-v${version}.tar.gz`, []],
 ]) {
   execFileSync("git", ["archive", "--format=tar.gz", `--output=${path.join(output, name)}`, "HEAD", ...files], { cwd: root, stdio: "inherit" });

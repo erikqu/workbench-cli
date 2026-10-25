@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+workbench_root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+workbench_remote="$workbench_root/apps/remote"
+workbench_entry="$workbench_remote/dist/services/local/main.mjs"
+workbench_command="${1:-pair}"
+if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' >/dev/null 2>&1; then
+  echo 'Phone pairing needs Node.js 24 or newer. Install it from https://nodejs.org.' >&2
+  exit 1
+fi
+# Phone dependencies are installed only when remote access is requested.
+if [[ ! -d "$workbench_remote/node_modules/ssh2" || ! -f "$workbench_entry" ]] ||
+   [[ "$workbench_remote/package-lock.json" -nt "$workbench_entry" ]] ||
+   [[ -n "$(find "$workbench_remote/services" "$workbench_remote/src" -type f -name '*.ts' -newer "$workbench_entry" -print -quit 2>/dev/null)" ]]; then
+  ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix "$workbench_remote" >&2
+  npm run build:services --prefix "$workbench_remote" >&2
+  export WORKBENCH_PHONE_RESTART=1
+fi
+if (( $# == 0 )); then set -- "$workbench_command"; fi
+exec node "$workbench_entry" "$@"

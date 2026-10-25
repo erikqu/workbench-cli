@@ -70,6 +70,12 @@ if [[ "${1:-}" == "update" ]]; then
     bash "$PKG_DIR/install.sh"
 fi
 
+# Phone setup runs before the TUI owns stdin so terminal QR pairing also works.
+if [[ "${1:-}" == "phone" ]]; then
+  shift
+  exec bash "$PKG_DIR/bin/workbench-phone" "$@"
+fi
+
 # Keep ordinary installations current before starting the UI. Only the
 # installer-owned checkout participates: a source checkout used for development
 # must never fetch or replace itself just because its launcher was executed.

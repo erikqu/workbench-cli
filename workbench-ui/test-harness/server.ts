@@ -31,7 +31,6 @@ const server = Bun.serve({
   },
   websocket: {
     open(socket) {
-      const shellCommand = `stty cols ${cols} rows ${rows}; ${command}`;
       const childEnv = {
         ...Bun.env,
         TERM: "xterm-256color",
@@ -43,38 +42,35 @@ const server = Bun.serve({
         WORKBENCH_UI_SCREENSHOT: "1",
       };
       delete childEnv.NO_COLOR;
-      const child = Bun.spawn(["script", "-qefc", shellCommand, "/dev/null"], {
+      const decoder = new TextDecoder();
+      const child = Bun.spawn(["/bin/sh", "-c", command], {
         cwd: root,
         env: childEnv,
-        stdin: "pipe",
-        stdout: "pipe",
-        stderr: "pipe",
+        terminal: {
+          cols,
+          rows,
+          data(_terminal, data) {
+            socket.send(decoder.decode(data, { stream: true }));
+          },
+        },
       });
       processes.set(socket, child);
-      streamToSocket(child.stdout as ReadableStream<Uint8Array>, socket);
-      streamToSocket(child.stderr as ReadableStream<Uint8Array>, socket);
       child.exited.finally(() => processes.delete(socket));
     },
     message(socket, data) {
       const child = processes.get(socket);
-      const stdin = child?.stdin as
-        | { write(data: string | Uint8Array): unknown; flush(): unknown }
-        | undefined;
-      if (!stdin) {
-        return;
-      }
-      stdin.write(
+      child?.terminal?.write(
         typeof data === "string"
           ? data
           : new Uint8Array(data as ArrayBufferLike)
       );
-      stdin.flush();
     },
     close(socket) {
       const child = processes.get(socket);
       processes.delete(socket);
       try {
         child?.kill();
+        child?.terminal?.close();
       } catch {
         // Ignore shutdown races.
       }
@@ -83,18 +79,3 @@ const server = Bun.serve({
 });
 
 console.log(`READY http://127.0.0.1:${server.port}`);
-
-async function streamToSocket(
-  stream: ReadableStream<Uint8Array>,
-  socket: ServerWebSocket<unknown>
-) {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    socket.send(decoder.decode(value, { stream: true }));
-  }
-}

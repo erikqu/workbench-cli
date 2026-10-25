@@ -116,7 +116,21 @@ public struct PairingQR: Codable, Sendable {
         encoded = encoded.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
         guard let data = Data(base64Encoded: encoded) else { throw WorkbenchError.message("Invalid pairing code.") }
-        self = try JSONDecoder().decode(PairingQR.self, from: data)
+        if data.first == 2 {
+            guard data.count > 116, let relay = String(data: data.dropFirst(116), encoding: .utf8) else { throw WorkbenchError.message("Invalid pairing code.") }
+            func uuid(_ bytes: Data) -> String {
+                let hex = bytes.map { String(format: "%02x", $0) }.joined()
+                return [8, 4, 4, 4, 12].reduce(("", hex.startIndex)) { result, length in
+                    let end = hex.index(result.1, offsetBy: length)
+                    return (result.0 + (result.0.isEmpty ? "" : "-") + String(hex[result.1..<end]), end)
+                }.0
+            }
+            let secret = data.subdata(in: 17..<49).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+            let object: [String: Any] = ["version": 1, "relay": relay, "pairingId": uuid(data.subdata(in: 1..<17)), "secret": secret, "machineId": uuid(data.subdata(in: 49..<65)), "hostKey": "ssh-ed25519 " + data.subdata(in: 65..<116).base64EncodedString()]
+            self = try JSONDecoder().decode(PairingQR.self, from: JSONSerialization.data(withJSONObject: object))
+        } else {
+            self = try JSONDecoder().decode(PairingQR.self, from: data)
+        }
         guard version == 1, UUID(uuidString: pairingId) != nil, UUID(uuidString: machineId) != nil, secret.count >= 32, secret.count <= 100 else { throw WorkbenchError.message("Invalid or unsupported pairing code.") }
         _ = try relayOrigin(relay)
         _ = try NIOSSHPublicKey(openSSHPublicKey: hostKey)

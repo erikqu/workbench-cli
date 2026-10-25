@@ -14,7 +14,7 @@ settings:
     MARKETING_VERSION: "0.1.71"
     CURRENT_PROJECT_VERSION: 1
     WORKBENCH_RELAY_URL: ""
-    WORKBENCH_AUTH_MODE: apple
+    WORKBENCH_AUTH_MODE: pairing
 targets:
   WorkbenchRemote:
     type: application
@@ -25,7 +25,7 @@ targets:
       - package: SwiftTerm
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.workbench.remote
+        PRODUCT_BUNDLE_IDENTIFIER: com.erikqu.workbenchremote
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: App/WorkbenchRemote.entitlements
@@ -34,6 +34,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Workbench
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WorkbenchRelayURL: $(WORKBENCH_RELAY_URL)
         WorkbenchAuthMode: $(WORKBENCH_AUTH_MODE)
         NSCameraUsageDescription: Scan the pairing code displayed by your Workbench companion.
@@ -46,7 +48,7 @@ targets:
     entitlements:
       path: App/WorkbenchRemote.entitlements
       properties:
-        com.apple.developer.applesignin: [Default]
+        {}
     preBuildScripts:
       - name: Generate app icon
         script: 'env -u SDKROOT -u PLATFORM_NAME -u EFFECTIVE_PLATFORM_NAME swift "$SRCROOT/../scripts/make-icon.swift" "$SRCROOT/App/Assets.xcassets/AppIcon.appiconset/icon.png"'

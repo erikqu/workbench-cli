@@ -8,6 +8,7 @@ export interface Device { id: string; account_id: string; public_key: string; na
 export interface Machine { id: string; account_id: string | null; host_key: string; name: string }
 export class Store {
   constructor(public pool: Pool) {}
+  async health() { await this.pool.query('SELECT 1'); }
   async migrate() { await this.pool.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8')); }
   async transaction<T>(action: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();

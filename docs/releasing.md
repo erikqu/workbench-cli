@@ -30,10 +30,12 @@ host archive's actual bundled runtime before it can be published.
 
 ## iPhone distribution
 
-The **iPhone TestFlight** workflow signs an existing version tag and uploads it
+The **iPhone TestFlight** workflow signs a branch, commit, or version tag and uploads it
 to App Store Connect. It requires a paid Apple developer team and an existing
-App Store Connect app. The bundle ID must have Sign in with Apple enabled and
-match the relay's `APPLE_AUDIENCE`.
+App Store Connect app. The bundle ID must match the App Store Connect record. The default app uses
+private Tailscale QR pairing. A public-relay build can select Apple authentication
+with `WORKBENCH_AUTH_MODE=apple` and needs the corresponding entitlement and relay
+`APPLE_AUDIENCE`.
 
 Configure a GitHub environment named `apple-distribution`:
 
@@ -54,7 +56,7 @@ into issue bodies or build logs. The workflow validates the profile's team,
 bundle identifier, expiry, and distribution type, imports the certificate into
 a temporary keychain, and removes the signing files when it finishes.
 
-Run **iPhone TestFlight** with the released tag. A successful upload means the
+Run **iPhone TestFlight** with `main` for a beta of the latest commit, or with a released tag. A successful upload means the
 build reached App Store Connect; it does not mean Apple has processed or approved
 it, or that an external user can install it.
 

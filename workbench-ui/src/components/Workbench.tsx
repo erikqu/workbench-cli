@@ -37,6 +37,7 @@ import {
 import { colors } from "../ui/theme";
 import { ToastHost } from "../ui/toast";
 import { DiffDetailView } from "./ChangesView";
+import { ConnectPhoneDialog } from "./ConnectPhoneDialog";
 import { FocusedTerminal } from "./FocusedTerminal";
 import { LatexInlineOverlay } from "./LatexInlineOverlay";
 import {
@@ -74,6 +75,7 @@ export function Workbench({
   const [sessionContextMenu, setSessionContextMenu] =
     useState<SessionContextMenuState | null>(null);
   const [sessionsHelpOpen, setSessionsHelpOpen] = useState(false);
+  const [connectPhoneOpen, setConnectPhoneOpen] = useState(false);
   const [latexOverlay, setLatexOverlay] = useState(false);
   const [mermaidOverlay, setMermaidOverlay] = useState(false);
   const [latexLoading, setLatexLoading] = useState(false);
@@ -109,6 +111,12 @@ export function Workbench({
   });
   useInput(
     (input, key) => {
+      if (connectPhoneOpen) {
+        if (key.escape) {
+          setConnectPhoneOpen(false);
+        }
+        return;
+      }
       if (isHelpShortcut(input, key)) {
         setSessionsHelpOpen((open) => !open);
         return;
@@ -288,6 +296,12 @@ export function Workbench({
                     latexOverlay={latexOverlay}
                     mermaidLoading={mermaidLoading}
                     mermaidOverlay={mermaidOverlay}
+                    onConnectPhone={() => {
+                      actions.closePlusMenu();
+                      setTabContextMenu(null);
+                      setSessionContextMenu(null);
+                      setConnectPhoneOpen(true);
+                    }}
                     onLatexLoadingChange={setLatexLoading}
                     onMermaidLoadingChange={setMermaidLoading}
                     onToggleMath={() => {
@@ -344,6 +358,9 @@ export function Workbench({
             onClose={() => setSessionContextMenu(null)}
             view={view}
           />
+          {connectPhoneOpen ? (
+            <ConnectPhoneDialog onClose={() => setConnectPhoneOpen(false)} />
+          ) : null}
           {sessionsHelpOpen ? (
             <SessionsHelpDialog onClose={() => setSessionsHelpOpen(false)} />
           ) : null}
@@ -651,6 +668,7 @@ function HarnessView({
   onMermaidLoadingChange,
   onToggleMath,
   onToggleMermaid,
+  onConnectPhone,
   selectionChanged,
 }: {
   view: WorkbenchViewModel;
@@ -663,6 +681,7 @@ function HarnessView({
   onMermaidLoadingChange(loading: boolean): void;
   onToggleMath(): void;
   onToggleMermaid(): void;
+  onConnectPhone(): void;
   selectionChanged(selected: boolean): void;
 }) {
   const activeHarness = view.session.harnesses.find(
@@ -714,6 +733,12 @@ function HarnessView({
             label="mermaid"
             loading={mermaidLoading}
             onToggle={onToggleMermaid}
+          />
+          <InlinePreviewButton
+            active={false}
+            label="Connect phone"
+            loading={false}
+            onToggle={onConnectPhone}
           />
         </Box>
         <Box flexDirection="row">
