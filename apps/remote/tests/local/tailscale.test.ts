@@ -1,11 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { configureTailscale, checkServeConfiguration, tailscaleOrigin } from '../../services/local/tailscale';
+import { configureTailscale, checkServeConfiguration, tailscaleOrigin, checkPhoneConnection } from '../../services/local/tailscale';
 const origin = 'https://computer.example.ts.net:8443';
 test('Tailscale must be logged in with a MagicDNS name', () => {
   assert.throws(() => tailscaleOrigin({ BackendState: 'NeedsLogin' }), /sign in/);
   assert.throws(() => tailscaleOrigin({ BackendState: 'Running', Self: { DNSName: 'evil.example/path' } }), /MagicDNS/);
   assert.equal(tailscaleOrigin({ BackendState: 'Running', Self: { DNSName: 'computer.example.ts.net.' } }), origin);
+});
+
+test('a QR is blocked until the real Tailscale endpoint reaches the authenticated companion', async () => {
+  let calls = 0;
+  const connected = checkPhoneConnection(async () => { if (++calls === 1) throw new Error('Serve starting'); });
+  await connected;
+  assert.equal(calls, 2);
+  const broken = checkPhoneConnection(async () => { throw new Error('Wrong network namespace'); });
+  await assert.rejects(broken, /host networking/);
 });
 test('pairing checks state before configuring only a private Serve endpoint', () => {
   const calls: string[][] = [];

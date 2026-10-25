@@ -56,6 +56,8 @@ jobs:
         run: |
           docker build -t workbench-relay:check apps/remote
           node scripts/smoke-relay-container.mjs workbench-relay:check
+      - name: Verify phone button startup without systemd in Docker
+        run: docker run --rm --network none --mount type=bind,src="${{ github.workspace }}/scripts/smoke-phone-container.mjs",dst=/tmp/smoke-phone-container.mjs,readonly workbench-relay:check node /tmp/smoke-phone-container.mjs
 
   iphone:
     runs-on: macos-15

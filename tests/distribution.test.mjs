@@ -65,12 +65,16 @@ cp "$FIXTURE_DOWNLOADS/\${url##*/}" "$output"
   return { directory, downloads, home, env, run };
 }
 
-function makeHostArchive(f, marker = "version-one", prefix = "workbench-host-linux-x64") {
+function makeHostArchive(f, marker = "version-one", prefix = "workbench-host-linux-x64", phone = false) {
   const source = path.join(f.directory, marker);
   const bin = path.join(source, prefix, "bin");
   mkdirSync(bin, { recursive: true });
   for (const name of ["workbench-remote", "node"]) {
     writeFileSync(path.join(bin, name), `#!/bin/sh\nprintf '%s\\n' '${marker}'\n`, { mode: 0o755 });
+  }
+  if (phone) {
+    mkdirSync(path.join(source, prefix, "lib", "local"), { recursive: true });
+    writeFileSync(path.join(source, prefix, "lib", "local", "main.mjs"), "// phone fixture\n");
   }
   const archive = path.join(f.downloads, "workbench-host-linux-x64.tar.gz");
   execFileSync("tar", ["-czf", archive, "-C", source, prefix]);
@@ -227,4 +231,45 @@ test("release check rejects a tag that disagrees with product versions", () => {
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /does not match package version/);
+});
+
+test("phone button downloads a verified runtime without Node or npm and reuses the cached release", (t) => {
+  const f = fixture(t);
+  makeHostArchive(f, "phone-runtime", "workbench-host-linux-x64", true);
+  const source = path.join(f.directory, "phone-cli");
+  mkdirSync(path.join(source, "bin"), { recursive: true });
+  mkdirSync(path.join(source, "apps", "remote"), { recursive: true });
+  copyFileSync(path.join(root, "bin/workbench-phone"), path.join(source, "bin/workbench-phone"));
+  copyFileSync(hostInstaller, path.join(source, "install-host.sh"));
+  writeFileSync(path.join(source, "apps", "remote", "package.json"), '{"version": "0.1.70"}\n');
+  const args = ["pair", "--json"];
+  const env = { XDG_DATA_HOME: path.join(f.home, "data") };
+  const first = f.run(path.join(source, "bin/workbench-phone"), args, env);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /Downloading the phone companion/);
+  assert.match(first.stdout, /phone-runtime/);
+  const requests = readFileSync(f.env.CURL_CAPTURE, "utf8");
+  assert.equal(requests.trim().split("\n").length, 2, "archive and checksum must both be downloaded");
+  const second = f.run(path.join(source, "bin/workbench-phone"), args, env);
+  assert.equal(second.status, 0, second.stderr);
+  assert.doesNotMatch(second.stdout, /Downloading/);
+  assert.equal(readFileSync(f.env.CURL_CAPTURE, "utf8"), requests);
+});
+
+test("phone button rejects an unverified download and reports a JSON setup error", (t) => {
+  const f = fixture(t);
+  const { archive } = makeHostArchive(f, "phone-runtime", "workbench-host-linux-x64", true);
+  writeFileSync(`${archive}.sha256`, `${"0".repeat(64)}  fixture.tar.gz\n`);
+  const source = path.join(f.directory, "phone-cli");
+  mkdirSync(path.join(source, "bin"), { recursive: true });
+  mkdirSync(path.join(source, "apps", "remote"), { recursive: true });
+  copyFileSync(path.join(root, "bin/workbench-phone"), path.join(source, "bin/workbench-phone"));
+  copyFileSync(hostInstaller, path.join(source, "install-host.sh"));
+  writeFileSync(path.join(source, "apps", "remote", "package.json"), '{"version": "0.1.70"}\n');
+  const result = f.run(path.join(source, "bin/workbench-phone"), ["pair", "--json"], { XDG_DATA_HOME: path.join(f.home, "data") });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /checksum mismatch/);
+  const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(events.at(-1).type, "error");
+  assert.doesNotMatch(result.stdout, /phone-runtime/);
 });

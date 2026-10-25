@@ -540,3 +540,8 @@ Keep pairing links and credentials out of analytics and logs. The private
 endpoint binds loopback and uses Tailscale Serve on port 8443, never Funnel.
 Automated and isolated UI instances must never install services or alter
 Tailscale. Run `npm run test:phone --prefix apps/remote` for pairing regressions.
+Installed CLI copies download the verified, matching host release for phone
+pairing; it includes Node and `lib/local/main.mjs`. Containers start a detached
+companion through a private readiness IPC channel instead of systemd. Do not
+attach that process to the pairing dialog's process group. Verify the actual
+Tailscale HTTPS route before issuing a QR; keep the listener on loopback.

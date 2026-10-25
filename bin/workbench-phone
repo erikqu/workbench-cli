@@ -12,12 +12,38 @@ done
 # Do not forward npm output: it may contain private registry credentials.
 phone_error() {
   if (( workbench_json )); then
-    node -e 'console.log(JSON.stringify({type:"error",message:process.argv[1]}))' "$1"
+    # Messages here are fixed strings with no quotes, backslashes, or secrets.
+    printf '{"type":"error","message":"%s"}\n' "$1"
   else
     echo "$1" >&2
   fi
   exit 1
 }
+# Installed copies use the verified host release, including Node and native
+# dependencies. Source checkouts keep building locally for development.
+workbench_installed_root="${WORKBENCH_CLI_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/workbench-cli}"
+if [[ "$workbench_root" == "$workbench_installed_root" || ! -d "$workbench_root/.git" || "${WORKBENCH_PHONE_USE_RELEASE:-0}" == 1 ]]; then
+  workbench_version="$(sed -n 's/.*"version": "\([0-9][0-9.]*\)".*/\1/p' "$workbench_remote/package.json" | head -1)"
+  [[ "$workbench_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || phone_error 'The phone companion version could not be determined. Update Workbench and retry.'
+  workbench_cache="${XDG_DATA_HOME:-$HOME/.local/share}/workbench-phone/v$workbench_version"
+  workbench_release=""
+  if [[ -L "$workbench_cache/bin/workbench-remote" ]]; then
+    workbench_release="$(readlink "$workbench_cache/bin/workbench-remote")"
+    workbench_release="${workbench_release%/bin/workbench-remote}"
+  fi
+  if [[ ! -x "$workbench_release/bin/node" || ! -f "$workbench_release/lib/local/main.mjs" ]]; then
+    if (( workbench_json )); then printf '{"type":"status","message":"Downloading the phone companion..."}\n'; fi
+    WORKBENCH_HOST_HOME="$workbench_cache/packages" WORKBENCH_HOST_BIN="$workbench_cache/bin" \
+      bash "$workbench_root/install-host.sh" --version "v$workbench_version" >&2 || phone_error 'Could not download the phone companion. Check your internet connection and retry after this Workbench release is published.'
+    workbench_release="$(readlink "$workbench_cache/bin/workbench-remote")"
+    workbench_release="${workbench_release%/bin/workbench-remote}"
+    [[ -f "$workbench_release/lib/local/main.mjs" ]] || phone_error 'This release is missing phone pairing support. Update Workbench and retry.'
+    export WORKBENCH_PHONE_RESTART=1
+  fi
+  export WORKBENCH_PHONE_VERSION="$workbench_version"
+  if (( $# == 0 )); then set -- "$workbench_command"; fi
+  exec "$workbench_release/bin/node" "$workbench_release/lib/local/main.mjs" "$@"
+fi
 if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' >/dev/null 2>&1; then
   echo 'Phone pairing needs Node.js 24 or newer. Install it from https://nodejs.org.' >&2
   exit 1

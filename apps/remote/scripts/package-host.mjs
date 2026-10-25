@@ -1,4 +1,4 @@
-import { readFile, mkdir, copyFile, writeFile, chmod } from 'node:fs/promises';
+import { readFile, mkdir, copyFile, writeFile, chmod, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -7,12 +7,15 @@ const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
 const manifest = JSON.parse(await readFile('package.json', 'utf8'));
 const name = `workbench-host-${process.platform}-${process.arch}`;
 const directory = path.resolve('release/host', name);
+await rm(directory, { recursive: true, force: true });
 await mkdir(path.join(directory, 'bin'), { recursive: true });
 await mkdir(path.join(directory, 'lib'), { recursive: true });
 await copyFile(process.execPath, path.join(directory, 'bin/node'));
 await copyFile('scripts/host-launcher.sh', path.join(directory, 'bin/workbench-remote'));
 await chmod(path.join(directory, 'bin/workbench-remote'), 0o755);
 await copyFile('dist/services/host/main.mjs', path.join(directory, 'lib/host.mjs'));
+await mkdir(path.join(directory, 'lib/local'), { recursive: true });
+await copyFile('dist/services/local/main.mjs', path.join(directory, 'lib/local/main.mjs'));
 // Reuse the project's complete lockfile so transitive dependencies cannot drift
 // between the tested checkout and downloadable host. Desktop dev tools are omitted.
 const packaged = { ...manifest, name: 'workbench-remote-host', type: 'module', main: 'lib/host.mjs' };
@@ -27,6 +30,7 @@ if (process.platform === 'darwin') {
     .catch(error => { if (error.code !== 'ENOENT') throw error; });
 }
 execFileSync(path.join(directory, 'bin/workbench-remote'), ['help'], { stdio: 'inherit' });
+execFileSync(path.join(directory, 'bin/node'), [path.join(directory, 'lib/local/main.mjs'), 'help'], { stdio: 'inherit' });
 // Help alone does not load the native PTY binding. Exercise the shipped runtime
 // and binding before publishing an archive that could fail on first attachment.
 execFileSync(path.join(directory, 'bin/node'), ['--input-type=module', '-e', `

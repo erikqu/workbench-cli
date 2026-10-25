@@ -14,6 +14,7 @@ test("phone dependency failures report a safe JSON error instead of hiding the c
   const root = mkdtempSync(join(tmpdir(), "workbench-phone-launcher-"));
   try {
     mkdirSync(join(root, "bin"));
+    mkdirSync(join(root, ".git"));
     mkdirSync(join(root, "apps", "remote"), { recursive: true });
     copyFileSync(
       join(import.meta.dir, "..", "..", "bin", "workbench-phone"),

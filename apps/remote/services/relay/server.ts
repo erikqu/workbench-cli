@@ -13,6 +13,8 @@ export interface RelayOptions {
   localPairingAuth?: boolean;
   privateHost?: boolean;
   cancelPairing?: (pairingId: string) => Promise<void>;
+  stopPrivateHost?: () => Promise<void>;
+  privateHostVersion?: string;
   // Dependency injection for tests only; the production entrypoint always verifies Apple tokens.
   identityVerifier?: (identityToken: string, nonceHash: string) => Promise<string>;
 }
@@ -116,7 +118,11 @@ export function createRelay(options: RelayOptions) {
         const device = await store.device(bearer(req));
         result = { machines: (await store.machines(device)).map(machine => ({ ...machine, online: hosts.has(machine.id) })) };
       } else if (req.method === 'GET' && url.pathname === '/v1/host/grants') {
-        result = { devices: await store.grants((await store.machine(bearer(req))).id) };
+        result = { devices: await store.grants((await store.machine(bearer(req))).id), ...(options.privateHostVersion ? { version: options.privateHostVersion } : {}) };
+      } else if (req.method === 'POST' && url.pathname === '/v1/host/stop' && options.privateHost && options.stopPrivateHost) {
+        await store.machine(bearer(req));
+        res.once('finish', () => { void options.stopPrivateHost!(); });
+        result = { stopping: true };
       } else if (/^\/v1\/machines\/[^/]+\/devices(?:\/[^/]+)?$/.test(url.pathname)) {
         const device = await store.device(bearer(req));
         const [, , , machineId, , deviceId] = url.pathname.split('/');

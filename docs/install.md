@@ -19,10 +19,12 @@ You do not need to reinstall or migrate your sessions.
 
 Install Tailscale on the computer and iPhone and sign in to the same tailnet.
 Enable MagicDNS and HTTPS certificates in your Tailscale admin console. The
-computer also needs Node.js 24 or newer and tmux.
+computer also needs tmux. Installed copies download the verified companion with
+its own Node runtime and native dependencies when you first connect a phone.
+Source checkouts use Node.js 24 and npm to build the companion locally.
 
 In Workbench, click **Connect phone** beside **mermaid**. Setup checks Tailscale,
-starts a user companion service, and shows a private QR code. Scan it in the
+starts the companion automatically, checks its Tailscale connection, and shows a private QR code. Scan it in the
 Workbench iPhone app, then enter the phone's six-digit code in the computer's
 pairing dialog. The QR expires after five minutes. You can also run:
 
@@ -52,19 +54,14 @@ and Apple enables testing. A public invitation link has not been published yet.
 
 Run the companion as the same container user as Workbench so it can reach the
 saved sessions and private tmux socket. Containers without a systemd user service
-need a foreground companion. In one container terminal, run:
-
-```sh
-work phone start
-```
-
-Keep it running, then open **Connect phone** or run `work phone pair` in a second
-terminal in that same container. Use your container supervisor to keep the
-companion running in normal use. Preserve `~/.workbench` and
+automatically start a background companion when you click **Connect phone**.
+Closing the dialog or Workbench leaves the companion and sessions running.
+Preserve `~/.workbench` and
 `~/.config/workbench-remote` across container replacements.
 
-The container needs Node.js 24, npm, tmux, and the Tailscale CLI. If native npm
-dependencies need compilation, install Python 3, make, and a C++ compiler too.
+The container needs tmux, curl, tar, a checksum tool, and the Tailscale CLI.
+Installed copies download the matching companion runtime; npm and a compiler
+are only needed for source development.
 Tailscale Serve connects to `127.0.0.1:9419` in the Tailscale daemon's network
 namespace. If Tailscale runs on the Linux host, the Workbench container needs
 host networking (`--network=host`) and access to the host daemon's socket

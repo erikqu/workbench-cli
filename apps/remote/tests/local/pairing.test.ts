@@ -95,3 +95,23 @@ test('private pairing expiry, cancellation and revoked keys cannot bypass approv
     await assert.rejects(store.pairingSubject(next.pairingId, next.secret), /expired/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('only the host owner can stop a private companion for an automatic update', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'workbench-stop-test-'));
+  let host: Awaited<ReturnType<typeof startPrivateHost>> | undefined;
+  let stops = 0;
+  try {
+    const store = new LocalStore(path.join(directory, 'store')), key = generateIdentity();
+    const pair = await store.createPair('Computer', canonicalKey(key.public));
+    const config = { relay: '', machineId: pair.machineId, hostToken: pair.hostToken!, hostKey: canonicalKey(key.public), privateKey: key.private, directory, approvedKeys: {} };
+    host = await startPrivateHost(store, config, 0, async () => { stops++; });
+    const unauthenticated = await fetch(host.origin + '/v1/host/stop', { method: 'POST' });
+    assert.equal(unauthenticated.status, 401); assert.equal(stops, 0);
+    const phone = generateIdentity();
+    const login = await store.login('local-owner', canonicalKey(phone.public), 'iPhone');
+    const unprivileged = await fetch(host.origin + '/v1/host/stop', { method: 'POST', headers: { Authorization: `Bearer ${login.accessToken}` } });
+    assert.equal(unprivileged.status, 401); assert.equal(stops, 0);
+    const owner = await fetch(host.origin + '/v1/host/stop', { method: 'POST', headers: { Authorization: `Bearer ${config.hostToken}` } });
+    assert.equal(owner.status, 200); await owner.json(); assert.equal(stops, 1);
+  } finally { if (host) await host.close(); await rm(directory, { recursive: true, force: true }); }
+});

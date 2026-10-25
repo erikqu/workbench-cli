@@ -36,3 +36,13 @@ export function configureTailscale(run: (args: string[]) => string = args => exe
   catch { throw new Error('Tailscale could not enable private HTTPS. Enable HTTPS certificates in your tailnet admin console, then try again.'); }
   return origin;
 }
+
+export async function checkPhoneConnection(check: () => Promise<unknown>) {
+  // Authenticate against our own machine through the actual HTTPS endpoint.
+  // A healthy loopback listener alone does not prove host/container routing works.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { await check(); return; } catch {}
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  throw new Error('Tailscale cannot reach this Workbench companion yet. If Tailscale runs on the Linux host, recreate the container with host networking and access to the Tailscale socket, then press Connect phone again. Otherwise check that Tailscale HTTPS is reachable on port 8443.');
+}

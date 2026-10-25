@@ -3,9 +3,9 @@ import { createRelay } from '../relay/server';
 import { Companion } from '../host/companion';
 import { LocalStore } from './store';
 
-export async function startPrivateHost(store: LocalStore, config: HostConfiguration, port = 9419) {
+export async function startPrivateHost(store: LocalStore, config: HostConfiguration, port = 9419, stopPrivateHost?: () => Promise<void>) {
   await store.machine(config.hostToken); // Refuse a mismatched or missing identity store.
-  const relay = createRelay({ store, appleAudience: 'com.erikqu.workbenchremote', localPairingAuth: true, privateHost: true, cancelPairing: id => store.cancelPairing(id) });
+  const relay = createRelay({ store, appleAudience: 'com.erikqu.workbenchremote', localPairingAuth: true, privateHost: true, cancelPairing: id => store.cancelPairing(id), stopPrivateHost, privateHostVersion: process.env.WORKBENCH_PHONE_VERSION });
   await new Promise<void>((resolve, reject) => { relay.server.once('error', reject); relay.server.listen(port, '127.0.0.1', resolve); });
   const origin = `http://127.0.0.1:${(relay.server.address() as { port: number }).port}`;
   const companion = new Companion({ ...config, relay: origin });

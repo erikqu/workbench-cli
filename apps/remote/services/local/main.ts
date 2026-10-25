@@ -10,15 +10,17 @@ import { startPrivateHost } from './runtime';
 import { LocalStore } from './store';
 import { configureTailscale } from './tailscale';
 import { pairingLink } from './qr';
+import { ensureCompanion, hasUserService, startBackgroundCompanion } from './startup';
+import { checkPhoneConnection } from './tailscale';
 
 const origin = 'http://127.0.0.1:9419';
 // Keep the private Tailscale identity separate from a previously installed public companion.
 process.env.WORKBENCH_REMOTE_CONFIG ||= path.join(homedir(), '.config/workbench-remote/tailscale-host.json');
 const command = process.argv[2] || 'pair', jsonMode = process.argv.includes('--json');
 function emit(value: unknown) { process.stdout.write(JSON.stringify(value) + '\n'); }
-async function request(route: string, method = 'GET', body?: unknown) {
+async function request(route: string, method = 'GET', body?: unknown, target = origin, timeout = 5000) {
   const config = await loadConfig();
-  const response = await fetch(origin + route, { method, headers: { 'Content-Type': 'application/json', ...(config ? { Authorization: `Bearer ${config.hostToken}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(5000) });
+  const response = await fetch(target + route, { method, headers: { 'Content-Type': 'application/json', ...(config ? { Authorization: `Bearer ${config.hostToken}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
   const value = await response.json() as any;
   if (!response.ok) throw new Error(value.error || `Companion returned ${response.status}`);
   return value;
@@ -35,6 +37,12 @@ async function start() {
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const handle = await open(lock, 'wx', 0o600); await handle.writeFile(String(process.pid)); await handle.close();
   let host: Awaited<ReturnType<typeof startPrivateHost>> | undefined;
+  let closing = false;
+  const close = async () => {
+    if (closing) return; closing = true;
+    if (host) await host.close();
+    await unlink(lock).catch(() => {});
+  };
   try {
     const store = new LocalStore(configPath() + '.store');
     let config = await loadConfig();
@@ -43,25 +51,26 @@ async function start() {
       config = { relay: origin, machineId: pair.machineId, hostToken: pair.hostToken!, privateKey: keys.private, hostKey: canonicalKey(keys.public), directory: process.env.WORKBENCH_REMOTE_DIRECTORY || path.join(homedir(), '.workbench'), approvedKeys: {} };
       await saveConfig(config);
     }
-    host = await startPrivateHost(store, config);
-    let closing = false;
-    for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, async () => {
-      if (closing) return; closing = true; await host!.close(); await unlink(lock).catch(() => {});
-    });
+    host = await startPrivateHost(store, config, 9419, close);
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, close);
+    process.send?.({ type: 'ready' });
   } catch (error) { if (host) await host.close(); await unlink(lock).catch(() => {}); throw error; }
 }
 async function pair() {
   if (!process.stdin.isTTY && !jsonMode) throw new Error('Run work phone pair in an interactive terminal.');
   if (jsonMode) emit({ type: 'status', message: 'Checking Tailscale and starting the companion...' });
   const address = configureTailscale();
-  // This runs a user service; pairing does not depend on keeping the CLI open.
-  try { if (process.env.WORKBENCH_PHONE_RESTART === '1') throw new Error('Reload companion'); await request('/v1/host/grants'); }
-  catch { await installService(!jsonMode); }
-  let ready = false;
-  for (let i = 0; i < 40; i++) {
-    try { await request('/v1/host/grants'); ready = true; break; } catch { await new Promise(resolve => setTimeout(resolve, 250)); }
-  }
-  if (!ready) throw new Error('The companion did not start. Check the user service logs.');
+  const previous = await request('/v1/host/grants', 'GET', undefined, origin, 500).catch(() => undefined);
+  await ensureCompanion({
+    healthy: async () => { try { await request('/v1/host/grants', 'GET', undefined, origin, 500); return true; } catch { return false; } },
+    service: hasUserService(),
+    install: () => installService(!jsonMode),
+    background: () => startBackgroundCompanion(),
+    stop: () => request('/v1/host/stop', 'POST'),
+    restart: process.env.WORKBENCH_PHONE_RESTART === '1' || Boolean(previous && process.env.WORKBENCH_PHONE_VERSION && previous.version !== process.env.WORKBENCH_PHONE_VERSION),
+  });
+  if (jsonMode) emit({ type: 'status', message: 'Checking the connection your phone will use...' });
+  await checkPhoneConnection(() => request('/v1/host/grants', 'GET', undefined, address));
   const config = (await loadConfig())!;
   const value = await request('/v1/pairings', 'POST', { name: hostname(), hostKey: config.hostKey });
   const qr: PairingQR = { version: 1, relay: address, pairingId: value.pairingId, secret: value.secret, machineId: config.machineId, hostKey: config.hostKey };
@@ -110,4 +119,8 @@ async function main() {
   else if (command === 'status') console.log(JSON.stringify(await request('/v1/host/grants'), null, 2));
   else console.log('work phone pair    Scan a QR and approve your iPhone over Tailscale\nwork phone start   Run the private companion in the foreground\nwork phone status  List paired devices\n\nInstall Workbench on iPhone through TestFlight when a beta invite is available.\nBoth devices must be signed in to Tailscale on the same tailnet.');
 }
-main().catch(error => { if (jsonMode) emit({ type: 'error', message: error.message }); else console.error(error.message); process.exitCode = 1; });
+main().catch(error => {
+  if (process.send) process.send({ type: 'error', message: error.message });
+  else if (jsonMode) emit({ type: 'error', message: error.message }); else console.error(error.message);
+  process.exitCode = 1;
+});
