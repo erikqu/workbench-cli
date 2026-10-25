@@ -4,6 +4,20 @@ workbench_root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workbench_remote="$workbench_root/apps/remote"
 workbench_entry="$workbench_remote/dist/services/local/main.mjs"
 workbench_command="${1:-pair}"
+workbench_json=0
+for workbench_arg in "$@"; do
+  if [[ "$workbench_arg" == '--json' ]]; then workbench_json=1; fi
+done
+# Report known setup failures through the same protocol as the companion.
+# Do not forward npm output: it may contain private registry credentials.
+phone_error() {
+  if (( workbench_json )); then
+    node -e 'console.log(JSON.stringify({type:"error",message:process.argv[1]}))' "$1"
+  else
+    echo "$1" >&2
+  fi
+  exit 1
+}
 if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' >/dev/null 2>&1; then
   echo 'Phone pairing needs Node.js 24 or newer. Install it from https://nodejs.org.' >&2
   exit 1
@@ -12,8 +26,10 @@ fi
 if [[ ! -d "$workbench_remote/node_modules/ssh2" || ! -f "$workbench_entry" ]] ||
    [[ "$workbench_remote/package-lock.json" -nt "$workbench_entry" ]] ||
    [[ -n "$(find "$workbench_remote/services" "$workbench_remote/src" -type f -name '*.ts' -newer "$workbench_entry" -print -quit 2>/dev/null)" ]]; then
-  ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix "$workbench_remote" >&2
-  npm run build:services --prefix "$workbench_remote" >&2
+  command -v npm >/dev/null 2>&1 || phone_error 'Phone setup needs npm alongside Node.js 24. Install npm in the environment where Workbench runs.'
+  [[ -f "$workbench_remote/package-lock.json" ]] || phone_error 'This installation is missing the phone companion. Run work update, then try again.'
+  ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --prefix "$workbench_remote" >&2 || phone_error 'Installing phone dependencies failed. Run work phone pair in a terminal to see the npm error. Minimal Linux containers may need Python 3, make, and a C++ compiler.'
+  npm run build:services --prefix "$workbench_remote" >&2 || phone_error 'Building the phone companion failed. Run work phone pair in a terminal to see the build error.'
   export WORKBENCH_PHONE_RESTART=1
 fi
 if (( $# == 0 )); then set -- "$workbench_command"; fi

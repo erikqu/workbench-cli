@@ -48,6 +48,31 @@ the companion continues serving previously approved phones. To stop it:
 The iPhone app is available through TestFlight once its signed build is uploaded
 and Apple enables testing. A public invitation link has not been published yet.
 
+### Linux containers
+
+Run the companion as the same container user as Workbench so it can reach the
+saved sessions and private tmux socket. Containers without a systemd user service
+need a foreground companion. In one container terminal, run:
+
+```sh
+work phone start
+```
+
+Keep it running, then open **Connect phone** or run `work phone pair` in a second
+terminal in that same container. Use your container supervisor to keep the
+companion running in normal use. Preserve `~/.workbench` and
+`~/.config/workbench-remote` across container replacements.
+
+The container needs Node.js 24, npm, tmux, and the Tailscale CLI. If native npm
+dependencies need compilation, install Python 3, make, and a C++ compiler too.
+Tailscale Serve connects to `127.0.0.1:9419` in the Tailscale daemon's network
+namespace. If Tailscale runs on the Linux host, the Workbench container needs
+host networking (`--network=host`) and access to the host daemon's socket
+(`/var/run/tailscale/tailscaled.sock`) for its Tailscale CLI. With Tailscale inside
+the container or a sidecar, share its network namespace with Workbench.
+Publishing port 9419 from a bridge container alone does not expose a companion
+that binds only to container loopback.
+
 ## Remote host companion
 
 On the development machine, install tmux, then:

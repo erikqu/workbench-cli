@@ -11,6 +11,10 @@ export async function installService(verbose = true) {
   const unit = local ? 'workbench-phone.service' : 'workbench-remote.service';
   const args = [process.execPath, path.resolve(process.argv[1]), 'start'];
   if (process.platform === 'linux') {
+    try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'pipe' }); }
+    catch { throw new Error(local
+      ? 'No systemd user service is available. In Docker, run work phone start in a separate terminal in the same container, keep it running, then retry pairing. Tailscale and the companion must share a network namespace. See docs/install.md for Docker setup.'
+      : 'No systemd user service is available. Run workbench-remote start under your container supervisor instead.'); }
     const directory = path.join(homedir(), '.config/systemd/user'); await mkdir(directory, { recursive: true });
     const quote = (value: string) => '"' + value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%').replaceAll('\n', '') + '"';
     await writeFile(path.join(directory, unit), `[Unit]\nDescription=Workbench Remote companion\nAfter=network-online.target\n\n[Service]\nExecStart=${args.map(quote).join(' ')}\nEnvironment=${quote('WORKBENCH_REMOTE_CONFIG=' + configPath())}\nEnvironment=${quote('WORKBENCH_REMOTE_DIRECTORY=' + (process.env.WORKBENCH_REMOTE_DIRECTORY || path.join(homedir(), '.workbench')))}\nEnvironment=${quote('PATH=' + (process.env.PATH || '/usr/bin:/bin'))}\nRestart=on-failure\nRestartSec=5\nUMask=0077\n\n[Install]\nWantedBy=default.target\n`, { mode: 0o600 });
