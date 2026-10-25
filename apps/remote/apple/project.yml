@@ -42,6 +42,7 @@ targets:
         NSLocalNetworkUsageDescription: Connect to a local development relay when testing.
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         CFBundleURLTypes:
           - CFBundleURLName: dev.workbench.remote.pair
             CFBundleURLSchemes: [workbench-remote]
