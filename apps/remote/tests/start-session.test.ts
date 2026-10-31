@@ -115,7 +115,9 @@ test('Claude and Codex starts preserve launch safeguards; early failures never r
     const workspace = await workspaces.create({ requestId: randomUUID(), name: 'Agent starts', parentDirectory: f.root, agent: 'none' });
     const request = { requestId: randomUUID(), workspaceId: workspace.id, agent: 'claude' as const };
     await assert.rejects(workspaces.start(request), error => {
-      assert.match(String(error), /Claude exited during startup \(exit 23\)/);
+      // tmux may report a dead pane before its numeric exit status is available.
+      // The error and preserved diagnostics must still prevent a retry respawn.
+      assert.match(String(error), /Claude exited during startup(?: \(exit 23\))?\./);
       assert.match(String(error), /EARLY_START_ERROR/); assert.match(String(error), /use Start again/);
       assert.equal(String(error).includes('\x1b'), false); return true;
     });

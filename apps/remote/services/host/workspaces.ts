@@ -30,6 +30,7 @@ class StartupFailure extends Error {}
 export class Workspaces {
   private work: Promise<unknown> = Promise.resolve();
   private readonly file: string;
+  private readonly launches = new Map<string, string>();
   constructor(readonly directory: string, private tmux: (args: string[]) => Promise<string>, private findExecutable = executable,
     private existingWorkspace: (cwd: string, id?: string) => Promise<WorkspaceLayout | undefined> = async () => undefined,
     private homeDirectory = homedir(), private deletedNames: (completedOnly: boolean) => Promise<Set<string>> = async () => new Set()) {
@@ -154,6 +155,7 @@ export class Workspaces {
           if (exists) await this.tmux(['respawn-pane', '-t', '=' + tab.tmux + ':', '-c', record.layout.cwd.replaceAll('#', '##'), command]);
           else await this.tmux(['new-session', '-d', '-s', tab.tmux, '-c', record.layout.cwd.replaceAll('#', '##'), '-x', '80', '-y', '24',
             '-e', 'PATH=' + searchPath, '-e', 'COLORTERM=truecolor', command]);
+          await this.waitForLaunch(tab);
           started = true;
         }
       }
@@ -211,6 +213,7 @@ export class Workspaces {
       try {
         await this.tmux(['new-session', '-d', '-s', record.tab.tmux, '-c', record.tab.cwd.replaceAll('#', '##'), '-x', '80', '-y', '24',
           '-e', 'PATH=' + searchPath, '-e', 'COLORTERM=truecolor', command]);
+        await this.waitForLaunch(record.tab);
       } catch { throw new Error('Starting the session did not finish. Refresh to check it, then use Start again if needed. Existing sessions were left unchanged.'); }
     }
     // Exact existence check avoids display-message's missing-target fallback.
@@ -249,6 +252,7 @@ export class Workspaces {
     return { dead: match[1] === '1', status: match[2] };
   }
   private async launchCommand(tab: Tab, executable: string, searchPath: string) {
+    const launch = randomUUID(); this.launches.set(tab.id, launch);
     let command = quote(executable);
     if (!tab.harnessId && path.basename(executable) === 'bash') {
       // Source the user's configuration, then restore the chosen workspace and
@@ -268,8 +272,23 @@ export class Workspaces {
     // A tmux/default-shell startup can replace its -e PATH before the command
     // runs. Pin it inside the final shell, before executing node-based agents.
     // Retain this owned window *before* launching so immediate errors survive.
-    const script = `export PATH=${quote(searchPath)} COLORTERM=truecolor; tmux -S ${quote(path.join(this.directory, 'tmux-ui.sock'))} set-option -w -t ${quote('=' + tab.tmux + ':')} remain-on-exit on || exit 1; cd -- ${quote(tab.cwd)} || exit 1; exec ${command}`;
+    const tmux = `tmux -S ${quote(path.join(this.directory, 'tmux-ui.sock'))} set-option -w -t ${quote('=' + tab.tmux + ':')}`;
+    const script = `export PATH=${quote(searchPath)} COLORTERM=truecolor; ${tmux} remain-on-exit on || exit 1; cd -- ${quote(tab.cwd)} || exit 1; ${tmux} @workbench-remote-launch ${quote(launch)} || exit 1; exec ${command}`;
     return `/bin/sh -c ${quote(script)}`;
+  }
+  private async waitForLaunch(tab: Tab) {
+    const launch = this.launches.get(tab.id);
+    // Wait for this attempt's wrapper, rather than timing from new-session:
+    // default-shell initialization may still be queued under CPU load.
+    const deadline = Date.now() + 5000;
+    try {
+      while (Date.now() < deadline) {
+        const marker = await this.tmux(['show-options', '-w', '-v', '-t', '=' + tab.tmux + ':', '@workbench-remote-launch']).catch(() => '');
+        if (marker === launch || (await this.paneState(tab)).dead) return;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      throw new Error('The session shell did not finish starting. Refresh before starting another session.');
+    } finally { this.launches.delete(tab.id); }
   }
 }
 function visibleLayout(layout: WorkspaceLayout, hidden: Set<string>): WorkspaceLayout {

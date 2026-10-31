@@ -83,6 +83,11 @@ test('partial startup retries resume saved sessions and refuse replaced folders'
   const launch = async (args: string[]) => {
     calls.push(args);
     if (args[0] === 'has-session') { if (!live.has(args[2].slice(1))) throw new Error('missing'); return ''; }
+    if (args[0] === 'show-options') {
+      const name = args[args.indexOf('-t') + 1].slice(1, -1);
+      const start = [...calls].reverse().find(call => call[0] === 'new-session' && call[call.indexOf('-s') + 1] === name);
+      return /@workbench-remote-launch[^a-f0-9]*([a-f0-9-]{36})/.exec(start?.at(-1) || '')?.[1] || '';
+    }
     if (args[0] === 'display-message') return args[3].slice(1, -1) + '|0|';
     if (args[0] === 'new-session') {
       starts++;
@@ -268,7 +273,8 @@ test('agent launch pins PATH, retains early errors, and retries only dead pendin
   const socket = path.join(directory, 'tmux-ui.sock');
   const tmux = async (args: string[]) => (await run('tmux', ['-f', '/dev/null', '-S', socket, ...args], { timeout: 5000, env: { ...process.env, TMUX: '', TMUX_PANE: '' } })).stdout.trim();
   const shell = path.join(root, 'reset-path-shell'), agent = path.join(root, 'codex');
-  await writeFile(shell, '#!/bin/sh\nexport PATH=/usr/bin:/bin\nexec /bin/sh "$@"\n', { mode: 0o700 });
+  // A slow default shell must not consume the agent's startup observation time.
+  await writeFile(shell, '#!/bin/sh\nsleep 0.7\nexport PATH=/usr/bin:/bin\nexec /bin/sh "$@"\n', { mode: 0o700 });
   await writeFile(agent, '#!/bin/sh\nprintf "NODE_PATH=%s\\n" "$(command -v node)"\nprintf "\\033[31mSTARTUP_FAILED_FIXTURE\\033[0m\\n" >&2\nexit 17\n', { mode: 0o700 });
   const requestInput = { ...request(root, 'agent-project'), agent: 'codex' as const };
   const workspaces = new Workspaces(directory, tmux, async name => name === 'codex' ? agent : '/bin/sh');
@@ -283,7 +289,8 @@ test('agent launch pins PATH, retains early errors, and retries only dead pendin
       const target = '=' + records.workspaces[0].layout.harnesses[0].tmux + ':';
       assert.fail('Missing startup failure; pane=' + await tmux(['display-message', '-p', '-t', target, '#{pane_dead}|#{pane_dead_status}|#{pane_current_command}']) + '\n' + await tmux(['capture-pane', '-p', '-t', target]));
     }
-    assert.match(failure, /Codex exited during startup \(exit 17\)/);
+    // The numeric exit status is optional when tmux only reports pane_dead.
+    assert.match(failure, /Codex exited during startup(?: \(exit 17\))?\./);
     assert.match(failure, /STARTUP_FAILED_FIXTURE/);
     assert.ok(failure.includes('NODE_PATH=' + path.join(path.dirname(process.execPath), 'node')), 'node must come from the pinned companion path, despite default-shell PATH reset');
     assert.equal(failure.includes('\x1b'), false); assert.ok(failure.length < 3500);
