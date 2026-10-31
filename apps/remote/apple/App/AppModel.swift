@@ -17,6 +17,10 @@ import WorkbenchCore
     @Published var connecting = false
     @Published var canCreateWorkspace = false
     @Published var canBrowseFiles = false
+    @Published var canViewGitChanges = false
+    @Published var canBrowseFolders = false
+    @Published var canDeleteSession = false
+    @Published var canStartSession = false
     @Published var status = "Ready to connect"
     @Published var error: String?
     @Published var pairing: PairingQR?
@@ -34,6 +38,15 @@ import WorkbenchCore
     private var attachment = UUID()
     private var fitOnNextWritableState = false
     private var lastWorkspaceDirectory: String?
+    private var lastOpenedSessionID: String?
+    private var deletionRequests: [String: String] = [:]
+    private var deletedSessionIDs = Set<String>()
+    private var latestSnapshotTime: Double = -1
+    var liveSessionCount: Int { SessionNavigation.livePanes(in: workspaces).count }
+    func nextSession(after sessionID: String? = nil) -> Pane? {
+        guard connected else { return nil }
+        return SessionNavigation.next(in: workspaces, after: sessionID ?? lastOpenedSessionID)
+    }
     var isPreview: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--terminal-render-fixture")
@@ -61,10 +74,17 @@ import WorkbenchCore
 #if DEBUG
         if isPreview {
             machines = [PreviewSession.machine]
-            workspaces = ProcessInfo.processInfo.arguments.contains("--workspace-activity-preview") ? PreviewSession.activityWorkspaces : [PreviewSession.workspace]
+            if ProcessInfo.processInfo.arguments.contains("--session-cycle-preview") { workspaces = PreviewSession.cycleWorkspaces }
+            else if ProcessInfo.processInfo.arguments.contains("--saved-workspaces-preview") { workspaces = PreviewSession.savedWorkspaces }
+            else if ProcessInfo.processInfo.arguments.contains("--terminal-only-preview") { workspaces = [PreviewSession.terminalOnlyWorkspace] }
+            else { workspaces = ProcessInfo.processInfo.arguments.contains("--workspace-activity-preview") ? PreviewSession.activityWorkspaces : [PreviewSession.workspace] }
             login = PreviewSession.login
             canCreateWorkspace = true
             canBrowseFiles = true
+            canViewGitChanges = true
+            canBrowseFolders = true
+            canDeleteSession = true
+            canStartSession = true
             return
         }
 #endif
@@ -173,10 +193,15 @@ import WorkbenchCore
         reconnectTask?.cancel(); connectTask?.cancel(); connection?.close()
         let attempt = UUID(); generation = attempt
         disconnectHandled = false; reconnectTask = nil
-        if activeMachine?.id != machine.id { desiredSession = nil; activePane = nil; workspaces = []; lastWorkspaceDirectory = nil }
+        if activeMachine?.id != machine.id { desiredSession = nil; activePane = nil; workspaces = []; lastWorkspaceDirectory = nil; lastOpenedSessionID = nil; deletedSessionIDs = []; deletionRequests = [:] }
         activeMachine = machine; connected = false; connecting = true; sessionState = nil; status = "Connecting…"
+        latestSnapshotTime = -1
         canCreateWorkspace = false
         canBrowseFiles = false
+        canViewGitChanges = false
+        canBrowseFolders = false
+        canDeleteSession = false
+        canStartSession = false
         connectTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -198,13 +223,18 @@ import WorkbenchCore
         if event.type == "hello" {
             canCreateWorkspace = event.capabilities?.contains("createWorkspace") == true
             canBrowseFiles = event.capabilities?.contains("files") == true
+            canViewGitChanges = event.capabilities?.contains("gitSummary") == true
+            canBrowseFolders = event.capabilities?.contains("folders") == true
+            canDeleteSession = event.capabilities?.contains("deleteSession") == true
+            canStartSession = event.capabilities?.contains("startSession") == true
         }
-        if let snapshot = event.snapshot { workspaces = snapshot.workspaces; if let warning = snapshot.warning { status = warning } }
+        if let snapshot = event.snapshot { applySnapshot(snapshot); if let warning = snapshot.warning { status = warning } }
         if let state = event.sessionState, state.sessionId == activePane?.id { receiveSessionState(state) }
         if event.type == "error" { error = event.message }
     }
     private func receiveSessionState(_ state: SessionState) {
         sessionState = state
+        if !isPreview { status = state.writable ? "Connected to \(activeMachine?.name ?? "your computer")" : "Viewing · another device has control" }
         guard fitOnNextWritableState, state.writable else { return }
         fitOnNextWritableState = false
         guard !state.phoneLayout else { return }
@@ -219,6 +249,7 @@ import WorkbenchCore
         lastWorkspaceDirectory = workspaces.first { $0.panes.contains { $0.id == pane.id } }?.cwd ?? lastWorkspaceDirectory
 #if DEBUG
         if isPreview {
+            lastOpenedSessionID = pane.id
             activePane = pane; connected = true; status = "Preview · sample session"
             fitOnNextWritableState = !ProcessInfo.processInfo.arguments.contains("--desktop-preview")
             receiveSessionState(PreviewSession.state(sessionId: pane.id, phoneLayout: false, cols: 120, rows: 40))
@@ -226,10 +257,15 @@ import WorkbenchCore
             guard !Task.isCancelled, activePane?.id == pane.id else { return }
             resetTerminal.send(())
             output.send(Data(PreviewSession.sample.utf8))
+            if ProcessInfo.processInfo.arguments.contains("--stop-after-open-preview"), pane.id == "workbench_h_preview" {
+                workspaces = workspaces.map { $0.id == "preview" ? $0.addingSession(PreviewSession.stoppedPane(pane)) : $0 }
+                sessionState = nil
+            }
             return
         }
 #endif
         guard connected, pane.live, let connection else { return }
+        lastOpenedSessionID = pane.id
         if activePane?.id == pane.id, sessionState != nil { return }
         saveDraft()
         activePane = pane; desiredSession = pane; sessionState = nil
@@ -250,21 +286,94 @@ import WorkbenchCore
         let cwd = lastWorkspaceDirectory ?? workspaces.first(where: { !$0.cwd.isEmpty })?.cwd
         return cwd.map { ($0 as NSString).deletingLastPathComponent }.flatMap { $0.isEmpty ? nil : $0 } ?? "~"
     }
-    func createWorkspace(requestId: String, name: String, parentDirectory: String, agent: String) async throws -> Workspace {
+    func createWorkspace(requestId: String, name: String, parentDirectory: String, agent: String, mode: String = "create") async throws -> Workspace {
         guard connected else { throw WorkbenchError.disconnected }
+        if ["none", "claude"].contains(agent) && !canStartSession { throw WorkbenchError.message("Update the host companion to create an empty workspace or start Claude.") }
 #if DEBUG
         if isPreview {
+            let cwd = (parentDirectory as NSString).appendingPathComponent(name)
+            if mode == "open", let existing = workspaces.first(where: { $0.cwd == cwd }) { return existing }
             let workspace = PreviewSession.newWorkspace(name: name, parentDirectory: parentDirectory, agent: agent)
             workspaces.append(workspace)
             return workspace
         }
 #endif
         guard let connection, canCreateWorkspace else { throw WorkbenchError.message("Update the host companion to create workspaces from this iPhone.") }
+        if mode == "open" && !canBrowseFolders { throw WorkbenchError.message("Update the host companion to open existing folders from this iPhone.") }
         let attempt = generation
-        let workspace = try await connection.createWorkspace(requestId: requestId, name: name, parentDirectory: parentDirectory, agent: agent)
+        let workspace = try await connection.createWorkspace(requestId: requestId, name: name, parentDirectory: parentDirectory, agent: agent, mode: mode)
         guard generation == attempt else { throw WorkbenchError.disconnected }
         if !workspaces.contains(where: { $0.id == workspace.id }) { workspaces.append(workspace) }
         return workspace
+    }
+    func listFolders(path: String) async throws -> FolderListing {
+#if DEBUG
+        if isPreview { return try PreviewSession.folders(path: path) }
+#endif
+        guard connected, let connection, canBrowseFolders else { throw WorkbenchError.message("Connect to an updated host companion to browse folders.") }
+        let attempt = generation
+        let folders = try await connection.listFolders(path: path)
+        guard generation == attempt else { throw WorkbenchError.disconnected }
+        return folders
+    }
+    func deleteSession(_ pane: Pane, workspaceId: String) async throws {
+        guard connected, canDeleteSession else { throw WorkbenchError.message("Connect to an updated host companion to delete sessions.") }
+        let attempt = generation
+        let key = "\(activeMachine?.id ?? "preview"):\(workspaceId):\(pane.id)"
+        let requestId = deletionRequests[key] ?? UUID().uuidString
+        deletionRequests[key] = requestId
+        let updated: [Workspace]
+#if DEBUG
+        if isPreview {
+            updated = workspaces.map { $0.removingSession(pane.id) }
+        } else {
+            guard let connection else { throw WorkbenchError.disconnected }
+            updated = try await connection.deleteSession(requestId: requestId, workspaceId: workspaceId, sessionId: pane.id).workspaces
+        }
+#else
+        guard let connection else { throw WorkbenchError.disconnected }
+        updated = try await connection.deleteSession(requestId: requestId, workspaceId: workspaceId, sessionId: pane.id).workspaces
+#endif
+        guard generation == attempt else { throw WorkbenchError.disconnected }
+        if activePane?.id == pane.id { keyboardVisibility.send(false); leaveTerminal(); resetTerminal.send(()) }
+        deletedSessionIDs.insert(pane.id)
+        workspaces = excludingDeletedSessions(updated)
+        if lastOpenedSessionID == pane.id { lastOpenedSessionID = nil }
+        deletionRequests.removeValue(forKey: key)
+    }
+    func startSession(requestId: String, workspaceId: String, agent: String) async throws -> Pane {
+        guard connected, canStartSession else { throw WorkbenchError.message("Connect to an updated host companion to start sessions.") }
+        let attempt = generation
+#if DEBUG
+        if isPreview {
+            guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { throw WorkbenchError.message("Workspace is no longer available.") }
+            let id = "workbench_\(agent == "terminal" ? "t" : "h")_" + requestId.replacingOccurrences(of: "-", with: "")
+            if let existing = workspaces[index].panes.first(where: { $0.id == id }) { return existing }
+            let pane = PreviewSession.newPane(id: id, agent: agent)
+            workspaces[index] = workspaces[index].addingSession(pane)
+            return pane
+        }
+#endif
+        guard let connection else { throw WorkbenchError.disconnected }
+        let result = try await connection.startSession(requestId: requestId, workspaceId: workspaceId, agent: agent)
+        guard generation == attempt else { throw WorkbenchError.disconnected }
+        applySnapshot(result.snapshot)
+        guard let pane = workspaces.first(where: { $0.id == workspaceId })?.panes.first(where: { $0.id == result.sessionId }) else {
+            throw WorkbenchError.message("This session was removed. Refresh the workspace before starting another.")
+        }
+        guard pane.live else { throw WorkbenchError.message("This session stopped. Check its startup error before starting a new session.") }
+        return pane
+    }
+    private func applySnapshot(_ snapshot: Snapshot) {
+        guard snapshot.updatedAt >= latestSnapshotTime else { return }
+        latestSnapshotTime = snapshot.updatedAt
+        workspaces = excludingDeletedSessions(snapshot.workspaces)
+    }
+    private func excludingDeletedSessions(_ snapshot: [Workspace]) -> [Workspace] {
+        // An older in-flight watch response must not briefly resurrect a deleted tab.
+        snapshot.map { workspace in
+            deletedSessionIDs.reduce(workspace) { $0.removingSession($1) }
+        }
     }
     func listFiles(workspaceId: String, path: String) async throws -> DirectoryListing {
 #if DEBUG
@@ -275,6 +384,24 @@ import WorkbenchCore
         let listing = try await connection.listFiles(workspaceId: workspaceId, path: path)
         guard generation == attempt else { throw WorkbenchError.disconnected }
         return listing
+    }
+    func gitSummary(workspaceId: String) async throws -> GitSummary {
+#if DEBUG
+        if isPreview {
+            if workspaceId == "cycle-alpha" || workspaceId == "activity-busy" || workspaceId == "preview" {
+                return try JSONDecoder().decode(GitSummary.self, from: Data(#"{"isRepository":true,"added":42,"deleted":13,"untracked":2}"#.utf8))
+            }
+            return try JSONDecoder().decode(GitSummary.self, from: Data(#"{"isRepository":true,"added":0,"deleted":0,"untracked":0}"#.utf8))
+        }
+#endif
+        guard connected, let connection, canViewGitChanges else { throw WorkbenchError.message("Connect to an updated host companion to see Git changes.") }
+        let attempt = generation
+        let summary = try await connection.gitSummary(workspaceId: workspaceId)
+        guard generation == attempt else { throw WorkbenchError.disconnected }
+        guard summary.added >= 0, summary.deleted >= 0, summary.untracked >= 0 else {
+            throw WorkbenchError.message("The host returned invalid Git changes.")
+        }
+        return summary
     }
     func readFile(workspaceId: String, path: String, progress: @escaping (Double) -> Void) async throws -> Data {
 #if DEBUG
@@ -364,6 +491,7 @@ import WorkbenchCore
         else if let activeMachine { retries = 0; connect(activeMachine) }
     }
     func disconnect() {
+        lastOpenedSessionID = nil
         saveDraft(); generation = UUID(); reconnectTask?.cancel(); connectTask?.cancel(); connection?.close(); connection = nil
         connected = false; connecting = false; activeMachine = nil; activePane = nil; desiredSession = nil; sessionState = nil; workspaces = []; status = "Disconnected; sessions remain running."
     }

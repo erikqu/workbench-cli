@@ -2,8 +2,12 @@ import { constants, type BigIntStats } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { lstat, open, opendir, realpath, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Snapshot } from '../../src/shared';
-import type { DirectoryListing, FileChunk } from '../shared/protocol';
+import type { DirectoryListing, FileChunk, GitSummary } from '../shared/protocol';
+
+const run = promisify(execFile);
 
 export const FILE_CHUNK_BYTES = 192 * 1024;
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -74,6 +78,44 @@ export class WorkspaceFiles {
       throw new Error('The file location changed. Refresh the file list.');
     }
     return held;
+  }
+
+  async gitSummary(workspaceId: unknown): Promise<GitSummary> {
+    const { root } = await this.resolve(workspaceId, '');
+    const git = async (args: string[]) => {
+      const { stdout } = await run('git', ['-C', root, '-c', 'core.fsmonitor=false', ...args], {
+        timeout: 5000, maxBuffer: 1024 * 1024, encoding: 'utf8'
+      });
+      return stdout;
+    };
+    try {
+      if ((await git(['rev-parse', '--is-inside-work-tree'])).trim() !== 'true') {
+        return { isRepository: false, added: 0, deleted: 0, untracked: 0 };
+      }
+    } catch {
+      return { isRepository: false, added: 0, deleted: 0, untracked: 0 };
+    }
+    try {
+      const hasHead = await git(['rev-parse', '--verify', 'HEAD']).then(() => true, () => false);
+      const diffOptions = ['--numstat', '-z', '--no-renames', '--no-ext-diff', '--no-textconv', '--', '.'];
+      const [numstat, status] = await Promise.all([
+        hasHead ? git(['diff', 'HEAD', ...diffOptions]) :
+          Promise.all([git(['diff', '--cached', ...diffOptions]), git(['diff', ...diffOptions])]).then(parts => parts.join('')),
+        git(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', '.'])
+      ]);
+      let added = 0, deleted = 0;
+      for (const record of numstat.split('\0')) {
+        const counts = /^(\d+|-)\t(\d+|-)\t/.exec(record);
+        if (counts) {
+          added += counts[1] === '-' ? 0 : Number(counts[1]);
+          deleted += counts[2] === '-' ? 0 : Number(counts[2]);
+        }
+      }
+      return { isRepository: true, added, deleted,
+        untracked: status.split('\0').filter(record => record.startsWith('?? ')).length };
+    } catch {
+      throw new Error('Could not read Git changes in this workspace.');
+    }
   }
 
   async list(workspaceId: unknown, value: unknown): Promise<DirectoryListing> {

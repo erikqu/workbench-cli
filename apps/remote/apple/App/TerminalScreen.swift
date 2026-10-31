@@ -12,8 +12,17 @@ struct TerminalScreen: View {
     @State private var keyboardShown = false
     @State private var selectedPane: Pane?
     @State private var showingFiles = false
+    @State private var startTarget: TerminalStartTarget?
+    @State private var afterSettings: TerminalMenuAction?
+    @State private var deleteTarget: TerminalDeletionTarget?
+    @State private var deleting = false
+    @State private var deletionError: String?
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private var currentPane: Pane { selectedPane ?? pane }
+    private var currentPane: Pane {
+        let selected = selectedPane ?? pane
+        return model.workspaces.lazy.flatMap(\.panes).first(where: { $0.id == selected.id }) ?? selected
+    }
     private var workspace: Workspace? {
         model.workspaces.first { workspace in workspace.panes.contains { $0.id == currentPane.id } }
     }
@@ -23,88 +32,120 @@ struct TerminalScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             if let workspace {
+                HStack(spacing: 0) {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(workspace.panes) { tab in
-                                let active = model.connected && tab.live && ["working", "recent"].contains(tab.activity ?? "")
-                                Button { selectedPane = tab } label: {
+                                let active = model.connected && tab.live && tab.activity == "working"
+                                Button {
+                                    if tab.live { selectedPane = tab }
+                                    else { startTarget = TerminalStartTarget(workspace: workspace, agent: tab.kind == "terminal" ? "terminal" : (tab.harnessId ?? "codex")) }
+                                } label: {
                                     HStack(spacing: 6) {
-                                        if active && !reduceMotion { ProgressView().controlSize(.mini).tint(Color.accentColor) }
-                                        else { Image(systemName: tab.kind == "agent" ? "sparkle" : "terminal").foregroundStyle(active ? Color.accentColor : Color.secondary) }
+                                        AgentIcon(pane: tab, size: 18)
                                         Text(tab.name).lineLimit(1)
+                                        if active {
+                                            if reduceMotion { Circle().fill(Color.accentColor).frame(width: 6, height: 6) }
+                                            else { ProgressView().controlSize(.mini).tint(Color.accentColor) }
+                                        } else if model.connected && tab.live && ["recent", "waiting"].contains(tab.activity ?? "") {
+                                            Circle().fill(tab.activity == "waiting" ? Color.orange : Color.secondary).frame(width: 6, height: 6)
+                                        } else if !tab.live {
+                                            Image(systemName: "play.circle").foregroundStyle(.secondary)
+                                        }
                                     }.font(.subheadline.weight(currentPane.id == tab.id ? .semibold : .regular))
-                                        .padding(.horizontal, 12).frame(height: 38)
+                                        .padding(.horizontal, 10).frame(height: 36)
                                         .background(currentPane.id == tab.id ? Color.accentColor.opacity(0.18) : Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(currentPane.id == tab.id ? Color.accentColor : Color.clear))
-                                }.buttonStyle(.plain).disabled(!tab.live || !model.connected)
+                                }.buttonStyle(.plain).disabled(!model.connected || (!tab.live && (!model.canStartSession || workspace.cwd.isEmpty)))
+                                    .frame(minHeight: 44)
                                     .accessibilityLabel(tab.name)
                                     .accessibilityIdentifier("terminal.tab.\(tab.id)")
-                                    .accessibilityValue("\(currentPane.id == tab.id ? "Selected" : "Not selected"), \(active ? (tab.activity == "working" ? "Working" : "Recent activity") : (tab.live ? "Idle" : "Stopped"))")
+                                    .accessibilityValue("\(currentPane.id == tab.id ? "Selected" : "Not selected"), \(tab.statusLabel(connected: model.connected))")
+                                    .accessibilityHint(tab.live ? "Open session" : "Start a new session in this workspace")
                                     .id(tab.id)
                             }
-                        }.padding(.horizontal, 10).padding(.vertical, 6)
+                        }.padding(.horizontal, 6)
                     }
                     .onChange(of: currentPane.id) { _, id in reader.scrollTo(id, anchor: .center) }
                 }
+                    Button { model.keyboardVisibility.send(false); showingFiles = true } label: {
+                        Image(systemName: "folder").frame(width: 44, height: 44)
+                    }.buttonStyle(.plain).foregroundStyle(.tint)
+                        .accessibilityLabel("Files").accessibilityIdentifier("terminal.files")
+                        .disabled(!model.connected || !model.canBrowseFiles || workspace.cwd.isEmpty)
+                    Button {
+                        if let next = model.nextSession(after: currentPane.id) { selectedPane = next }
+                    } label: {
+                        VStack(spacing: 2) {
+                            Image(systemName: "arrow.right.to.line")
+                            Text("Next").font(.caption2)
+                        }.frame(width: 48, height: 44)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.tint)
+                    .disabled(!model.connected || model.liveSessionCount < 2)
+                    .accessibilityLabel("Next session")
+                    .accessibilityHint("Cycles through live sessions across all workspaces")
+                    .accessibilityIdentifier("terminal.nextSession")
+                    .padding(.trailing, 6)
+                }
             }
+            if !model.connected || !currentPane.live || model.sessionState == nil || model.sessionState?.writable == false {
             HStack(spacing: 8) {
                 Circle().fill(model.connected && !model.isPreview ? Color.accentColor : Color.orange).frame(width: 6, height: 6)
-                Text(model.status).font(.caption).lineLimit(2)
+                Text(model.connected && !currentPane.live ? "Session stopped · start a new session to continue" : model.status).font(.caption).lineLimit(2)
                 Spacer()
                 if model.connected && model.sessionState?.writable == false {
                     Button("Take control") { Task { await model.takeControl() } }.font(.caption.bold())
                 }
-            }.padding(12).background(Color.white.opacity(0.04))
-            if let state = model.sessionState, state.localAttached {
-                HStack(spacing: 8) {
-                    Text(state.phoneLayout ? "Phone layout" : "Desktop layout · \(state.cols) × \(state.rows)")
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Button(state.phoneLayout ? "Desktop size" : "Fit to iPhone") {
-                        Task { await model.setPhoneLayout(!state.phoneLayout) }
-                    }
-                    .font(.caption2.bold())
-                    .disabled(!state.writable)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 6)
+            }.padding(.horizontal, 10).padding(.vertical, 6).background(Color.white.opacity(0.04))
             }
             NativeTerminal(model: model).background(Color(red: 0.06, green: 0.08, blue: 0.11))
-            if !model.connected || model.sessionState == nil {
+            if model.connected && !currentPane.live, let workspace {
+                Button("Start a new session") {
+                    startTarget = TerminalStartTarget(workspace: workspace, agent: currentPane.kind == "terminal" ? "terminal" : (currentPane.harnessId ?? "codex"))
+                }.buttonStyle(.bordered).padding(8).disabled(!model.canStartSession || workspace.cwd.isEmpty)
+                    .accessibilityIdentifier("terminal.recoverStopped")
+            } else if !model.connected || model.sessionState == nil {
                 Button("Reconnect") { if model.connected { Task { await model.open(currentPane) } } else if let machine = model.activeMachine { model.connect(machine) } }
                     .buttonStyle(.bordered).padding(8).disabled(model.connecting)
             }
-            HStack {
-                Button { model.keyboardVisibility.send(!keyboardShown) } label: {
-                    Label(keyboardShown ? "Hide keyboard" : "Keyboard", systemImage: keyboardShown ? "keyboard.chevron.compact.down" : "keyboard")
-                }.accessibilityIdentifier("terminal.keyboard")
-                Spacer()
-                Button { model.keyboardVisibility.send(false); showingFiles = true } label: {
-                    Label("Files", systemImage: "folder")
-                }.accessibilityIdentifier("terminal.files").disabled(workspace == nil || !model.connected || !model.canBrowseFiles)
-                Spacer()
-                Button { model.keyboardVisibility.send(false); composing = true } label: {
-                    Label("Compose", systemImage: "square.and.pencil")
-                }.accessibilityIdentifier("terminal.compose")
-            }
-            .font(.subheadline.weight(.medium)).padding(.horizontal, 16).frame(height: 44)
-            .background(Color.white.opacity(0.04))
         }
         .navigationTitle(workspaceName).navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 5) {
+                    Circle().fill(model.connected && !model.isPreview ? Color.accentColor : Color.orange).frame(width: 5, height: 5)
+                    Text(workspaceName).font(.headline).lineLimit(1).minimumScaleFactor(0.85)
+                }.accessibilityElement(children: .ignore).accessibilityLabel(workspaceName)
+                    .accessibilityValue(model.status).accessibilityIdentifier("terminal.status")
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { model.keyboardVisibility.send(!keyboardShown) } label: {
+                    Image(systemName: keyboardShown ? "keyboard.chevron.compact.down" : "keyboard")
+                }.accessibilityLabel(keyboardShown ? "Hide keyboard" : "Keyboard").accessibilityIdentifier("terminal.keyboard")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.keyboardVisibility.send(false); settings = true } label: {
-                    HStack(spacing: 5) { Image(systemName: "line.3.horizontal"); Text("Menu") }
+                    Image(systemName: "line.3.horizontal")
                 }
-                .accessibilityIdentifier("terminal.menu")
+                .accessibilityLabel("Menu").accessibilityIdentifier("terminal.menu")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
         .task(id: currentPane.id) { await model.open(currentPane) }
+        .onChange(of: model.workspaces) { _, _ in
+            if model.connected && !deleting && !model.workspaces.contains(where: { $0.panes.contains(where: { $0.id == currentPane.id }) }) {
+                moveAfterDeletion()
+            }
+        }
         .onDisappear { model.leaveTerminal() }
         .sheet(isPresented: $showingFiles) {
             if let workspace { WorkspaceFilesView(model: model, workspace: workspace) }
+        }
+        .sheet(item: $startTarget) { target in
+            StartSessionView(model: model, workspace: target.workspace, initialAgent: target.agent) { selectedPane = $0 }
         }
         .sheet(isPresented: $composing) {
             NavigationStack {
@@ -124,15 +165,42 @@ struct TerminalScreen: View {
                     }
             }.onDisappear { model.saveDraft() }
         }
-        .sheet(isPresented: $settings) {
+        .sheet(isPresented: $settings, onDismiss: {
+            let action = afterSettings; afterSettings = nil
+            switch action {
+            case .compose: composing = true
+            case .start(let target): startTarget = target
+            case nil: break
+            }
+        }) {
             NavigationStack {
                 Form {
+                    Section {
+                        Button { afterSettings = .compose; settings = false } label: {
+                            Label("Write a message", systemImage: "square.and.pencil")
+                        }.accessibilityLabel("Compose").accessibilityIdentifier("terminal.compose")
+                        if let workspace {
+                            Button { afterSettings = .start(TerminalStartTarget(workspace: workspace, agent: "codex")); settings = false } label: {
+                                Label("Start agent", systemImage: "plus.circle")
+                            }.disabled(!model.connected || !model.canStartSession || workspace.cwd.isEmpty)
+                                .accessibilityIdentifier("terminal.startSession")
+                        }
+                    }
+                    Section("Connection & activity") {
+                        Text(model.status).font(.subheadline)
+                        let latest = workspace?.panes.first(where: { $0.id == currentPane.id }) ?? currentPane
+                        Text(latest.statusLabel(connected: model.connected)).font(.subheadline)
+                        Text("Activity is estimated from terminal output. Quiet does not mean finished; open the session to check approval prompts.").font(.caption).foregroundStyle(.secondary)
+                    }
                     Section("Text size") {
                         Slider(value: $model.fontSize, in: 10...22, step: 1).accessibilityLabel("Terminal text size")
                         Text("\(Int(model.fontSize)) pt").font(.system(.body, design: .monospaced))
                     }
                     if let state = model.sessionState, state.localAttached {
                         Section {
+                            Text(state.phoneLayout ? "Phone layout" : "Desktop layout · \(state.cols) × \(state.rows)")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("terminal.layoutState")
                             Button(state.phoneLayout ? "Use desktop layout" : "Fit to iPhone") {
                                 Task { await model.setPhoneLayout(!state.phoneLayout) }
                             }.disabled(!state.writable)
@@ -140,11 +208,63 @@ struct TerminalScreen: View {
                             Text("Phone layout also changes the terminal on your computer while enabled. Leaving the session restores its previous sizing setting.")
                         }
                     }
+                    if let workspace {
+                        Section {
+                            ForEach(workspace.panes) { session in
+                                Button(role: .destructive) { deleteTarget = TerminalDeletionTarget(pane: session, workspaceId: workspace.id, workspaceName: workspace.name) } label: {
+                                    Label("Delete \(session.name)", systemImage: "trash")
+                                }.disabled(!model.connected || !model.canDeleteSession || deleting)
+                                    .accessibilityIdentifier("session.delete.\(session.id)")
+                            }
+                            if deleting { HStack { ProgressView(); Text("Deleting session…") } }
+                            if let deletionError { Text(deletionError).foregroundStyle(.red).accessibilityIdentifier("session.delete.error") }
+                        } header: { Text("Sessions") } footer: {
+                            Text("Deleting stops the session on your computer. Workspace files are kept.")
+                        }
+                    }
                 }.navigationTitle("Terminal menu").navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { settings = false } } }
-            }.presentationDetents([.medium, .large])
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { settings = false }.disabled(deleting) } }
+                    .alert("Delete \(deleteTarget?.pane.name ?? "session") from \(deleteTarget?.workspaceName ?? workspaceName)?", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
+                        if let target = deleteTarget {
+                            Button("Delete session", role: .destructive) {
+                                deleting = true; deletionError = nil
+                                Task {
+                                    do {
+                                        try await model.deleteSession(target.pane, workspaceId: target.workspaceId)
+                                        deleting = false
+                                        if target.pane.id == currentPane.id { settings = false; moveAfterDeletion() }
+                                    } catch { deleting = false; deletionError = error.localizedDescription }
+                                }
+                            }.accessibilityIdentifier("session.delete.confirm")
+                        }
+                        Button("Cancel", role: .cancel) { deleteTarget = nil }.accessibilityIdentifier("session.delete.cancel")
+                    } message: {
+                        Text("This stops the running agent or shell and removes its terminal history. Workspace files are kept. This cannot be undone.")
+                    }
+            }.presentationDetents([.large])
+                .interactiveDismissDisabled(deleting)
         }
     }
+    private func moveAfterDeletion() {
+        if let next = model.nextSession(after: currentPane.id) { selectedPane = next }
+        else { settings = false; dismiss() }
+    }
+}
+
+private struct TerminalDeletionTarget {
+    let pane: Pane
+    let workspaceId: String
+    let workspaceName: String
+}
+
+private struct TerminalStartTarget: Identifiable {
+    let id = UUID()
+    let workspace: Workspace
+    let agent: String
+}
+private enum TerminalMenuAction {
+    case compose
+    case start(TerminalStartTarget)
 }
 
 struct NativeTerminal: UIViewControllerRepresentable {
@@ -264,7 +384,7 @@ struct NativeTerminal: UIViewControllerRepresentable {
         return accessory
     }
     private func updateControlButton() {
-        controlButton?.backgroundColor = controlNext ? UIColor.systemGreen.withAlphaComponent(0.38) : .secondarySystemFill
+        controlButton?.backgroundColor = controlNext ? UIColor(Color.accentColor).withAlphaComponent(0.38) : .secondarySystemFill
         controlButton?.accessibilityValue = controlNext ? "On for next key" : "Off"
     }
     func refreshLayout() {

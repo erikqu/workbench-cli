@@ -1,6 +1,27 @@
 import XCTest
 @testable import WorkbenchCore
 final class ProtocolTests: XCTestCase {
+    func testSessionStartedResponse() throws {
+        let response = try JSONDecoder().decode(ControlEvent.self, from: Data(#"{"id":"start-request","type":"sessionStarted","sessionId":"workbench_h_new","snapshot":{"workspaces":[{"id":"workspace","name":"Project","cwd":"/project","panes":[{"id":"workbench_h_new","tmux":"workbench_h_new","name":"Codex","kind":"agent","live":true}]}],"updatedAt":1}}"#.utf8))
+        XCTAssertEqual(response.type, "sessionStarted")
+        XCTAssertEqual(response.sessionId, response.snapshot?.workspaces.first?.panes.first?.id)
+    }
+    func testSessionDeletionResponseKeepsEmptyWorkspace() throws {
+        let response = try JSONDecoder().decode(ControlEvent.self, from: Data(#"{"id":"delete-request","type":"sessionDeleted","snapshot":{"workspaces":[{"id":"workspace","name":"Project","cwd":"/project","panes":[]}],"updatedAt":1}}"#.utf8))
+        XCTAssertEqual(response.type, "sessionDeleted")
+        XCTAssertEqual(response.snapshot?.workspaces.first?.cwd, "/project")
+        XCTAssertEqual(response.snapshot?.workspaces.first?.panes.count, 0)
+    }
+    func testHostFolderListingProtocol() throws {
+        let event = try JSONDecoder().decode(ControlEvent.self, from: Data(#"{"id":"browse","type":"folders","folders":{"path":"/home/test","parentPath":"/home","entries":[{"name":"My project","path":"/home/test/My project"}],"truncated":false}}"#.utf8))
+        XCTAssertEqual(event.folders?.path, "/home/test")
+        XCTAssertEqual(event.folders?.parentPath, "/home")
+        XCTAssertEqual(event.folders?.entries.first?.name, "My project")
+        XCTAssertEqual(event.folders?.entries.first?.id, "/home/test/My project\u{0}My project")
+        XCTAssertEqual(event.folders?.truncated, false)
+        let aliases = try JSONDecoder().decode([RemoteFolder].self, from: Data(#"[{"name":"project","path":"/tmp/project"},{"name":"shortcut","path":"/tmp/project"}]"#.utf8))
+        XCTAssertNotEqual(aliases[0].id, aliases[1].id)
+    }
     func testWorkspaceCapabilitiesAndActivity() throws {
         let decoder = JSONDecoder()
         let hello = try decoder.decode(ControlEvent.self, from: Data(#"{"type":"hello","version":1,"capabilities":["createWorkspace","files"]}"#.utf8))

@@ -108,6 +108,7 @@ import NIOSSH
         var workspaceId: String? = nil
         var path: String? = nil
         var offset: Int? = nil
+        var mode: String? = nil
     }
     private func command(method: String, sessionId: String? = nil, enabled: Bool? = nil) async throws {
         try await writeCommand(Command(id: UUID().uuidString, method: method, sessionId: sessionId, enabled: enabled))
@@ -118,15 +119,35 @@ import NIOSSH
         var buffer = control.allocator.buffer(capacity: data.count); buffer.writeBytes(data)
         try await control.writeAndFlush(buffer).get()
     }
-    public func createWorkspace(requestId: String, name: String, parentDirectory: String, agent: String) async throws -> Workspace {
-        let event = try await request(Command(id: requestId, method: "createWorkspace", sessionId: nil, enabled: nil, name: name, parentDirectory: parentDirectory, agent: agent))
+    public func createWorkspace(requestId: String, name: String, parentDirectory: String, agent: String, mode: String = "create") async throws -> Workspace {
+        let event = try await request(Command(id: requestId, method: "createWorkspace", sessionId: nil, enabled: nil, name: name, parentDirectory: parentDirectory, agent: agent, mode: mode))
         guard let workspace = event.workspace else { throw WorkbenchError.unsupportedProtocol }
         return workspace
+    }
+    public func listFolders(path: String) async throws -> FolderListing {
+        let event = try await request(Command(id: UUID().uuidString, method: "listFolders", sessionId: nil, enabled: nil, path: path))
+        guard let folders = event.folders else { throw WorkbenchError.unsupportedProtocol }
+        return folders
+    }
+    public func deleteSession(requestId: String, workspaceId: String, sessionId: String) async throws -> Snapshot {
+        let event = try await request(Command(id: requestId, method: "deleteSession", sessionId: sessionId, enabled: nil, workspaceId: workspaceId))
+        guard event.type == "sessionDeleted", let snapshot = event.snapshot else { throw WorkbenchError.unsupportedProtocol }
+        return snapshot
+    }
+    public func startSession(requestId: String, workspaceId: String, agent: String) async throws -> (sessionId: String, snapshot: Snapshot) {
+        let event = try await request(Command(id: requestId, method: "startSession", sessionId: nil, enabled: nil, agent: agent, workspaceId: workspaceId))
+        guard event.type == "sessionStarted", let sessionId = event.sessionId, let snapshot = event.snapshot else { throw WorkbenchError.unsupportedProtocol }
+        return (sessionId, snapshot)
     }
     public func listFiles(workspaceId: String, path: String) async throws -> DirectoryListing {
         let event = try await request(Command(id: UUID().uuidString, method: "listFiles", sessionId: nil, enabled: nil, workspaceId: workspaceId, path: path))
         guard let directory = event.directory else { throw WorkbenchError.unsupportedProtocol }
         return directory
+    }
+    public func gitSummary(workspaceId: String) async throws -> GitSummary {
+        let event = try await request(Command(id: UUID().uuidString, method: "gitSummary", sessionId: nil, enabled: nil, workspaceId: workspaceId))
+        guard let summary = event.gitSummary else { throw WorkbenchError.unsupportedProtocol }
+        return summary
     }
     public func readFile(workspaceId: String, path: String, offset: Int) async throws -> FileChunk {
         let event = try await request(Command(id: UUID().uuidString, method: "readFile", sessionId: nil, enabled: nil, workspaceId: workspaceId, path: path, offset: offset))

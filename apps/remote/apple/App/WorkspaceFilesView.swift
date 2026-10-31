@@ -8,10 +8,14 @@ struct WorkspaceFilesView: View {
     @ObservedObject var model: AppModel
     let workspace: Workspace
     @Environment(\.dismiss) private var dismiss
+    @State private var directoryPath: [String] = []
 
     var body: some View {
-        NavigationStack {
-            WorkspaceDirectoryView(model: model, workspace: workspace, path: "", done: { dismiss() })
+        NavigationStack(path: $directoryPath) {
+            WorkspaceDirectoryView(model: model, workspace: workspace, path: "", directoryPath: $directoryPath, done: { dismiss() })
+                .navigationDestination(for: String.self) { path in
+                    WorkspaceDirectoryView(model: model, workspace: workspace, path: path, directoryPath: $directoryPath, done: { dismiss() })
+                }
         }
     }
 }
@@ -20,6 +24,7 @@ private struct WorkspaceDirectoryView: View {
     @ObservedObject var model: AppModel
     let workspace: Workspace
     let path: String
+    @Binding var directoryPath: [String]
     let done: () -> Void
     @State private var listing: DirectoryListing?
     @State private var failure: String?
@@ -34,15 +39,46 @@ private struct WorkspaceDirectoryView: View {
         }
     }
 
+    private func ancestors(of path: String) -> [String] {
+        let parts = path.split(separator: "/")
+        return parts.indices.map { parts.prefix($0 + 1).joined(separator: "/") }
+    }
+
+    private var pathBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Menu {
+                    Button { directoryPath = [] } label: { Label(workspace.name, systemImage: "folder") }
+                        .disabled(path.isEmpty)
+                    ForEach(ancestors(of: path), id: \.self) { parent in
+                        Button((parent as NSString).lastPathComponent) { directoryPath = ancestors(of: parent) }
+                            .disabled(parent == path)
+                    }
+                    Divider()
+                    Text(path.isEmpty ? workspace.cwd : workspace.cwd + "/" + path)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder")
+                        Text(path.isEmpty ? workspace.name : workspace.name + " / " + path)
+                            .lineLimit(1).truncationMode(.middle)
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                    }.font(.caption).frame(minHeight: 44)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Folder path")
+                .accessibilityValue(path.isEmpty ? workspace.name : workspace.name + "/" + path)
+                .accessibilityHint("Choose a parent folder")
+                .accessibilityIdentifier("files.path")
+                Spacer(minLength: 0)
+                Label("Read-only", systemImage: "lock").font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize().accessibilityIdentifier("files.readOnly")
+            }.padding(.horizontal, 16).background(.bar)
+            Divider()
+        }
+    }
+
     var body: some View {
         List {
-            Section {
-                Label("Read-only · \(workspace.name)", systemImage: "lock")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(path.isEmpty ? workspace.cwd : workspace.cwd + "/" + path)
-                    .font(.caption.monospaced()).foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
             if loading {
                 HStack { Spacer(); ProgressView("Loading files…"); Spacer() }.padding(.vertical, 24)
             } else if let failure {
@@ -60,9 +96,7 @@ private struct WorkspaceDirectoryView: View {
                 Section {
                     ForEach(entries) { file in
                         if file.kind == "directory" {
-                            NavigationLink {
-                                WorkspaceDirectoryView(model: model, workspace: workspace, path: file.path, done: done)
-                            } label: {
+                            NavigationLink(value: file.path) {
                                 WorkspaceFileRow(file: file)
                             }.accessibilityIdentifier("files.entry.\(file.path)")
                         } else if file.kind == "file" {
@@ -76,7 +110,7 @@ private struct WorkspaceDirectoryView: View {
                                 .accessibilityIdentifier("files.entry.\(file.path)")
                                 .accessibilityHint("Links and special files cannot be opened.")
                         }
-                    }
+                    }.listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 } footer: {
                     if listing?.truncated == true {
                         Text("This folder has more entries than can be shown. Open a subfolder to browse further.")
@@ -84,7 +118,11 @@ private struct WorkspaceDirectoryView: View {
                 }
             }
         }
+        .listStyle(.plain).listSectionSpacing(0)
+        .environment(\.defaultMinListRowHeight, 44)
+        .contentMargins(.top, 0, for: .scrollContent)
         .accessibilityIdentifier("files.list")
+        .safeAreaInset(edge: .top, spacing: 0) { pathBar }
         .navigationTitle(path.isEmpty ? "Files" : (path as NSString).lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) } }
@@ -157,7 +195,7 @@ private struct WorkspaceFilePreview: View {
                 Label("Read-only", systemImage: "lock")
                 Spacer()
                 Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
-            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal).padding(.vertical, 10)
+            }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal).padding(.vertical, 6)
             Divider()
             if loading {
                 VStack(spacing: 14) {
@@ -177,7 +215,7 @@ private struct WorkspaceFilePreview: View {
                 switch content {
                 case .image(let image):
                     ZoomableWorkspaceImage(image: image, name: file.name)
-                    Text("Pinch to zoom · double-tap to fit").font(.caption).foregroundStyle(.secondary).padding(10)
+                    Text("Pinch to zoom · double-tap to fit").font(.caption).foregroundStyle(.secondary).padding(6)
                 case .text(let text, let truncated):
                     if truncated {
                         Label("Showing the first 256 KiB of this file", systemImage: "info.circle")

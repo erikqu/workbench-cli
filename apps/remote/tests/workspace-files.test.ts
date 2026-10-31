@@ -141,3 +141,36 @@ test('large directory listings are bounded and indicate truncation', async t => 
   assert.equal(listing.entries.length, MAX_DIRECTORY_ENTRIES);
   assert.equal(listing.truncated, true);
 });
+
+test('Git summaries include staged and unstaged lines but distinguish untracked files', async t => {
+  const { root, files } = await fixture(t);
+  assert.deepEqual(await files.gitSummary('fixture'), { isRepository: false, added: 0, deleted: 0, untracked: 0 });
+  execFileSync('git', ['init', '-q', root]);
+  execFileSync('git', ['-C', root, 'config', 'user.name', 'Fixture']);
+  execFileSync('git', ['-C', root, 'config', 'user.email', 'fixture@example.invalid']);
+  await writeFile(path.join(root, 'tracked.txt'), 'one\ntwo\nthree\n');
+  execFileSync('git', ['-C', root, 'add', 'tracked.txt']);
+  execFileSync('git', ['-C', root, 'commit', '-qm', 'initial']);
+  await writeFile(path.join(root, 'tracked.txt'), 'one\nreplaced\nthree\nfour\n');
+  await writeFile(path.join(root, 'new.txt'), 'not included in line counts\n');
+  assert.deepEqual(await files.gitSummary('fixture'), { isRepository: true, added: 2, deleted: 1, untracked: 1 });
+  execFileSync('git', ['-C', root, 'add', 'tracked.txt']);
+  await writeFile(path.join(root, 'tracked.txt'), 'one\nreplaced\nthree\nfour\nfive\n');
+  assert.deepEqual(await files.gitSummary('fixture'), { isRepository: true, added: 3, deleted: 1, untracked: 1 });
+  await assert.rejects(files.gitSummary('missing'), /no longer available/);
+});
+
+test('Git summaries stay within a workspace nested inside a larger repository', async t => {
+  const { directory, root } = await fixture(t);
+  execFileSync('git', ['init', '-q', directory]);
+  execFileSync('git', ['-C', directory, 'config', 'user.name', 'Fixture']);
+  execFileSync('git', ['-C', directory, 'config', 'user.email', 'fixture@example.invalid']);
+  await writeFile(path.join(directory, 'outside.txt'), 'outside\n');
+  await writeFile(path.join(root, 'inside.txt'), 'inside\n');
+  execFileSync('git', ['-C', directory, 'add', '.']);
+  execFileSync('git', ['-C', directory, 'commit', '-qm', 'initial']);
+  await writeFile(path.join(directory, 'outside.txt'), 'changed outside\n');
+  await writeFile(path.join(root, 'inside.txt'), 'changed inside\n');
+  const files = new WorkspaceFiles(async () => ({ workspaces: [{ id: 'fixture', name: 'Fixture', cwd: root, panes: [] }], updatedAt: 0 }));
+  assert.deepEqual(await files.gitSummary('fixture'), { isRepository: true, added: 1, deleted: 1, untracked: 0 });
+});

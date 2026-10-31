@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Pool } from 'pg';
 import { Client, utils, type ClientChannel } from 'ssh2';
 import { WebSocket, createWebSocketStream } from 'ws';
-import { mkdtemp, readFile, realpath, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync, execFile } from 'node:child_process';
@@ -82,15 +82,19 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
         assert.match(stdout, /EVENT snapshot/);
         assert.match(stdout, /OUTPUT/);
         assert.match(stdout, /SWIFT_WORKSPACE_RETRY_OK/);
+        assert.match(stdout, /SWIFT_FOLDERS_OPEN_OK/);
         assert.match(stdout, /SWIFT_FILE_IMAGE_AND_CHUNKS_OK/);
         assert.match(stdout, /SWIFT_CONTROL_ERROR_RECOVERY_OK/);
+        assert.match(stdout, /SWIFT_DELETE_SESSION_OK/);
+        assert.match(stdout, /SWIFT_START_SESSION_OK/);
         assert.match(tmux(['capture-pane', '-p', '-t', session]), /^SWIFT_TRANSPORT_OK$/m);
         assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopBeforeSwift);
         const phoneRegistry = JSON.parse(await readFile(path.join(directory, 'remote-workspaces.json'), 'utf8'));
         assert.equal(phoneRegistry.workspaces.length, 1, 'Swift creation retry must not duplicate folders or sessions');
         const swiftWorkspace = phoneRegistry.workspaces[0].layout;
         assert.equal(swiftWorkspace.cwd, path.join(await realpath(directory), 'Swift transport workspace'));
-        tmux(['has-session', '-t', '=' + swiftWorkspace.terminals[0].tmux]);
+        assert.throws(() => tmux(['has-session', '-t', '=' + swiftWorkspace.terminals[0].tmux]));
+        tmux(['has-session', '-t', '=' + session]);
       } finally { await rm(fixture, { force: true }); }
     }
     async function ssh(user: typeof user1, key: typeof key1) {
@@ -111,7 +115,7 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
       return { client, control, events };
     }
     const first = await ssh(user1, key1);
-    assert.deepEqual(first.events.find(event => event.type === 'hello').capabilities, ['createWorkspace', 'files']);
+    assert.deepEqual(first.events.find(event => event.type === 'hello').capabilities, ['createWorkspace', 'files', 'folders', 'deleteSession', 'startSession']);
     async function control(request: Record<string, unknown> & { id: string }) {
       const start = first.events.length;
       first.control.write(JSON.stringify(request) + '\n');
@@ -139,6 +143,29 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
     const traversal = await control({ ...createRequest, id: randomUUID(), name: '../escape' });
     assert.equal(traversal.type, 'error');
     assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopLayout);
+    const existingFolder = path.join(directory, 'Already here'); await mkdir(existingFolder);
+    await writeFile(path.join(existingFolder, 'keep.txt'), 'Original content\n');
+    const folders = await control({ id: randomUUID(), method: 'listFolders', path: directory });
+    const canonicalDirectory = await realpath(directory);
+    assert.equal(folders.type, 'folders', JSON.stringify(folders));
+    assert.equal(folders.folders.path, await realpath(directory));
+    assert.equal(folders.folders.parentPath, path.dirname(await realpath(directory)));
+    assert.ok(folders.folders.entries.some((entry: any) => entry.name === 'Already here' && entry.path === path.join(canonicalDirectory, 'Already here')));
+    assert.equal(folders.folders.entries.some((entry: any) => entry.name === 'workbench-ui-state.json'), false);
+    const invalidFolders = await control({ id: randomUUID(), method: 'listFolders', path: 'relative/path' });
+    assert.equal(invalidFolders.type, 'error');
+    const openRequest = { id: randomUUID(), method: 'createWorkspace', mode: 'open', name: 'Already here', parentDirectory: directory, agent: 'terminal' };
+    const opened = await control(openRequest);
+    assert.equal(opened.type, 'workspaceCreated', JSON.stringify(opened));
+    assert.equal(opened.workspace.cwd, await realpath(existingFolder));
+    assert.equal(opened.workspace.panes[0].live, true);
+    assert.equal((await control(openRequest)).workspace.id, opened.workspace.id);
+    assert.equal((await control({ ...openRequest, id: randomUUID() })).workspace.id, opened.workspace.id);
+    const reopenDesktop = await control({ ...openRequest, id: randomUUID(), name: path.basename(directory), parentDirectory: path.dirname(directory) });
+    assert.equal(reopenDesktop.type, 'workspaceCreated', JSON.stringify(reopenDesktop));
+    assert.equal(reopenDesktop.workspace.id, 'fixture');
+    assert.equal(await readFile(path.join(existingFolder, 'keep.txt'), 'utf8'), 'Original content\n');
+    assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopLayout);
     // Exercise the same authenticated file transport used by the phone, including
     // an actual PNG payload and rejected traversal outside the new workspace.
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
@@ -153,6 +180,45 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
     assert.deepEqual(Buffer.from(preview.fileChunk.data, 'base64'), png);
     const outside = await control({ id: randomUUID(), method: 'readFile', workspaceId: created.workspace.id, path: '../workbench-ui-state.json', offset: 0 });
     assert.equal(outside.type, 'error');
+    const deletion = { id: randomUUID(), method: 'deleteSession', workspaceId: created.workspace.id, sessionId: createdSession };
+    const deleted = await control(deletion);
+    assert.equal(deleted.type, 'sessionDeleted', JSON.stringify(deleted));
+    assert.deepEqual(deleted.snapshot.workspaces.find((workspace: any) => workspace.id === created.workspace.id)?.panes, []);
+    assert.throws(() => tmux(['has-session', '-t', '=' + createdSession]));
+    assert.equal((await control(deletion)).type, 'sessionDeleted');
+    const remainingFiles = await control({ id: randomUUID(), method: 'listFiles', workspaceId: created.workspace.id, path: '' });
+    assert.equal(remainingFiles.type, 'directory');
+    assert.deepEqual(remainingFiles.directory.entries.map((entry: any) => entry.name).sort(), ['README.md', 'preview.png']);
+    assert.equal(await readFile(path.join(created.workspace.cwd, 'README.md'), 'utf8'), '# Phone workspace\n');
+    assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopLayout);
+    assert.equal(tmux(['display-message', '-p', '-t', session, '#{pane_pid}']), originalPid);
+    const startRequest = { id: randomUUID(), method: 'startSession', workspaceId: created.workspace.id, agent: 'terminal' };
+    const started = await control(startRequest);
+    assert.equal(started.type, 'sessionStarted', JSON.stringify(started));
+    assert.notEqual(started.sessionId, createdSession, 'start after deletion must create a fresh identity');
+    assert.equal(started.snapshot.workspaces.find((workspace: any) => workspace.id === created.workspace.id).panes[0].tmux, started.sessionId);
+    const startedPid = tmux(['display-message', '-p', '-t', '=' + started.sessionId + ':', '#{pane_pid}']);
+    assert.equal((await control(startRequest)).sessionId, started.sessionId);
+    const secondStart = await control({ ...startRequest, id: randomUUID() });
+    assert.equal(secondStart.type, 'sessionStarted'); assert.notEqual(secondStart.sessionId, started.sessionId);
+    await control(deletion);
+    assert.equal(tmux(['display-message', '-p', '-t', '=' + started.sessionId + ':', '#{pane_pid}']), startedPid);
+    const stoppedStart = await control({ id: randomUUID(), method: 'deleteSession', workspaceId: created.workspace.id, sessionId: started.sessionId });
+    assert.equal(stoppedStart.type, 'sessionDeleted');
+    assert.equal((await control(startRequest)).sessionId, started.sessionId);
+    assert.throws(() => tmux(['has-session', '-t', '=' + started.sessionId]));
+    const desktopStart = await control({ id: randomUUID(), method: 'startSession', workspaceId: 'fixture', agent: 'terminal' });
+    assert.equal(desktopStart.type, 'sessionStarted');
+    assert.ok(desktopStart.snapshot.workspaces.find((workspace: any) => workspace.id === 'fixture').panes.some((pane: any) => pane.tmux === desktopStart.sessionId));
+    assert.equal(await readFile(path.join(directory, 'workbench-ui-state.json'), 'utf8'), desktopLayout);
+    assert.equal(tmux(['display-message', '-p', '-t', session, '#{pane_pid}']), originalPid);
+    const folderOnly = await control({ ...createRequest, id: randomUUID(), name: 'No session folder', agent: 'none' });
+    assert.equal(folderOnly.type, 'workspaceCreated', JSON.stringify(folderOnly));
+    assert.deepEqual(folderOnly.workspace.panes, []);
+    const folderFiles = await control({ id: randomUUID(), method: 'listFiles', workspaceId: folderOnly.workspace.id, path: '' });
+    assert.equal(folderFiles.type, 'directory'); assert.deepEqual(folderFiles.directory.entries, []);
+    const invalidStart = await control({ id: randomUUID(), method: 'startSession', workspaceId: 'missing', agent: 'terminal' });
+    assert.equal(invalidStart.type, 'error');
     await assert.rejects(new Promise((resolve, reject) => first.client.exec('echo unauthorized', (err, channel) => err ? reject(err) : resolve(channel))), /Unable to exec/);
     async function attach(client: Client) {
       const stream = await new Promise<ClientChannel>((resolve, reject) => client.exec(`workbench-attach:${session}`, { pty: { term: 'xterm-256color', cols: 80, rows: 24 } }, (err, channel) => err ? reject(err) : resolve(channel)));

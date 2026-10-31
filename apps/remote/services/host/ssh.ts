@@ -107,12 +107,28 @@ export class HostSSH {
               .catch(() => this.send(channel, { id: request.id, type: 'error', message: 'Could not change layout. Take control and try again.' }));
           }
           else if (request.method === 'createWorkspace') {
-            void this.sessions.createWorkspace({ requestId: request.id, name: request.name, parentDirectory: request.parentDirectory, agent: request.agent })
+            void this.sessions.createWorkspace({ requestId: request.id, name: request.name, parentDirectory: request.parentDirectory, agent: request.agent, mode: request.mode })
               .then(result => { this.send(channel, { id: request.id, type: 'workspaceCreated', workspace: result.workspace }); this.send(channel, { type: 'snapshot', snapshot: result.snapshot }); })
               .catch(error => this.send(channel, { id: request.id, type: 'error', message: error instanceof Error ? error.message : 'Could not create the workspace.' }));
           }
+          else if (request.method === 'listFolders') {
+            void fileOperation(request.id, async () => ({ type: 'folders', folders: await this.sessions.listFolders(request.path) }));
+          }
+          else if (request.method === 'deleteSession') {
+            void this.sessions.deleteSession({ requestId: request.id, workspaceId: request.workspaceId, sessionId: request.sessionId })
+              .then(snapshot => this.send(channel, { id: request.id, type: 'sessionDeleted', snapshot }))
+              .catch(error => this.send(channel, { id: request.id, type: 'error', message: error instanceof Error ? error.message : 'Could not delete the session.' }));
+          }
+          else if (request.method === 'startSession') {
+            void this.sessions.startSession({ requestId: request.id, workspaceId: request.workspaceId, agent: request.agent })
+              .then(result => this.send(channel, { id: request.id, type: 'sessionStarted', ...result }))
+              .catch(error => this.send(channel, { id: request.id, type: 'error', message: error instanceof Error ? error.message : 'Could not start the session.' }));
+          }
           else if (request.method === 'listFiles') {
             void fileOperation(request.id, async () => ({ type: 'directory', directory: await this.sessions.listFiles(request.workspaceId, request.path) }));
+          }
+          else if (request.method === 'gitSummary') {
+            void fileOperation(request.id, async () => ({ type: 'gitSummary', gitSummary: await this.sessions.gitSummary(request.workspaceId) }));
           }
           else if (request.method === 'readFile') {
             void fileOperation(request.id, async () => ({ type: 'fileChunk', fileChunk: await this.sessions.readFile(request.workspaceId, request.path, request.offset) }));
@@ -123,7 +139,7 @@ export class HostSSH {
     });
     channel.on('error', () => channel.close());
     channel.on('close', () => { clearInterval(timer); controls.delete(channel); });
-    this.send(channel, { type: 'hello', protocol: PROTOCOL, version: 1, capabilities: ['createWorkspace', 'files'] });
+    this.send(channel, { type: 'hello', protocol: PROTOCOL, version: 1, capabilities: ['createWorkspace', 'files', 'folders', 'deleteSession', 'startSession', 'gitSummary'] });
   }
   revoke(deviceId: string) { for (const value of this.connections.values()) if (value.deviceId === deviceId) value.client.end(); }
   close() { for (const value of this.connections.values()) value.client.end(); this.sessions.off('state', this.listener); }

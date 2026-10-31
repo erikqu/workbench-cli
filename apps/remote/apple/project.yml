@@ -11,8 +11,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.72"
-    CURRENT_PROJECT_VERSION: 3
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: 4
     WORKBENCH_RELAY_URL: ""
     WORKBENCH_AUTH_MODE: pairing
 targets:

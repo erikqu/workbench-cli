@@ -13,6 +13,12 @@ public struct Workspace: Codable, Identifiable, Hashable, Sendable {
     public let name: String
     public let cwd: String
     public let panes: [Pane]
+    public func removingSession(_ sessionId: String) -> Workspace {
+        Workspace(id: id, name: name, cwd: cwd, panes: panes.filter { $0.id != sessionId })
+    }
+    public func addingSession(_ pane: Pane) -> Workspace {
+        Workspace(id: id, name: name, cwd: cwd, panes: panes.filter { $0.id != pane.id } + [pane])
+    }
 }
 public struct Pane: Codable, Identifiable, Hashable, Sendable {
     public let id: String
@@ -22,6 +28,17 @@ public struct Pane: Codable, Identifiable, Hashable, Sendable {
     public let live: Bool
     public let harnessId: String?
     public let activity: String?
+    public func statusLabel(connected: Bool) -> String {
+        guard connected else { return "Offline" }
+        guard live else { return "Stopped" }
+        switch activity {
+        case "working": return "Working"
+        case "recent": return "Recent output"
+        case "waiting": return "Needs input"
+        case "idle" where kind == "agent": return "Quiet"
+        default: return "Running"
+        }
+    }
 }
 public struct Snapshot: Codable, Sendable {
     public let workspaces: [Workspace]
@@ -40,6 +57,18 @@ public struct DirectoryListing: Codable, Sendable {
     public let entries: [RemoteFile]
     public let truncated: Bool
 }
+public struct RemoteFolder: Codable, Identifiable, Sendable {
+    public let name: String
+    public let path: String
+    // A directory and its symlink aliases can share the same canonical path.
+    public var id: String { path + "\u{0}" + name }
+}
+public struct FolderListing: Codable, Sendable {
+    public let path: String
+    public let parentPath: String?
+    public let entries: [RemoteFolder]
+    public let truncated: Bool
+}
 public struct FileChunk: Decodable, Sendable {
     public let path: String
     public let version: String
@@ -48,6 +77,12 @@ public struct FileChunk: Decodable, Sendable {
     public let nextOffset: Int
     public let data: String
     public let eof: Bool
+}
+public struct GitSummary: Decodable, Sendable {
+    public let isRepository: Bool
+    public let added: Int
+    public let deleted: Int
+    public let untracked: Int
 }
 public struct SessionState: Codable, Sendable {
     public let sessionId: String
@@ -65,7 +100,9 @@ public struct ControlEvent: Decodable, Sendable {
     public let workspace: Workspace?
     public let capabilities: [String]?
     public let directory: DirectoryListing?
+    public let folders: FolderListing?
     public let fileChunk: FileChunk?
+    public let gitSummary: GitSummary?
     public let message: String?
     public let sessionId: String?
     public let writable: Bool?

@@ -37,8 +37,12 @@ export interface HostConfiguration {
 export type ControlRequest =
   | { id: string; method: 'list' | 'watch' }
   | { id: string; method: 'takeControl'; sessionId: string }
-  | { id: string; method: 'createWorkspace'; name: string; parentDirectory: string; agent: 'codex' | 'terminal' }
+  | { id: string; method: 'createWorkspace'; name: string; parentDirectory: string; agent: 'codex' | 'claude' | 'terminal' | 'none'; mode?: 'create' | 'open' }
+  | { id: string; method: 'deleteSession'; workspaceId: string; sessionId: string }
+  | { id: string; method: 'startSession'; workspaceId: string; agent: 'codex' | 'claude' | 'terminal' }
+  | { id: string; method: 'listFolders'; path: string }
   | { id: string; method: 'listFiles'; workspaceId: string; path: string }
+  | { id: string; method: 'gitSummary'; workspaceId: string }
   | { id: string; method: 'readFile'; workspaceId: string; path: string; offset: number }
   | { id: string; method: 'setPhoneLayout'; sessionId: string; enabled: boolean };
 export interface DirectoryListing {
@@ -46,8 +50,17 @@ export interface DirectoryListing {
   entries: { name: string; path: string; kind: 'directory' | 'file' | 'symlink'; size: number }[];
   truncated: boolean;
 }
+export interface FolderListing {
+  path: string;
+  parentPath: string | null;
+  entries: { name: string; path: string }[];
+  truncated: boolean;
+}
 export interface FileChunk {
   path: string; size: number; version: string; offset: number; nextOffset: number; data: string; eof: boolean;
+}
+export interface GitSummary {
+  isRepository: boolean; added: number; deleted: number; untracked: number;
 }
 export function text(value: unknown, name: string, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw new Error(`Invalid ${name}`);

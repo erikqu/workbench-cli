@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import * as pty from 'node-pty';
@@ -8,9 +8,11 @@ import { randomUUID } from 'node:crypto';
 import { parseSnapshot } from '../../src/discovery';
 import type { Snapshot } from '../../src/shared';
 import { size } from '../shared/protocol';
-import { Workspaces, type NewWorkspace } from './workspaces';
+import { Workspaces, type NewWorkspace, type StartSession, type WorkspaceLayout } from './workspaces';
 import { agentActivity, recentActivity } from './activity';
 import { WorkspaceFiles } from './files';
+import { listHostFolders } from './folders';
+import { SessionLifecycle, type DeleteSession } from './lifecycle';
 
 const run = promisify(execFile);
 export interface Attachment {
@@ -29,9 +31,12 @@ export class Sessions extends EventEmitter {
   readonly socket: string;
   readonly workspaces: Workspaces;
   readonly files: WorkspaceFiles;
+  readonly lifecycle: SessionLifecycle;
   constructor(readonly directory: string) {
     super(); this.socket = path.join(directory, 'tmux-ui.sock');
-    this.workspaces = new Workspaces(directory, args => this.tmux(args));
+    this.lifecycle = new SessionLifecycle(directory, args => this.tmux(args), () => this.snapshot(false));
+    this.workspaces = new Workspaces(directory, args => this.tmux(args), undefined, (cwd, id) => this.existingDesktopWorkspace(cwd, id), undefined,
+      completedOnly => this.lifecycle.names(completedOnly));
     this.files = new WorkspaceFiles(() => this.snapshot(false));
     this.timer = setInterval(() => { void this.poll(); }, 1500); this.timer.unref();
   }
@@ -39,6 +44,9 @@ export class Sessions extends EventEmitter {
     const { stdout } = await run('tmux', ['-S', this.socket, ...args], { timeout: 5000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, TMUX: '', TMUX_PANE: '' } }); return stdout.trim();
   }
   async snapshot(includeActivity = true): Promise<Snapshot> {
+    // Timestamp the read boundary, not completion: a slow watch that began
+    // before a mutation must never supersede that mutation's returned snapshot.
+    const updatedAt = Date.now();
     let raw = '{"sessions":[]}', warning: string | undefined;
     try { raw = await readFile(path.join(this.directory, 'workbench-ui-state.json'), 'utf8'); parseSnapshot(raw, []); }
     catch {
@@ -48,8 +56,18 @@ export class Sessions extends EventEmitter {
     try {
       const state = JSON.parse(raw);
       const remote = await this.workspaces.layouts();
-      const ids = new Set(state.sessions.map((entry: { id?: string }) => entry.id));
-      state.sessions.push(...remote.filter(entry => !ids.has(entry.id)));
+      for (const layout of remote) {
+        const existing = state.sessions.find((entry: { id?: string }) => entry.id === layout.id);
+        if (!existing) { state.sessions.push(layout); continue; }
+        // Phone-started tabs overlay the matching desktop workspace, without
+        // modifying its saved layout or mixing files if its ID changed folders.
+        if (await realpath(existing.cwd).catch(() => '') !== layout.cwd) continue;
+        for (const key of ['harnesses', 'terminals'] as const) {
+          const tabs = Array.isArray(existing[key]) ? existing[key] : [];
+          const names = new Set(tabs.map((tab: { tmux?: string }) => tab.tmux));
+          existing[key] = [...tabs, ...layout[key].filter(tab => !names.has(tab.tmux))];
+        }
+      }
       raw = JSON.stringify(state);
     } catch { warning = 'Could not read the phone workspace list. Desktop sessions are still available.'; }
     let names: string[] = [];
@@ -57,25 +75,34 @@ export class Sessions extends EventEmitter {
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('tmux is not installed on this machine');
       if (!/no server running|No such file|Connection refused/.test(String(error))) throw error;
-      warning = 'Start Workbench on this machine to restore its sessions.';
+      warning = 'No sessions are running. Start a session from a workspace.';
     }
     const snapshot = parseSnapshot(raw, names, warning);
+    snapshot.updatedAt = updatedAt;
+    const deleted = await this.lifecycle.names(true);
+    snapshot.workspaces = snapshot.workspaces.map(workspace => ({ ...workspace, panes: workspace.panes.filter(pane => !deleted.has(pane.tmux)) }))
+      .filter(workspace => workspace.id !== '__unlisted' || workspace.panes.length > 0);
     if (!includeActivity) return snapshot;
     let recent = new Set<string>();
     const dead = new Set<string>();
     try {
-      const activity = await this.tmux(['list-windows', '-a', '-F', '#{session_name}|#{window_activity}|#{pane_dead}']);
+      const activity = await this.tmux(['list-panes', '-a', '-F', '#{session_name}|#{window_activity}|#{pane_dead}']);
       recent = recentActivity(activity);
+      const alive = new Set<string>();
       for (const line of activity.split('\n')) {
         const [session, , paneDead] = line.split('|');
         if (paneDead === '1') dead.add(session);
+        else if (paneDead === '0') alive.add(session);
       }
+      for (const session of alive) dead.delete(session);
     } catch {}
-    const agents = snapshot.workspaces.flatMap(workspace => workspace.panes).filter(pane => pane.kind === 'agent' && pane.live).slice(0, 64);
+    const panes = snapshot.workspaces.flatMap(workspace => workspace.panes);
+    // Retained startup diagnostics are not a running coding agent or shell.
+    for (const pane of panes) if (dead.has(pane.tmux)) { pane.live = false; pane.activity = 'idle'; }
+    const agents = panes.filter(pane => pane.kind === 'agent' && pane.live).slice(0, 64);
     // Captured content stays on the host; only status leaves. Bound concurrency.
     for (let index = 0; index < agents.length; index += 4) {
       await Promise.all(agents.slice(index, index + 4).map(async pane => {
-        if (dead.has(pane.tmux)) { pane.activity = 'idle'; return; }
         try {
           const content = await this.tmux(['capture-pane', '-p', '-t', '=' + pane.tmux + ':']);
           pane.activity = agentActivity(pane.harnessId, content, recent.has(pane.tmux));
@@ -91,7 +118,40 @@ export class Sessions extends EventEmitter {
     if (!workspace) throw new Error('Workspace was created but could not be listed. Refresh before retrying.');
     return { workspace, snapshot };
   }
+  async deleteSession(request: DeleteSession) {
+    await this.workspaces.exclusive(() => this.lifecycle.delete(request));
+    return this.snapshot();
+  }
+  async startSession(request: StartSession) {
+    const sessionId = await this.workspaces.start(request, async id => (await this.snapshot(false)).workspaces.find(workspace => workspace.id === id));
+    return { sessionId, snapshot: await this.snapshot() };
+  }
+  private async existingDesktopWorkspace(cwd: string, id?: string): Promise<WorkspaceLayout | undefined> {
+    let raw: string | undefined;
+    for (const file of ['workbench-ui-state.json', 'workbench-ui-state.json.bak']) {
+      try { const value = await readFile(path.join(this.directory, file), 'utf8'); parseSnapshot(value, []); raw = value; break; } catch {}
+    }
+    if (!raw) return;
+    let live: string[] = [];
+    try {
+      live = (await this.tmux(['list-panes', '-a', '-F', '#{session_name}|#{pane_dead}']))
+        .split('\n').filter(line => line.endsWith('|0')).map(line => line.slice(0, -2));
+    } catch {}
+    const deleted = await this.lifecycle.names(true);
+    for (const workspace of parseSnapshot(raw, live).workspaces) {
+      const intentionallyEmpty = workspace.panes.length > 0 && workspace.panes.every(pane => deleted.has(pane.tmux));
+      if (!workspace.cwd || !path.isAbsolute(workspace.cwd) || workspace.id.length > 200 || /[\x00-\x1f\x7f]/.test(workspace.id) ||
+        (id ? workspace.id !== id : !intentionallyEmpty && !workspace.panes.some(pane => pane.live && !deleted.has(pane.tmux)))) continue;
+      try { if (await realpath(workspace.cwd) !== cwd) continue; } catch { continue; }
+      const tab = (pane: typeof workspace.panes[number]) => ({ id: pane.id, name: pane.name, tmux: pane.tmux, cwd,
+        ...(pane.harnessId ? { harnessId: pane.harnessId } : {}) });
+      return { id: workspace.id, cwd, harnesses: workspace.panes.filter(pane => pane.kind === 'agent').map(tab),
+        terminals: workspace.panes.filter(pane => pane.kind === 'terminal').map(tab) };
+    }
+  }
+  listFolders(hostPath: unknown) { return listHostFolders(hostPath); }
   listFiles(workspaceId: unknown, relativePath: unknown) { return this.files.list(workspaceId, relativePath); }
+  gitSummary(workspaceId: unknown) { return this.files.gitSummary(workspaceId); }
   readFile(workspaceId: unknown, relativePath: unknown, offset: unknown) { return this.files.read(workspaceId, relativePath, offset); }
   private async localClients(sessionId: string) {
     const clients = (await this.tmux(['list-clients', '-t', '=' + sessionId, '-F', '#{client_tty}'])).split('\n').filter(Boolean);
