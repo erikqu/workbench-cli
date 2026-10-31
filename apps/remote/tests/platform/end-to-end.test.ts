@@ -115,7 +115,7 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
       return { client, control, events };
     }
     const first = await ssh(user1, key1);
-    assert.deepEqual(first.events.find(event => event.type === 'hello').capabilities, ['createWorkspace', 'files', 'folders', 'deleteSession', 'startSession']);
+    assert.deepEqual(first.events.find(event => event.type === 'hello').capabilities, ['createWorkspace', 'files', 'folders', 'deleteSession', 'startSession', 'gitSummary']);
     async function control(request: Record<string, unknown> & { id: string }) {
       const start = first.events.length;
       first.control.write(JSON.stringify(request) + '\n');
@@ -174,6 +174,9 @@ test('public relay: two accounts, pairing, encrypted SSH, real tmux, leases, geo
     const files = await control({ id: randomUUID(), method: 'listFiles', workspaceId: created.workspace.id, path: '' });
     assert.equal(files.type, 'directory', JSON.stringify(files));
     assert.deepEqual(files.directory.entries.map((entry: any) => entry.name).sort(), ['README.md', 'preview.png']);
+    const git = await control({ id: randomUUID(), method: 'gitSummary', workspaceId: created.workspace.id });
+    assert.equal(git.type, 'gitSummary', JSON.stringify(git));
+    assert.deepEqual(git.gitSummary, { isRepository: false, added: 0, deleted: 0, untracked: 0 });
     const preview = await control({ id: randomUUID(), method: 'readFile', workspaceId: created.workspace.id, path: 'preview.png', offset: 0 });
     assert.equal(preview.type, 'fileChunk', JSON.stringify(preview));
     assert.equal(preview.fileChunk.eof, true);
