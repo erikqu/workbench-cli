@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { chromium, type Page } from "@playwright/test";
+import { blenderExecutable } from "../src/media/model";
 import {
   renderSimulatedAgentFrame,
   renderSimulatedInlineBlock,
@@ -55,7 +56,10 @@ const artifactDir = join(root, "artifacts", "terminal-regression", runLabel);
 const tempRoot = mkdtempSync("/tmp/wbtr-");
 const home = join(tempRoot, "home");
 const codexHome = join(tempRoot, "codex-home");
-const workspace = options.liveCodex ? join(tempRoot, "workspace") : appRoot;
+const workspace =
+  options.liveCodex || options.modelOnly
+    ? join(tempRoot, "workspace")
+    : appRoot;
 const agentStatePath = join(tempRoot, "simulated-agent-state.json");
 const tracePath = join(artifactDir, "ansi-trace.ndjson");
 const frameTracePath = join(artifactDir, "frame-trace.ndjson");
@@ -82,6 +86,42 @@ if (options.liveCodex) {
   );
 }
 mkdirSync(artifactDir, { recursive: true });
+
+if (options.modelOnly) {
+  try {
+    const blender = blenderExecutable();
+    if (!blender) {
+      throw new Error(
+        "The model regression requires Blender on PATH or WORKBENCH_BLENDER."
+      );
+    }
+    const fixture = Bun.spawn(
+      [
+        blender,
+        "--background",
+        "--factory-startup",
+        "--python-exit-code",
+        "2",
+        "--python",
+        join(root, "test-harness/create-model-fixtures.py"),
+        "--",
+        workspace,
+      ],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const [code, stderr] = await Promise.all([
+      fixture.exited,
+      new Response(fixture.stderr).text(),
+      new Response(fixture.stdout).text(),
+    ]);
+    if (code !== 0) {
+      throw new Error(`Could not create model fixtures: ${stderr}`);
+    }
+  } catch (error) {
+    rmSync(tempRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
 
 const server = Bun.spawn(
   ["bun", "test-harness/terminal-regression-server.ts"],
@@ -191,13 +231,16 @@ try {
       options.idleOnly ||
       options.liveCodex ||
       options.plainOnly ||
-      options.mouseOnly
+      options.mouseOnly ||
+      options.modelOnly
     )
   ) {
     location = await runResizeInputScenario(page);
   }
 
-  if (options.mouseOnly) {
+  if (options.modelOnly) {
+    await runModelPreviewScenario(page);
+  } else if (options.mouseOnly) {
     await runMouseGeometryScenario(page);
   } else if (options.idleOnly) {
     await assertIdleWindows(page, options.idleSamples);
@@ -268,6 +311,124 @@ try {
     rmSync(artifactDir, { force: true, recursive: true });
   }
   rmSync(tempRoot, { force: true, recursive: true });
+}
+
+async function runModelPreviewScenario(page: Page) {
+  const mainX = (await waitForReference(page, () => true, 8000)).x;
+  const waitForModel = async (
+    file: string,
+    expected: {
+      differentFrom?: string;
+      equals?: string;
+      cols?: number;
+      rows?: number;
+    } = {}
+  ) => {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      const frame = await page.evaluate((startX) => {
+        const grid = (window as any).__bufferGrid();
+        const stats = (window as any).__outputStats();
+        const pixels: unknown[] = [];
+        for (let y = 0; y < grid.rows; y++) {
+          for (let x = startX; x < grid.cols; x++) {
+            if (grid.lines[y][x] === "▀") {
+              pixels.push([
+                (window as any).__cellState(x, y).bg,
+                (window as any).__cellFg(x, y).color,
+              ]);
+            }
+          }
+        }
+        return {
+          text: grid.lines.map((line: string) => line.slice(startX)).join("\n"),
+          cols: grid.cols,
+          rows: grid.rows,
+          signature: JSON.stringify(pixels),
+          count: pixels.length,
+          settled:
+            stats.outputEvents === stats.parsedWrites &&
+            !(window as any).__synchronizedOutputMode(),
+        };
+      }, mainX);
+      if (
+        frame.settled &&
+        frame.text.includes("3D preview") &&
+        frame.text.includes(file) &&
+        !frame.text.includes("Rendering 3D preview") &&
+        !frame.text.includes("Loading image") &&
+        frame.count > 100 &&
+        (!expected.differentFrom ||
+          frame.signature !== expected.differentFrom) &&
+        (!expected.equals || frame.signature === expected.equals) &&
+        (!expected.cols || frame.cols === expected.cols) &&
+        (!expected.rows || frame.rows === expected.rows)
+      ) {
+        return frame.signature;
+      }
+      await Bun.sleep(25);
+    }
+    throw new Error("The 3D tab did not display a completed model render.");
+  };
+  const capture = async (name: string) => {
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    );
+    await page.screenshot({ path: join(artifactDir, name) });
+  };
+  for (const extension of ["blend", "glb"]) {
+    const file = await findCell(page, `sample.${extension}`);
+    if (!file) {
+      throw new Error(`Model file missing from Explorer: sample.${extension}`);
+    }
+    await click(page, file.x + 2, file.y);
+    const name = `sample.${extension}`;
+    const initial = await waitForModel(name, {
+      cols: initialCols,
+      rows: initialRows,
+    });
+    await capture(`model-${extension}.png`);
+    report(
+      `${extension} file opens from Explorer and displays actual 3D pixels`
+    );
+    await send(page, "\x1b[C");
+    const rotated = await waitForModel(name, { differentFrom: initial });
+    await capture(`model-${extension}-orbit.png`);
+    report(`${extension} orbit key updates the model's rendered pixels`);
+    await send(page, "+");
+    await waitForModel(name, { differentFrom: rotated });
+    await send(page, "r");
+    await waitForModel(name, { equals: initial });
+    if (extension === "blend") {
+      await send(page, "c");
+      await waitForModel(name, { differentFrom: initial });
+      await capture("model-blend-scene.png");
+      await send(page, "c");
+      await waitForModel(name, { equals: initial });
+      report("saved Blender scene camera displays inside the TUI");
+    }
+    await resizeOuter(page, 100, 30);
+    await waitForModel(name, { cols: 100, rows: 30, differentFrom: initial });
+    await capture(`model-${extension}-resized.png`);
+    await resizeOuter(page, initialCols, initialRows);
+    await waitForModel(name, {
+      cols: initialCols,
+      rows: initialRows,
+      equals: initial,
+    });
+  }
+  await send(page, "\x1b1");
+  await waitForReference(page, () => true, 8000);
+  await typeCharacters(page, "model preview done");
+  await waitForReference(
+    page,
+    (fixture) => fixture.state.composer === "model preview done",
+    8000
+  );
+  report("agent session remains live after model previews and resizing");
 }
 
 // Use browser pointer events at the rendered cells rather than injecting SGR
@@ -1819,6 +1980,7 @@ function parseOptions(args: string[]) {
     inline: false,
     keepArtifacts: false,
     liveCodex: false,
+    modelOnly: false,
     mouseOnly: false,
     label: undefined as string | undefined,
     plainOnly: false,
@@ -1844,6 +2006,8 @@ function parseOptions(args: string[]) {
       result.plainOnly = true;
     } else if (arg === "--mouse-only") {
       result.mouseOnly = true;
+    } else if (arg === "--model-only") {
+      result.modelOnly = true;
     } else if (arg.startsWith("--app-root=")) {
       result.appRoot = arg.slice("--app-root=".length);
     } else if (arg.startsWith("--chunk-seed=")) {
@@ -1879,7 +2043,7 @@ function parseOptions(args: string[]) {
   }
   if (
     result.liveCodex &&
-    (result.inline || result.plainOnly || result.mouseOnly)
+    (result.inline || result.plainOnly || result.mouseOnly || result.modelOnly)
   ) {
     throw new Error("--live-codex cannot be combined with fixture scenarios");
   }

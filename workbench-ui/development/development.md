@@ -14,6 +14,7 @@ Optional viewer commands:
 - `ffmpeg` and `ffprobe` for video
 - `mmdc` for Mermaid diagrams
 - `pdftoppm` and `pdfinfo` for PDFs
+- `blender` for `.blend`/`.glb` previews (`WORKBENCH_BLENDER` overrides its path)
 
 ## Setup and Run
 
@@ -45,6 +46,7 @@ bun test
 bun run check
 bun run screenshot
 bun run test:terminal
+bun run test:models # optional: requires Blender, captures real 3D previews
 ```
 
 Use the checks proportionally:
@@ -74,6 +76,13 @@ The screenshot runner chooses the package root as its fixture workspace and
 writes ignored artifacts to `artifacts/screenshots/`.
 
 ## Runtime and Harness Selection
+
+Model-preview verification uses real `.blend` and `.glb` fixtures generated
+by Blender, opens them from Explorer, checks rendered pixel changes after
+orbit/zoom and saved-camera controls, and resizes the terminal. Screenshots
+are saved under `artifacts/terminal-regression/`. Unit tests cover lazy binary
+opening, render cancellation, atomic cache completion, and source/view changes;
+the real-render unit test is skipped when Blender is unavailable.
 
 ```bash
 work [path] [--harness <id>] [--hot] [--terminal-trace] [--splash]
@@ -141,6 +150,7 @@ control-sequence counts—not terminal text or raw ANSI.
 | `WORKBENCH_UI_HARNESS_ID` / `WORKBENCH_UI_AGENT_ID` | Initial harness |
 | `WORKBENCH_UI_THEME` | Initial theme |
 | `WORKBENCH_UI_IMAGE_PROTOCOL` | `kitty`, `sixel`, or `halfblock` |
+| `WORKBENCH_BLENDER` | Blender executable for `.blend`/`.glb` previews |
 | `WORKBENCH_UI_CELL_ASPECT` | Image cell-aspect override |
 | `WORKBENCH_UI_PRESERVE_DIM=1` | Preserve SGR dim |
 | `WORKBENCH_CLI_HOT=1` | Enable hot mode |

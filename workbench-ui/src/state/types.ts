@@ -16,7 +16,14 @@ export interface FileTreeEntry {
 // - "image": decoded and shown as colored half-block art
 // - "pdf": rasterized page preview, then shown through the image renderer
 // - "video": ffmpeg-decoded frames played through the image renderer
-export type EditorTabKind = "text" | "markdown" | "image" | "pdf" | "video";
+// - "model": Blender-rendered .blend/.glb preview with orbit/zoom controls
+export type EditorTabKind =
+  | "text"
+  | "markdown"
+  | "image"
+  | "pdf"
+  | "video"
+  | "model";
 
 export interface EditorTab {
   binary: boolean;

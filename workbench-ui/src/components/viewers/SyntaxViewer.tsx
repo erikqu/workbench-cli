@@ -4,6 +4,7 @@ import { colors } from "../../ui/theme";
 import type { WorkbenchActions, WorkbenchViewModel } from "../types";
 import { ImageViewer } from "./ImageViewer";
 import { MarkdownViewer } from "./MarkdownViewer";
+import { ModelViewer } from "./ModelViewer";
 import { PdfViewer } from "./PdfViewer";
 import { activeFileTab } from "./shared";
 import { FileEditor, ReadOnlyViewer } from "./TextEditor";
@@ -80,6 +81,18 @@ export function SyntaxViewer({
   if (tab.kind === "pdf") {
     return (
       <PdfViewer
+        actions={actions}
+        key={tab.path}
+        rel={rel}
+        tab={tab}
+        view={view}
+      />
+    );
+  }
+
+  if (tab.kind === "model") {
+    return (
+      <ModelViewer
         actions={actions}
         key={tab.path}
         rel={rel}

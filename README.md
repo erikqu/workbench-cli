@@ -71,7 +71,7 @@ Built with [Bun](https://bun.sh), [React 19](https://react.dev), and
   tmux server.
 - Open several workspaces and switch directly with visible Option-number hints.
 - Inspect Explorer files and live Git changes beside the active harness.
-- Preview Markdown, Mermaid diagrams, images, PDFs, and video.
+- Preview Markdown, Mermaid diagrams, images, PDFs, video, and `.blend`/`.glb` models.
 - Use the mouse for tabs, session cards, resizing, selection, and scrolling.
 - Open the complete in-app shortcut guide from `? Help` or `Ctrl+?`.
 
@@ -176,6 +176,15 @@ in that workspace directory.
 
 Closing a tab or workspace kills its backing private tmux pane immediately.
 Quitting Workbench only detaches panes so they can be restored on the next run.
+
+## 3D Previews
+
+Opening a `.blend` or `.glb` file from Explorer displays a 3D preview in the
+terminal. Use the arrow keys to orbit/tilt, the wheel or `+`/`-` to zoom, `R` to
+reset, and `F` to refresh. Blender files can also use their saved scene camera.
+Rendering runs in the background and leaves the source file unchanged.
+Install Blender on the machine running Workbench; a desktop or GPU is not
+required. See [3D preview setup](docs/install.md#3d-previews).
 
 ## Keyboard Shortcuts
 

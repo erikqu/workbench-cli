@@ -422,7 +422,15 @@ with text already present in the agent composer.
 
 File tabs are rendered by `components/viewers/` — a `SyntaxViewer.tsx` dispatcher
 that picks a per-kind viewer (`MarkdownViewer`, `ImageViewer`, `PdfViewer`,
-`VideoViewer`, `TextEditor`) sharing `shared.ts` helpers.
+`VideoViewer`, `ModelViewer`, `TextEditor`) sharing `shared.ts` helpers.
+`.blend` and `.glb` files open lazily as `model` tabs. The background CPU Blender
+renderer in `media/model.ts` / `model-render.py` reads files without saving them
+or executing embedded scripts, auto-frames evaluated geometry, and renders
+materials through the existing image pipeline. Orbit/zoom, saved Blender
+camera, refresh, source-file watching, cancellation and cache invalidation are
+owned by `ModelViewer`. `WORKBENCH_BLENDER` selects the executable; Blender is
+optional for other viewers. `bun run test:models` qualifies real model previews
+in the TUI and requires Blender.
 Markdown tabs open as a **rendered Preview** by default and carry a small
 `Preview | Source` segmented toggle in the viewer header (under the main tab
 strip); Source shows the line-numbered, syntax-highlighted raw `.md`. The mode is

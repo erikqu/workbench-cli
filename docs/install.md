@@ -15,6 +15,34 @@ Existing installations update with `work update`. The monorepo keeps the origina
 launcher paths, installation directory, saved workspaces, and private tmux socket.
 You do not need to reinstall or migrate your sessions.
 
+## 3D previews
+
+To preview `.blend` and `.glb` files, install Blender on the machine running
+Workbench and make its `blender` executable available on `PATH`. The standard
+macOS app at `/Applications/Blender.app` is detected automatically. To use a
+different installation, set `WORKBENCH_BLENDER` to the executable's full path:
+
+```sh
+WORKBENCH_BLENDER=/path/to/blender work
+```
+
+Click the file in Explorer. Workbench renders an automatically framed model
+with its materials and studio lighting directly in the terminal's image pane.
+Arrow keys orbit/tilt; the wheel or `+`/`-` zooms; `R` resets the view; `F` forces
+a fresh render. For Blender files, **Scene camera** uses the saved camera and
+lighting instead of the automatic studio view. If the file has no camera,
+return to **Orbit**.
+
+The renderer uses background CPU rendering, including on remote SSH hosts
+without a desktop or GPU. Each new view is a rendered still, so complex scenes
+take longer to update. Completed views are cached, changes to the source file
+refresh automatically, and switching tabs cancels an unfinished render.
+External texture changes can be picked up with **Refresh**. Source files are
+never saved or modified, and embedded Blender scripts are not executed.
+
+Ghostty and other terminals with native image support show full image previews;
+other terminals use Workbench's existing colored-cell fallback.
+
 ## Connect your iPhone over Tailscale
 
 Install Tailscale on the computer and iPhone and sign in to the same tailnet.

@@ -23,6 +23,7 @@ const imageExtensions = new Set([
 ]);
 const markdownExtensions = new Set([".md", ".markdown", ".mdx"]);
 const pdfExtensions = new Set([".pdf"]);
+const modelExtensions = new Set([".blend", ".glb"]);
 const videoExtensions = new Set([
   ".gif",
   ".mp4",
@@ -49,6 +50,9 @@ export function editorTabKind(path: string): EditorTabKind {
   if (pdfExtensions.has(ext)) {
     return "pdf";
   }
+  if (modelExtensions.has(ext)) {
+    return "model";
+  }
   if (markdownExtensions.has(ext)) {
     return "markdown";
   }
@@ -58,9 +62,14 @@ export function editorTabKind(path: string): EditorTabKind {
 export function openEditorTab(path: string): EditorTab | undefined {
   const kind = editorTabKind(path);
 
-  // Images, PDFs, and videos are decoded lazily by the viewer; only confirm
+  // Media files are decoded lazily by the viewer; only confirm
   // the file exists and is readable here.
-  if (kind === "image" || kind === "pdf" || kind === "video") {
+  if (
+    kind === "image" ||
+    kind === "pdf" ||
+    kind === "video" ||
+    kind === "model"
+  ) {
     try {
       statSync(path);
       return {

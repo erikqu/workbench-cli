@@ -12,7 +12,9 @@ shell panes, file previews, Git changes, input routing, and terminal rendering.
 - Ghostty for the supported terminal experience
 
 Optional preview tools are `ffmpeg`/`ffprobe` for video, `mmdc` for Mermaid,
-and `pdftoppm`/`pdfinfo` for PDFs.
+`pdftoppm`/`pdfinfo` for PDFs, and Blender for `.blend`/`.glb` model previews.
+The renderer runs headlessly on the Workbench host. `WORKBENCH_BLENDER` can
+select an executable outside `PATH`.
 
 ## Run Locally
 
