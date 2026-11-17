@@ -107,7 +107,7 @@ struct HostFolderPicker: View {
             }
             .navigationTitle("Choose a folder").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark") { dismiss() } }
             }
             .safeAreaInset(edge: .bottom) {
                 Button {

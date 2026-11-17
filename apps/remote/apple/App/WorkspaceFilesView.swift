@@ -125,7 +125,7 @@ private struct WorkspaceDirectoryView: View {
         .safeAreaInset(edge: .top, spacing: 0) { pathBar }
         .navigationTitle(path.isEmpty ? "Files" : (path as NSString).lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) } }
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "xmark", action: done) } }
         .task(id: reload) { await load() }
         .refreshable { await load() }
     }
@@ -227,7 +227,7 @@ private struct WorkspaceFilePreview: View {
             }
         }
         .navigationTitle(file.name).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) } }
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "xmark", action: done) } }
         .task(id: reload) { await load() }
     }
 

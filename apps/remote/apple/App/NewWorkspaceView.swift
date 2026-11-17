@@ -69,9 +69,9 @@ struct NewWorkspaceView: View {
             .disabled(creating)
             .navigationTitle(mode == "open" ? "Open workspace" : "New workspace").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(creating) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark") { dismiss() }.disabled(creating) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(mode == "open" ? "Open" : "Create") {
+                    Button(mode == "open" ? "Open" : "Create", systemImage: mode == "open" ? "folder" : "plus") {
                         creating = true; failure = nil
                         Task {
                             do {

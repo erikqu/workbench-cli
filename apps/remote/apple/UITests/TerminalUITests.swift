@@ -1,6 +1,76 @@
 import XCTest
+import UIKit
 
 final class TerminalUITests: XCTestCase {
+    @MainActor func testCommandClickOpensANewTabWithoutKeyboardFocus() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--terminal-render-fixture", "--link-activation-preview"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        let terminal = app.descendants(matching: .any).matching(identifier: "terminal.content").firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 15))
+        let link = terminal.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 20, dy: 10))
+        XCUIElement.perform(withKeyModifiers: .command) { link.tap() }
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'browser.tab.'"))
+        XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(tabs.count, 1)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5))
+        XCUIElement.perform(withKeyModifiers: .command) { link.tap() }
+        XCTAssertTrue(tabs.element(boundBy: 1).waitForExistence(timeout: 10))
+        XCTAssertEqual(tabs.count, 2, "A repeated activation opens a separate tab instead of replacing the existing tab")
+    }
+    @MainActor func testBrowserTabsRemainSeparateAndRejectNonWebAddresses() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--terminal-render-fixture", "--browser-tabs-preview"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        XCTAssertTrue(app.buttons["terminal.browser"].waitForExistence(timeout: 15))
+        app.buttons["terminal.browser"].tap()
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'browser.tab.'"))
+        XCTAssertTrue(tabs.element(boundBy: 1).waitForExistence(timeout: 5))
+        XCTAssertEqual(tabs.count, 2)
+        app.buttons["browser.newTab"].tap()
+        app.alerts.firstMatch.textFields.firstMatch.typeText("file:///etc/passwd")
+        XCTAssertFalse(app.alerts.firstMatch.buttons["Open"].isEnabled)
+        app.alerts.firstMatch.buttons["Cancel"].tap()
+        app.buttons["browser.newTab"].tap()
+        app.alerts.firstMatch.textFields.firstMatch.typeText("https://example.invalid/three")
+        app.alerts.firstMatch.buttons["Open"].tap()
+        XCTAssertTrue(tabs.element(boundBy: 2).waitForExistence(timeout: 5))
+        XCTAssertEqual(tabs.count, 3)
+        let close = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'browser.close.'"))
+        close.element(boundBy: 2).tap()
+        XCTAssertEqual(tabs.count, 2)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["terminal.tab.workbench_h_preview"].exists)
+    }
+
+    @MainActor func testExpandedSidebarKeepsTheSelectedTerminalThroughRotation() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--terminal-render-fixture"]
+        XCUIDevice.shared.orientation = .landscapeLeft
+        app.launch()
+        let size = app.windows.firstMatch.frame.size
+        guard min(size.width, size.height) >= 600 else { throw XCTSkip("Run this layout check with the Duo inner display or an expanded iPad window.") }
+        XCTAssertTrue(app.buttons["terminal.tab.workbench_h_preview"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["workspace.pane.workbench_h_preview"].exists)
+        let menu = app.buttons["terminal.menu"]
+        let next = app.buttons["terminal.nextSession"]
+        XCTAssertTrue(menu.isHittable)
+        XCTAssertGreaterThan(menu.frame.minX, next.frame.minX, "Menu stays at the rightmost end of the session bar")
+        capture("35-duo-expanded-terminal")
+        let selected = app.buttons["terminal.tab.workbench_h_preview"].value as? String
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(app.buttons["terminal.tab.workbench_h_preview"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["terminal.tab.workbench_h_preview"].value as? String, selected)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["workspace.pane.workbench_h_preview"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["terminal.tab.workbench_h_preview"].value as? String, selected)
+    }
     @MainActor func testCurrentSessionStoppingOffersNewStartInsteadOfReconnect() {
         let app = XCUIApplication()
         app.launchArguments = ["--terminal-render-fixture", "--stop-after-open-preview"]
@@ -254,7 +324,9 @@ final class TerminalUITests: XCTestCase {
         next.tap()
         XCTAssertTrue(app.navigationBars["Project Alpha"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["terminal.tab.workbench_h_cycle_codex"].value as? String, "Selected, Working")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let back = app.buttons["BackButton"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
         XCTAssertTrue(overviewNext.waitForExistence(timeout: 5))
         overviewNext.tap()
         XCTAssertTrue(app.navigationBars["Project Alpha"].waitForExistence(timeout: 5))

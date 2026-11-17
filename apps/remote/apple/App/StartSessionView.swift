@@ -58,7 +58,7 @@ import WorkbenchCore
                 }
             }
             .navigationTitle("Start session").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(starting) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark") { dismiss() }.disabled(starting) } }
             .onAppear { restoreRequest() }
             .onChange(of: agent) { _, _ in restoreRequest(); failure = nil }
             .disabled(starting)

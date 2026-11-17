@@ -1,6 +1,6 @@
 {
   "name": "workbench",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Workbench CLI, native iPhone app, host companion, and relay",
   "engines": {

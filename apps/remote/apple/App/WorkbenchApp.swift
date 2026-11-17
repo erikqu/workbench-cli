@@ -20,9 +20,16 @@ import WorkbenchCore
 struct RootView: View {
     @ObservedObject var model: AppModel
     @State private var showPairing = false
-    @State private var path = NavigationPath()
+    @State private var selectedMachine: Machine?
     var body: some View {
-        NavigationStack(path: $path) {
+        Group {
+            if let selectedMachine {
+                MachineWorkspaceView(model: model, machine: selectedMachine) {
+                    model.leaveTerminal()
+                    self.selectedMachine = nil
+                }
+            } else {
+            NavigationStack {
             Group {
                 if model.login == nil { welcome }
                 else {
@@ -32,7 +39,7 @@ struct RootView: View {
                                 .listRowBackground(Color.clear)
                         }
                         ForEach(model.machines) { machine in
-                            NavigationLink(value: machine) {
+                            Button { selectedMachine = machine } label: {
                                 HStack(spacing: 14) {
                                     Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(.tint)
                                     VStack(alignment: .leading, spacing: 5) { Text(machine.name).font(.headline); Text(machine.online ? "Online" : "Companion offline").font(.caption).foregroundStyle(.secondary) }
@@ -47,20 +54,20 @@ struct RootView: View {
             .navigationTitle("Workbench")
             .toolbar {
                 if model.login != nil {
-                    ToolbarItem(placement: .topBarTrailing) { Menu { Button("Refresh") { Task { await model.refreshMachines() } }; Button("Sign out") { path = NavigationPath(); model.signOut() } } label: { Image(systemName: "person.crop.circle") } }
+                    ToolbarItem(placement: .topBarTrailing) { Menu { Button("Refresh") { Task { await model.refreshMachines() } }; Button("Sign out") { model.signOut() } } label: { Label("Account", systemImage: "person.crop.circle") } }
                 }
             }
-            .navigationDestination(for: Machine.self) { machine in WorkspaceList(model: model, machine: machine) }
-            .navigationDestination(for: Pane.self) { pane in TerminalScreen(model: model, pane: pane) }
+            }
+            }
         }
         .sheet(isPresented: $showPairing) { PairingView(model: model) }
         .alert("Workbench", isPresented: Binding(get: { model.error != nil && !showPairing }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
         .onChange(of: model.pairing?.pairingId) { _, value in if value != nil { showPairing = true } }
+        .onChange(of: model.login == nil) { _, signedOut in if signedOut { selectedMachine = nil } }
         .task {
-            if model.isPreview, path.isEmpty, let machine = model.machines.first,
-               let pane = model.workspaces.first?.panes.first {
-                path.append(machine)
-                if !["--workspace-list-preview", "--workspace-activity-preview", "--session-cycle-preview", "--saved-workspaces-preview"].contains(where: ProcessInfo.processInfo.arguments.contains) { path.append(pane) }
+            if model.isPreview, selectedMachine == nil, let machine = model.machines.first,
+               !model.workspaces.isEmpty {
+                selectedMachine = machine
             }
         }
     }
@@ -94,6 +101,7 @@ struct RootView: View {
 struct WorkspaceList: View {
     @ObservedObject var model: AppModel
     let machine: Machine
+    var selectPane: ((Pane) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var showPastSessions = false
@@ -335,7 +343,13 @@ struct WorkspaceList: View {
                     ForEach(displayedPanes.filter { $0.kind == "agent" }) { pane in
                         HStack(spacing: 2) {
                             if pane.live {
-                                NavigationLink(value: pane) { paneLabel(pane) }
+                                Group {
+                                    if let selectPane {
+                                        Button { selectPane(pane) } label: { paneLabel(pane) }
+                                    } else {
+                                        NavigationLink(value: pane) { paneLabel(pane) }
+                                    }
+                                }
                                     .buttonStyle(.plain)
                                     .disabled(!model.connected || deletingSessionId == pane.id)
                                     .accessibilityIdentifier("workspace.pane.\(pane.id)")
@@ -419,12 +433,12 @@ struct WorkspaceList: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("New") { newWorkspace = true }
+                Button("New", systemImage: "plus") { newWorkspace = true }
                     .disabled(!model.connected || !model.canCreateWorkspace)
                     .accessibilityLabel("New workspace").accessibilityIdentifier("workspace.new")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { createdPane = model.nextSession() } label: { Image(systemName: "arrow.right.to.line") }
+                Button("Next session", systemImage: "arrow.right.to.line") { createdPane = model.nextSession() }
                     .disabled(!model.connected || model.liveSessionCount == 0)
                     .accessibilityLabel("Next session")
                     .accessibilityHint("Cycles through live sessions across all workspaces")
@@ -437,7 +451,7 @@ struct WorkspaceList: View {
                     if model.connected && !model.canCreateWorkspace { Text("Update the host companion to create workspaces.") }
                     if model.connected && !model.canStartSession { Text("Update the host companion to start sessions.") }
                     Button { devices = true } label: { Label("Paired devices", systemImage: "iphone.and.arrow.forward") }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Label("Workspace options", systemImage: "ellipsis.circle") }
                     .accessibilityLabel("Workspace options")
                     .accessibilityIdentifier("workspace.options")
             }
@@ -449,7 +463,10 @@ struct WorkspaceList: View {
                 createdPane = workspace.panes.first(where: { $0.live && $0.kind == "agent" }) ?? workspace.panes.first(where: { $0.live })
             }
         }
-        .navigationDestination(item: $createdPane) { pane in TerminalScreen(model: model, pane: pane) }
+        .navigationDestination(item: Binding(get: { selectPane == nil ? createdPane : nil }, set: { createdPane = $0 })) { pane in TerminalScreen(model: model, pane: pane) }
+        .onChange(of: createdPane) { _, pane in
+            if let pane, let selectPane { selectPane(pane); createdPane = nil }
+        }
         .sheet(item: $startTarget) { target in
             StartSessionView(model: model, workspace: target.workspace, initialAgent: target.agent) { pane in
                 createdPane = pane
@@ -461,7 +478,7 @@ struct WorkspaceList: View {
                 List(model.grants) { grant in
                     HStack { VStack(alignment: .leading) { Text(grant.name); if grant.id == model.login?.deviceId { Text("This iPhone").font(.caption).foregroundStyle(.secondary) } }; Spacer(); Button("Revoke", role: .destructive) { Task { await model.revoke(grant) } } }
                 }.navigationTitle("Paired devices").task { await model.loadGrants() }
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { devices = false } } }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done", systemImage: "xmark") { devices = false } } }
             }
         }
     }

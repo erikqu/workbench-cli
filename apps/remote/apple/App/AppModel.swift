@@ -34,6 +34,7 @@ import WorkbenchCore
     let output = PassthroughSubject<Data, Never>()
     let resetTerminal = PassthroughSubject<Void, Never>()
     let keyboardVisibility = PassthroughSubject<Bool, Never>()
+    let browser = LinkBrowser()
     var terminalSize = (cols: 80, rows: 24)
     private var attachment = UUID()
     private var fitOnNextWritableState = false
@@ -85,6 +86,10 @@ import WorkbenchCore
             canBrowseFolders = true
             canDeleteSession = true
             canStartSession = true
+            if ProcessInfo.processInfo.arguments.contains("--browser-tabs-preview") {
+                browser.open("https://example.invalid/one")
+                browser.open("https://example.invalid/two")
+            }
             return
         }
 #endif
@@ -138,6 +143,7 @@ import WorkbenchCore
         } catch { self.error = error.localizedDescription }
     }
     func signOut() {
+        browser.closeAll()
         disconnect(); pairingTask?.cancel(); pairing = nil; pairingCode = nil
         do { try Keychain.write("login", data: nil); login = nil; machines = []; challenge = nil }
         catch { self.error = error.localizedDescription }
@@ -256,7 +262,11 @@ import WorkbenchCore
             try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled, activePane?.id == pane.id else { return }
             resetTerminal.send(())
-            output.send(Data(PreviewSession.sample.utf8))
+            if ProcessInfo.processInfo.arguments.contains("--link-activation-preview") {
+                output.send(Data("\u{1b}[2J\u{1b}[H\u{1b}]8;;https://example.invalid/one\u{1b}\\Open link\u{1b}]8;;\u{1b}\\\r\n".utf8))
+            } else {
+                output.send(Data(PreviewSession.sample.utf8))
+            }
             if ProcessInfo.processInfo.arguments.contains("--stop-after-open-preview"), pane.id == "workbench_h_preview" {
                 workspaces = workspaces.map { $0.id == "preview" ? $0.addingSession(PreviewSession.stoppedPane(pane)) : $0 }
                 sessionState = nil

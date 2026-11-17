@@ -17,6 +17,7 @@ struct TerminalScreen: View {
     @State private var deleteTarget: TerminalDeletionTarget?
     @State private var deleting = false
     @State private var deletionError: String?
+    @State private var showingBrowser = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var currentPane: Pane {
@@ -87,6 +88,10 @@ struct TerminalScreen: View {
                     .accessibilityLabel("Next session")
                     .accessibilityHint("Cycles through live sessions across all workspaces")
                     .accessibilityIdentifier("terminal.nextSession")
+                    Button { model.keyboardVisibility.send(false); settings = true } label: {
+                        Image(systemName: "line.3.horizontal").frame(width: 44, height: 44)
+                    }.buttonStyle(.plain).foregroundStyle(.tint)
+                        .accessibilityLabel("Menu").accessibilityIdentifier("terminal.menu")
                     .padding(.trailing, 6)
                 }
             }
@@ -121,20 +126,19 @@ struct TerminalScreen: View {
                     .accessibilityValue(model.status).accessibilityIdentifier("terminal.status")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { model.keyboardVisibility.send(!keyboardShown) } label: {
-                    Image(systemName: keyboardShown ? "keyboard.chevron.compact.down" : "keyboard")
-                }.accessibilityLabel(keyboardShown ? "Hide keyboard" : "Keyboard").accessibilityIdentifier("terminal.keyboard")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { model.keyboardVisibility.send(false); settings = true } label: {
-                    Image(systemName: "line.3.horizontal")
-                }
-                .accessibilityLabel("Menu").accessibilityIdentifier("terminal.menu")
+                Button(keyboardShown ? "Hide keyboard" : "Keyboard", systemImage: keyboardShown ? "keyboard.chevron.compact.down" : "keyboard") { model.keyboardVisibility.send(!keyboardShown) }
+                    .accessibilityIdentifier("terminal.keyboard")
+                Button("Browser tabs", systemImage: "globe") { model.keyboardVisibility.send(false); showingBrowser = true }
+                    .accessibilityIdentifier("terminal.browser")
             }
         }
+        .modifier(TerminalToolbarLayout())
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
         .task(id: currentPane.id) { await model.open(currentPane) }
+        .onChange(of: pane.id) { _, _ in selectedPane = nil }
+        .onReceive(model.browser.opened) { model.keyboardVisibility.send(false); showingBrowser = true }
+        .sheet(isPresented: $showingBrowser) { LinkBrowserView(browser: model.browser) }
         .onChange(of: model.workspaces) { _, _ in
             if model.connected && !deleting && !model.workspaces.contains(where: { $0.panes.contains(where: { $0.id == currentPane.id }) }) {
                 moveAfterDeletion()
@@ -157,9 +161,9 @@ struct TerminalScreen: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding().navigationTitle("Compose")
                     .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Done") { model.saveDraft(); composing = false } }
+                        ToolbarItem(placement: .cancellationAction) { Button("Done", systemImage: "xmark") { model.saveDraft(); composing = false } }
                         ToolbarItem(placement: .confirmationAction) {
-                            Button("Send") { Task { await model.sendDraft(); if model.draft.isEmpty { composing = false } } }
+                            Button("Send", systemImage: "paperplane") { Task { await model.sendDraft(); if model.draft.isEmpty { composing = false } } }
                                 .disabled(model.draft.isEmpty || !model.connected || model.sessionState?.writable != true)
                         }
                     }
@@ -223,7 +227,7 @@ struct TerminalScreen: View {
                         }
                     }
                 }.navigationTitle("Terminal menu").navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { settings = false }.disabled(deleting) } }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "xmark") { settings = false }.disabled(deleting) } }
                     .alert("Delete \(deleteTarget?.pane.name ?? "session") from \(deleteTarget?.workspaceName ?? workspaceName)?", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
                         if let target = deleteTarget {
                             Button("Delete session", role: .destructive) {
@@ -248,6 +252,20 @@ struct TerminalScreen: View {
     private func moveAfterDeletion() {
         if let next = model.nextSession(after: currentPane.id) { selectedPane = next }
         else { settings = false; dismiss() }
+    }
+}
+
+/// Terminal columns need the width otherwise occupied by Duo's vertical bars.
+/// Older SDKs retain their normal horizontal toolbar without this new preference.
+private struct TerminalToolbarLayout: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+#if compiler(>=6.4)
+        if #available(iOS 27.1, *) {
+            content.toolbarVerticalBehavior(.disabled)
+        } else { content }
+#else
+        content
+#endif
     }
 }
 
@@ -296,6 +314,13 @@ struct NativeTerminal: UIViewControllerRepresentable {
         viewport.keyboardDismissMode = .interactive
         viewport.panGestureRecognizer.require(toFail: terminal.mouseScrollGesture)
         terminal.terminalDelegate = self
+        terminal.linkReporting = .implicit
+        terminal.linkHighlightMode = .hover
+#if DEBUG
+        if model.isPreview && ProcessInfo.processInfo.arguments.contains("--link-activation-preview") {
+            terminal.linkHighlightMode = .alwaysWithModifier
+        }
+#endif
         terminal.backgroundColor = background
         terminal.contentInsetAdjustmentBehavior = .never
         terminal.showsHorizontalScrollIndicator = false
@@ -468,10 +493,6 @@ struct NativeTerminal: UIViewControllerRepresentable {
         present(alert, animated: true)
     }
     func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        guard let url = URL(string: link), let scheme = url.scheme, ["https", "http"].contains(scheme), presentedViewController == nil else { return }
-        let alert = UIAlertController(title: "Open link?", message: url.absoluteString, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Open", style: .default) { _ in UIApplication.shared.open(url) })
-        present(alert, animated: true)
+        model.browser.open(link)
     }
 }

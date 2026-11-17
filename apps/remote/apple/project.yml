@@ -11,8 +11,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.1"
-    CURRENT_PROJECT_VERSION: 4
+    MARKETING_VERSION: "0.2.2"
+    CURRENT_PROJECT_VERSION: 5
     WORKBENCH_RELAY_URL: ""
     WORKBENCH_AUTH_MODE: pairing
 targets:
@@ -43,6 +43,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: Scan the pairing code displayed by your Workbench companion.
         NSLocalNetworkUsageDescription: Connect to a local development relay when testing.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsInWebContent: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]

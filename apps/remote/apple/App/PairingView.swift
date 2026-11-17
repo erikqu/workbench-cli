@@ -42,7 +42,7 @@ struct PairingView: View {
                     Spacer()
                 }
             }.padding(24).navigationTitle("Add machine").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close", systemImage: "xmark") { dismiss() } } }
                 .onChange(of: model.status) { _, value in if value == "Machine paired" { dismiss() } }
                 .alert("Pairing", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
         }

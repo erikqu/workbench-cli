@@ -1008,19 +1008,16 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
 
     @objc func singleTap (_ gestureRecognizer: UITapGestureRecognizer)
     {
+        guard gestureRecognizer.view != nil, gestureRecognizer.state == .ended else { return }
+        let tapHit = calculateTapHit(gesture: gestureRecognizer).grid
+        // A Command-click must open the link on the first click, even while the
+        // terminal keyboard is hidden. The pointer event carries its modifiers
+        // when this view has not yet received hardware-keyboard focus.
+        if let result = linkForClick(at: tapHit, hasCommandModifier: commandActive || gestureRecognizer.modifierFlags.contains(.command)) {
+            terminalDelegate?.requestOpenLink(source: self, link: result.link, params: result.params)
+            return
+        }
         if isFirstResponder {
-            guard gestureRecognizer.view != nil else { return }
-
-            if gestureRecognizer.state != .ended {
-                return
-            }
-
-            let tapHit = calculateTapHit(gesture: gestureRecognizer).grid
-            if let result = linkForClick(at: tapHit, hasCommandModifier: commandActive) {
-                terminalDelegate?.requestOpenLink(source: self, link: result.link, params: result.params)
-                return
-            }
-
             if allowMouseReporting && !shiftBypassesMouseReporting(for: gestureRecognizer) && terminal.mouseMode.sendButtonPress() {
                 sharedMouseEvent(gestureRecognizer: gestureRecognizer, release: false)
 
